@@ -4,7 +4,7 @@
 `main.mbt`: `slash_commands` 数组为命令注册表，每条命令 name+description 驱动补全菜单。
 1. /exit
 2. /compact
-3. /loop
+3. /loop : 
 4. /goal
 `loop.mbt`: `handle_slash_command` 是分发入口，分别转发各个命令注册表中的命令
 `loop.mbt`, `goal.mbt`, `scheduler.mbt` 分别有不同命令的处理器函数。
