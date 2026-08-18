@@ -19,6 +19,13 @@ moon run cmd/openseek -- tui
 git submodule update --init desktop/lepus
 ```
 
+### LINUX
 ```bash
 moon -C desktop run --target native package/linux -- --release
 ```
+
+### WINDOWS
+```bash
+moon -C desktop run --target native package/windows -- --release
+```
+
