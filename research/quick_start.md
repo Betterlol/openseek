@@ -29,3 +29,8 @@ moon -C desktop run --target native package/linux -- --release
 moon -C desktop run --target native package/windows -- --release
 ```
 
+## TEST
+
+```bash
+moon test --target js
+```
