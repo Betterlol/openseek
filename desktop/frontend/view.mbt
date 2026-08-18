@@ -2555,7 +2555,9 @@ fn project_picker_modal(
 /// The current directory as a clickable trail: every ancestor is a button
 /// that navigates back up to it, the way a system chooser's path bar works.
 /// Windows resource paths keep `/C:/` as their drive root; POSIX paths root
-/// at `/`. UNC never reaches this UI because the backend rejects it.
+/// at `/`. The root-drive crumb navigates to the filesystem root (`/`) so
+/// Windows users can switch between drives. UNC never reaches this UI because
+/// the backend rejects it.
 fn picker_breadcrumbs(
   dispatch : @cmd.Emit[Msg],
   picker : ProjectPicker,
@@ -2576,19 +2578,18 @@ fn picker_breadcrumbs(
     [drive, ..] if drive.length() == 2 && drive.has_suffix(":") => Some(drive)
     _ => None
   }
-  if drive_root is None {
-    crumbs.push(
-      @html.button(
-        class=if segments.length() == 0 {
-          "picker-crumb current"
-        } else {
-          "picker-crumb"
-        },
-        on_click=dispatch(ProjectPickerNavigate("/")),
-        "/",
-      ),
-    )
-  }
+  let root_active = segments.length() == 0
+  crumbs.push(
+    @html.button(
+      class=if root_active { "picker-crumb current" } else { "picker-crumb" },
+      on_click=dispatch(ProjectPickerNavigate("/")),
+      if drive_root is Some(_) {
+        "📁"
+      } else {
+        "/"
+      },
+    ),
+  )
   let mut prefix = ""
   for index, segment in segments {
     prefix = if drive_root is Some(_) && index == 0 {
@@ -2598,9 +2599,7 @@ fn picker_breadcrumbs(
     } else {
       prefix + "/" + segment
     }
-    if crumbs.length() > 0 {
-      crumbs.push(@html.span(class="picker-crumb-sep", "›"))
-    }
+    crumbs.push(@html.span(class="picker-crumb-sep", "›"))
     crumbs.push(
       @html.button(
         class=if index == segments.length() - 1 {

@@ -40,6 +40,14 @@ async fn browse_directory_listing(
     // Breadcrumb and directory-row clicks return the URI path from the
     // preceding reply, including `/C:/...` on Windows.
     absolute
+  } else if @sysplatform.win32 || @sysplatform.win64 {
+    // On Windows, a bare `/` means "show all drives". `from_uri_path`
+    // rejects `/` because it expects `/C:/...`; catch it here before the
+    // pasted-path fallback resolves it to the current drive's root.
+    if requested == "/" {
+      return list_drives_listing()
+    }
+    @pathx.Path(requested).expand_home().resolve()
   } else {
     @pathx.Path(
       // A pasted path is an operating-system boundary: accept the host's
@@ -92,6 +100,27 @@ async fn browse_directory_listing(
     Some(parent.resource_path())
   }
   Listing(path=encoded_dir, parent~, entries~)
+}
+
+///|
+/// Enumerate available Windows drives and return them as a directory listing
+/// at the filesystem root `/`. Each drive appears as `"C:/"`, `"D:/"`, etc.
+/// so that clicking one navigates to `/C:/` which the existing `from_uri_path`
+/// handler resolves to the drive root.
+async fn list_drives_listing() -> BrowseDirectoryReply {
+  let drives : Array[String] = []
+  for letter_code in 65..<=90 {
+    let letter = letter_code.unsafe_to_char()
+    let path = "\{letter}:\\"
+    let kind = @fs.kind(path, follow_symlink=false) catch {
+      error if @async.is_being_cancelled() => raise error
+      _ => Unknown
+    }
+    if kind is Directory {
+      drives.push("\{letter}:/")
+    }
+  }
+  Listing(path="/", parent=None, entries=drives)
 }
 
 ///|
