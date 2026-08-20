@@ -41,6 +41,7 @@ declare pub fn args(cmd : String) -> Array[String]
 pub fn args(cmd : String) -> Array[String] {
   [
     "-NoProfile",
+    "-NonInteractive",
     "-Command",
     "$OutputEncoding=[Console]::OutputEncoding=[Text.Encoding]::UTF8;chcp 65001 > $null;" +
     cmd,
