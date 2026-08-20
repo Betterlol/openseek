@@ -641,6 +641,66 @@ async test "shell times out long running commands on Unix" {
 }
 
 ///|
+/// The shell child must get its own stdin pipe whose write end is immediately
+/// closed, not the engine's inherited stdin. A desktop host holds the engine's
+/// stdin pipe open for the whole session; when the child inherits that pipe
+/// (async/process falls back to GetStdHandle(STD_INPUT_HANDLE) when no stdin is
+/// passed), a child that reads stdin — e.g. git, which probes its stdin — hangs
+/// until the shell timeout. Regression for the Windows desktop git hang:
+/// probing stdin for EOF must return immediately and see no input.
+#cfg(platform="windows")
+async test "shell child sees an immediately-closed stdin pipe on Windows" {
+  // IsInputRedirected is True exactly when the spawn passed an explicit stdin
+  // pipe; ReadToEnd returns instantly (0 bytes) only when its write end is
+  // closed. Inherited handles (console, or the host-held engine pipe) would
+  // either report False or block — and the bounded timeout turns a hang into a
+  // test failure.
+  let output = run_shell({
+    "cmd": "if ([Console]::IsInputRedirected) { [Console]::In.ReadToEnd().Length } else { 'NOT-REDIRECTED' }",
+  })
+  assert_false(output.is_error)
+  assert_true(output.content.contains("0"))
+  assert_false(output.content.contains("NOT-REDIRECTED"))
+  assert_false(output.content.contains("timed out"))
+}
+
+///|
+/// POSIX twin of the stdin regression: the child's stdin must be a closed pipe,
+/// not the inherited terminal/pipe of the test runner. `wc -c` reads stdin to
+/// EOF; on a closed pipe it returns 0 immediately, on a terminal it blocks
+/// until timeout (which `run_shell`'s own timeout would report).
+#cfg(not(platform="windows"))
+async test "shell child sees an immediately-closed stdin pipe on Unix" {
+  let output = run_shell({ "cmd": "wc -c" })
+  assert_false(output.is_error)
+  assert_true(output.content.contains("0"))
+  assert_false(output.content.contains("timed out"))
+}
+
+///|
+/// The exact user-visible symptom from the desktop bug: `git --version` through
+/// the shell tool. Git for Windows (MSYS2 runtime) probes its stdin on startup;
+/// when the child inherits the engine's host-held stdin pipe, git hangs until
+/// the shell timeout. This test reproduces the report through the public shell
+/// tool. Skipped when git is not installed.
+#cfg(platform="windows")
+async test "shell runs git --version on Windows" {
+  let git_ok = try {
+    let (code, _) = @process.collect_output_merged("git", ["--version"])
+    code == 0
+  } catch {
+    _ => false
+  }
+  if !git_ok {
+    return
+  }
+  let output = run_shell({ "cmd": "git --version", "timeout_ms": 15000 })
+  assert_false(output.is_error)
+  assert_true(output.content.contains("git version"))
+  assert_false(output.content.contains("timed out"))
+}
+
+///|
 async test "shell rejects moon_cmd as a shell command" {
   // `moon check` now runs through shell (no redirect); the only remaining guard
   // is the bare `moon_cmd` tool name, blocked before execution. We do not

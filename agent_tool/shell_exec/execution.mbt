@@ -513,3 +513,32 @@ async test "large output spills and read_all returns the full output" {
     assert_true(full.contains("5000"))
   })
 }
+
+///|
+/// Windows twin of the stdin regression: `ShellExecution::start` must hand the
+/// child its own immediately-closed stdin pipe, so the child sees EOF at once
+/// instead of inheriting the engine's host-held stdin pipe (which hangs git).
+#cfg(platform="windows")
+async test "execution child sees an immediately-closed stdin pipe on Windows" {
+  @async.with_task_group(group => {
+    let exec = ShellExecution::start(
+      AgentTaskScope(group),
+      program="powershell.exe",
+      args=[
+        "-NoProfile", "-NonInteractive", "-Command", "if ([Console]::IsInputRedirected) { [Console]::In.ReadToEnd().Length } else { 'NOT-REDIRECTED' }",
+      ],
+    )
+    let outcome = @async.with_timeout_opt(15000, () => {
+      while !exec.status().is_terminal() {
+        @async.sleep(25)
+      }
+    })
+    assert_true(
+      outcome is Some(_),
+      msg="execution did not reach a terminal state in time",
+    )
+    assert_true(exec.status() is Exited(0))
+    assert_true(exec.head().contains("0"))
+    assert_false(exec.head().contains("NOT-REDIRECTED"))
+  })
+}
