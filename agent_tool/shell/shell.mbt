@@ -731,10 +731,13 @@ async fn collect_process_output(
   let (reader, writer) = @process.read_from_process()
   @async.with_task_group() <| group => {
     defer reader.close()
+    let (stdin_reader, stdin_writer) = @process.write_to_process()
+    stdin_writer.close()
     let process = @process.spawn(
       group,
       program,
       args,
+      stdin=stdin_reader,
       stdout=writer,
       stderr=writer,
       cwd?=cwd.map(cwd => cwd.view()),

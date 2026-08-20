@@ -89,10 +89,13 @@ pub async fn[X] ShellExecution::start(
   let group = scope.group()
   let sink = ShellOutputSink::new(inline_cap~, hard_cap~, spill_path?)
   let (reader, writer) = @process.read_from_process()
+  let (stdin_reader, stdin_writer) = @process.write_to_process()
+  stdin_writer.close()
   let process = @process.spawn(
     group,
     program,
     args,
+    stdin=stdin_reader,
     stdout=writer,
     stderr=writer,
     cwd?=cwd.map(cwd => cwd.view()),
