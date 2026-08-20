@@ -207,6 +207,10 @@ pub fn parse(line : Json) -> Event? {
       )
     }
     "session_error" => text(fields, "error").map(error => SessionError(error~))
+    "session_undone" =>
+      int(fields, "events_removed").map(events_removed => {
+        SessionUndone(events_removed~)
+      })
     "workspace_created" =>
       text(fields, "dir").map(dir => WorkspaceCreated(dir~))
     "command_error" => text(fields, "error").map(error => CommandError(error~))

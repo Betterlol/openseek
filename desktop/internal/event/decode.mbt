@@ -72,6 +72,9 @@ pub fn decode_event(object : Json) -> AgentEvent? {
     | ReasoningMessage(..)
     | BackgroundNotice(..)
     | SessionError(..)
+    // The host never mutates the durable session itself; a session-undo
+    // confirmation is between the webview and the engine.
+    | SessionUndone(..)
     | GoalUpdated(..)
     | GoalBlocked(..)
     | GoalUnblocked

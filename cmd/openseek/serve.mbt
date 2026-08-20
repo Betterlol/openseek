@@ -7,6 +7,7 @@ priv enum ServeCommand {
   Compact
   Cancel
   Goal(GoalAction)
+  Undo(Int)
 }
 
 ///|
@@ -177,6 +178,12 @@ fn decode_serve_command(json : Json) -> Result[ServeCommand, String] {
         Ok(Goal(SetGoal(text, auto~)))
       }
     GoalClear => Ok(Goal(ClearGoal))
+    Undo(count~) =>
+      if count <= 0 {
+        Err("undo count must be positive")
+      } else {
+        Ok(Undo(count))
+      }
   }
 }
 
@@ -1098,6 +1105,28 @@ async fn run_serve(
             pending.push(PendingCompact)
           } else {
             active_work = Some(ActiveCompact(start_compaction(session)))
+          }
+        Wire(Undo(count)) =>
+          if active_work is Some(_) || pending.length() > 0 {
+            @emit.emit(
+              CommandError(
+                error="cannot undo while a turn or compaction is in flight",
+              ),
+            )
+          } else if store is None {
+            @emit.emit(
+              CommandError(
+                error="undo requires a durable session (--session or OPENSEEK_SESSION)",
+              ),
+            )
+          } else if store is Some(store) {
+            // The durable session is the source of truth for what the
+            // controller sees on resume; roll it back and persist the rewrite
+            // in one atomic replacement (create, not append).
+            let modified = session.remove_last(count~)
+            store.create(modified)
+            session = modified
+            @emit.emit(SessionUndone(events_removed=count))
           }
         Wire(Goal(action)) => {
           // Any new goal command supersedes the previous auto state; a set

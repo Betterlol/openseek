@@ -73,12 +73,17 @@ pub fn decode_event(object : Json) -> AgentEvent? {
     GoalUpdated(goal~) => Some(GoalUpdated(goal))
     GoalContinue(remaining~) => Some(GoalContinue(remaining))
     GoalBudgetExhausted(_) => Some(GoalBudgetExhausted)
-    // A turn that ended at the context ceiling: run-terminal, not success.
+    SessionUndone(events_removed~) => Some(SessionUndone(count=events_removed))
+    // A turn that ended at the model's context ceiling: checkpointed and
+    // terminal for the run, but NOT task success — the work continues in a
+    // new turn the user (or a controller) starts.
     ContextYield(answer~, ..) => Some(ContextYield(answer))
-    // A sub-run's lifecycle brackets. The id pairs starts with finishes on
-    // the wire; the UI shows them as ordered transcript notices, so only
-    // the display fields survive decoding.
+    // A nested sub-run (a review, an explore) began inside the active run.
+    // `label` is a short display string, never the raw query.
     SubrunStarted(kind~, label~, ..) => Some(SubrunStarted(kind~, label~))
+    // The paired completion: the child's terminal status ("captured",
+    // "failed", …) and how many model steps it spent. Non-terminal for the
+    // outer run — the parent turn continues.
     SubrunFinished(status~, steps~, ..) => Some(SubrunFinished(status~, steps~))
     // MCP lifecycle diagnostics, surfaced as notices so a typo'd config or a
     // dead server is visible in the UI instead of silently yielding no tools.

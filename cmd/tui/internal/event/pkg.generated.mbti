@@ -31,6 +31,7 @@ pub(all) enum AgentEvent {
   GoalUpdated(String?)
   GoalContinue(Int)
   GoalBudgetExhausted
+  SessionUndone(count~ : Int)
   ContextYield(String)
   SubrunStarted(kind~ : String, label~ : String)
   SubrunFinished(status~ : String, steps~ : Int)

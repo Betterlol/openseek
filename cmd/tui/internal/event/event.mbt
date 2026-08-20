@@ -71,6 +71,10 @@ pub(all) enum AgentEvent {
   // The auto-continue budget ran out with the goal still standing; the
   // engine paused for input. Posted untagged for the same reason.
   GoalBudgetExhausted
+  // The engine durably removed `count` events from the session in response
+  // to an `undo` command. Non-terminal, untagged — always arrives between
+  // turns or at an idle boundary.
+  SessionUndone(count~ : Int)
   // The turn ended at the model's context ceiling: checkpointed and
   // terminal for the run, but NOT task success — the work continues in a
   // new turn the user (or a controller) starts.

@@ -109,6 +109,7 @@ pub(all) enum Event {
     workspace_root~ : String?
   )
   SessionError(error~ : String)
+  SessionUndone(events_removed~ : Int)
   WorkspaceCreated(dir~ : String)
   CommandError(error~ : String)
   FleetStarted(runs~ : Int, task~ : String)

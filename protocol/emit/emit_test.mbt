@@ -138,6 +138,7 @@ fn all_events() -> Array[@protocol.Event] {
       workspace_root=None,
     ),
     SessionError(error="failed to append user"),
+    SessionUndone(events_removed=5),
     WorkspaceCreated(dir="/w"),
     CommandError(error="command stream: bad json"),
     FleetStarted(runs=3, task="port it"),

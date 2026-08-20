@@ -128,7 +128,9 @@ pub fn decode_engine_event(
     // error, not as stream events; `auto_compaction_started/failed` are internal
     // to an open turn, unlike the finish this view previews;
     // `session_started`/`workspace_created`/`fleet_started` describe a headless
-    // run's setup; the MCP events are engine-side registry diagnostics.
+    // run's setup; `session_undone` is a durable-session rollback acknowledgment,
+    // which this view does not act on; the MCP events are engine-side registry
+    // diagnostics.
     GoalUpdated(..)
     | GoalBlocked(..)
     | GoalUnblocked
@@ -142,6 +144,7 @@ pub fn decode_engine_event(
     | AutoCompactionStarted(..)
     | AutoCompactionFailed(..)
     | SessionStarted(..)
+    | SessionUndone(..)
     | WorkspaceCreated(..)
     | FleetStarted(..)
     | McpConfigIgnored(..)

@@ -41,6 +41,7 @@ pub(all) enum Command {
   /// protocol, not a private channel, and an external controller drives this.
   GoalSet(text~ : String, auto~ : Bool)
   GoalClear
+  Undo(count~ : Int)
 } derive(Eq, Debug)
 
 ///|
@@ -77,6 +78,12 @@ pub fn Command::to_json(self : Command) -> Json {
         { "command": "goal", "action": "set", "text": text }
       }
     GoalClear => { "command": "goal", "action": "clear" }
+    Undo(count~) =>
+      if count != 1 {
+        { "command": "undo", "count": count }
+      } else {
+        { "command": "undo" }
+      }
   }
 }
 
@@ -145,6 +152,22 @@ pub fn Command::parse(line : Json) -> Result[Command, String] {
     // words, where the policy lives.
     { "command": "goal", "action": "set", "text": String(text), .. } =>
       Ok(GoalSet(text~, auto=line is { "auto": True, .. }))
+    // An absent `count` means 1 — `to_json` omits the field for the common
+    // single-undo command, so omission is what a one-event undo has always
+    // looked like on this wire.
+    { "command": "undo", "count": Number(value, ..), .. } => {
+      let count = value.to_int()
+      // JSON has one number type: reject a fractional count rather than
+      // silently truncating it (matching `parse`'s `int` helper).
+      if count.to_double() == value {
+        Ok(Undo(count~))
+      } else {
+        Err("expected an integer \"count\" field")
+      }
+    }
+    { "command": "undo", "count": _, .. } =>
+      Err("expected a number \"count\" field")
+    { "command": "undo", .. } => Ok(Undo(count=1))
     { "command": "goal", "action": "clear", .. } => Ok(GoalClear)
     { "command": "goal", .. } =>
       Err(

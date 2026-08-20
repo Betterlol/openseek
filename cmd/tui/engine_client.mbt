@@ -129,6 +129,10 @@ async fn[G] EngineClient::start(
             }
             self.messages.try_put(EngineGoalUpdated(goal)) |> ignore
           }
+          // Session-undo confirmation. Posted untagged like a goal update,
+          // so an idle confirmation is never swept by the stale-run guard.
+          SessionUndone(count~) =>
+            self.messages.try_put(EngineSessionUndone(count~)) |> ignore
           // Auto-continue lifecycle from a headless-armed goal: surfaced as
           // plain notices — the TUI never arms auto itself, and engine-
           // initiated turns are invisible to run tracking by design.
@@ -453,6 +457,30 @@ async fn[G] EngineClient::compact(
     }
   }
   self.open_run(run_id, (Compact : @protocol.Command).to_json())
+}
+
+///|
+/// Send an `undo` command to the serve engine so it removes the last `count`
+/// events from the durable session. Like a goal update, this is an explicit
+/// user operation on the durable session, so it may start the long-lived
+/// engine to perform the rewrite without opening a model turn. The engine
+/// answers with `session_undone`, which is the only signal that triggers the
+/// TUI's session-reload path.
+async fn[G] EngineClient::undo(
+  self : EngineClient,
+  group : @async.TaskGroup[G],
+  count~ : Int,
+) -> Unit {
+  guard self.live_for(group, "undo") is Some(live) else { return }
+  let command : Json = (Undo(count~) : @protocol.Command).to_json()
+  live.writer.write("\{command.stringify()}\n") catch {
+    error if @async.is_being_cancelled() || @async.is_cancellation_error(error) =>
+      raise error
+    error => {
+      self.live = None
+      self.messages.put(EngineSessionError("failed to send undo: \{error}"))
+    }
+  }
 }
 
 ///|

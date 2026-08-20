@@ -12,6 +12,7 @@ fn level(event : @protocol.Event) -> @xlog.Level {
     | ToolCallDecodeError(..)
     | CompactionFailed(_)
     | SessionError(_)
+    | SessionUndone(_)
     | CommandError(_) => Error
     AgentAborted(_)
     | MaxStepsExhausted

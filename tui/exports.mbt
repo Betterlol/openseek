@@ -22,6 +22,32 @@ pub async fn Ui::set_activity(self : Self, activity : @doc.Text?) -> Unit {
 }
 
 ///|
+/// Replace the entire transcript with `items`, clearing the scrollback and
+/// re-rendering from scratch. Used by the `/undo` command to rebuild the
+/// transcript after the engine rolls back session events: the caller renders
+/// the remaining session events into `TranscriptItem`s and passes them here.
+pub async fn Ui::replace_transcript(
+  self : Self,
+  items : Array[TranscriptItem],
+) -> Unit {
+  self.commands.wait(() => {
+    self.transcript.clear()
+    for item in items {
+      self.transcript.push(@doc.ToDoc::to_doc(item))
+    }
+    guard self.viewport is Some(viewport) else {
+      abort("replace_transcript without an entered UI")
+    }
+    viewport.refresh_size(self.tty)
+    viewport.replay_scrollback(
+      self.tty,
+      scrollback=self.transcript_rows(cols=viewport.cols()),
+      surface=self.composer_surface(cols=viewport.cols(), rows=viewport.rows()),
+    )
+  })
+}
+
+///|
 /// Replace the queued-inputs preview (copied defensively) and redraw.
 #deprecated("use Ui::set_live_view — it sets the whole live view with a single redraw")
 pub async fn Ui::set_queued_inputs(self : Self, inputs : Array[Input]) -> Unit {

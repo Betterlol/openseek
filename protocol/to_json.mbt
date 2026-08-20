@@ -120,6 +120,8 @@ pub fn Event::to_json(self : Event) -> Json {
         "workspace_root": or_null(workspace_root),
       }
     SessionError(error~) => { "event": "session_error", "error": error }
+    SessionUndone(events_removed~) =>
+      { "event": "session_undone", "events_removed": events_removed }
     WorkspaceCreated(dir~) => { "event": "workspace_created", "dir": dir }
     CommandError(error~) => { "event": "command_error", "error": error }
     FleetStarted(runs~, task~) =>

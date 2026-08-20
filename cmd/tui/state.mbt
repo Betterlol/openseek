@@ -227,6 +227,10 @@ priv enum Msg {
   // The engine durably recorded a goal update. Untagged like a background
   // notice, so an idle confirmation is never swept by the stale-run guard.
   EngineGoalUpdated(String?)
+  // The engine confirmed that it removed events from the durable session
+  // in response to an `undo` command. Untagged like a goal update, so an
+  // idle confirmation is never swept by the stale-run guard.
+  EngineSessionUndone(count~ : Int)
   // The persistent engine process exited (for any reason): its background
   // watchers died with it, so the loop can observe the engine boundary.
   EngineExited
@@ -246,6 +250,7 @@ fn Msg::run_id(self : Msg) -> Int? {
     UiInput(_)
     | SteerDropped(_)
     | EngineGoalUpdated(_)
+    | EngineSessionUndone(_)
     | EngineSteerDropped(_)
     | EngineSessionError(_)
     | EngineBackgroundNotice(_)
@@ -276,6 +281,10 @@ priv enum Cmd {
   // Set (Some) or clear (None) the standing goal on the serve engine. The
   // engine's goal_updated event — not this command — mutates local state.
   UpdateGoal(String?)
+  // Ask the serve engine to remove `count` trailing events from the durable
+  // session. The engine's session_undone event — not this command — mutates
+  // the transcript's understanding of the conversation.
+  UndoRun(count~ : Int)
   CancelAgent
   // Second Ctrl-C while already interrupting: the cancel command was not
   // enough, so kill the engine process outright.

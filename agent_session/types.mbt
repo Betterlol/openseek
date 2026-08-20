@@ -518,6 +518,29 @@ pub fn Session::events(self : Session) -> @vector.Vector[SessionEvent] {
 }
 
 ///|
+/// Return a new `Session` whose last `count` events have been removed.
+///
+/// The receiver is unchanged. When `count` exceeds the event count, all events
+/// are removed and the session is empty. This is the inverse of `append` for
+/// implementing `/undo` in the TUI.
+///
+/// Invariant: the returned session has contiguous sequence numbers starting at
+/// 1 (when non-empty), matching the `Session` constructor contract. Durable
+/// callers must persist it via `SessionStore::create` (atomic rewrite), not
+/// `SessionStore::append`, since `remove_last` is a mutation, not an addition.
+pub fn Session::remove_last(self : Session, count? : Int = 1) -> Session {
+  let n = count.min(self.events.length())
+  let keep = self.events.length() - n
+  let items = self.events.to_array()
+  {
+    id: self.id,
+    system_prompt: self.system_prompt,
+    events: @vector.from_array(items[0:keep]),
+    last_sequence: self.last_sequence - n,
+  }
+}
+
+///|
 /// Return the sequence number that will precede the next append.
 ///
 /// This is the highest event sequence present, or `0` when the session has no

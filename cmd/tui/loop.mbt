@@ -504,6 +504,12 @@ fn handle_agent_event(
     // mirror must follow (a goal(met) mid-run would otherwise leave /goal
     // reporting a cleared goal until restart).
     GoalUpdated(goal) => apply_goal_update(state, goal, cmds)
+    // Like goal updates, the serve client routes session undo confirmations
+    // untagged (EngineSessionUndone), but ONESHOT mode forwards engine events
+    // run-tagged, so this path is live there: the confirmation notice must
+    // follow however the event arrives.
+    SessionUndone(count~) =>
+      cmds.push(AppendItem(Input(Notice("undo: removed \{count} event(s)"))))
     // Likewise routed untagged by the client (as background notices).
     GoalContinue(_) | GoalBudgetExhausted => ()
     // Terminal for the run but not task success: surface the continuation
@@ -580,6 +586,36 @@ fn handle_compact_command(
 }
 
 ///|
+fn handle_undo_command(
+  state : State,
+  arguments : String,
+  cmds : Array[Cmd],
+) -> Unit {
+  // Undo is a rewrite command on the durable session of the persistent serve
+  // engine; a oneshot engine is spawned per prompt and keeps no session to
+  // rewrite.
+  if state.config.engine_mode is OneShot {
+    cmds.push(
+      AppendItem(
+        Error("The undo command is not supported by a oneshot engine."),
+      ),
+    )
+    return
+  }
+  let count : Int = match arguments.trim().to_owned() {
+    "" => 1
+    input =>
+      @cli.parse_positive_int(input, "/undo count") catch {
+        error => {
+          cmds.push(AppendItem(Error("usage: /undo [count] — \{error}")))
+          return
+        }
+      }
+  }
+  cmds.push(UndoRun(count~))
+}
+
+///|
 fn handle_slash_command(
   state : State,
   name : String,
@@ -596,6 +632,7 @@ fn handle_slash_command(
     "compact" => handle_compact_command(state, arguments, cmds)
     "loop" => handle_loop_command(state, arguments, cmds)
     "goal" => handle_goal_command(state, arguments, cmds)
+    "undo" => handle_undo_command(state, arguments, cmds)
     other => cmds.push(AppendItem(Error("Unknown slash command: /\{other}")))
   }
 }
@@ -786,6 +823,12 @@ fn update(state : State, message : Msg) -> Array[Cmd] {
     // The engine's durable-append confirmation is the only writer of the
     // mirrored goal state.
     EngineGoalUpdated(goal) => apply_goal_update(state, goal, cmds)
+    // The engine confirmed it removed trailing events from the durable
+    // session. The session mutation is the engine's; the transcript is the
+    // display of that session, so a confirmation notice is all that changes
+    // here — no run lifecycle is involved.
+    EngineSessionUndone(count~) =>
+      cmds.push(AppendItem(Input(Notice("undo: removed \{count} event(s)"))))
     EngineExited => ()
     // Tick is a 1s heartbeat: it keeps the message loop turning so the trailing
     // refresh_ui re-runs (the elapsed-time activity line keeps advancing during
@@ -896,6 +939,7 @@ async fn[G] run_message_loop(
           }
         SteerAgent(input) => engine.steer(group, input)
         UpdateGoal(goal) => engine.goal(group, goal)
+        UndoRun(count~) => engine.undo(group, count~)
         // Compaction is an engine operation with no local task. Clear any stale
         // command handle (as a queued prompt would) so a Ctrl-C cancels this
         // compaction turn rather than a finished command task.

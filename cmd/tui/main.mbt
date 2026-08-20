@@ -364,6 +364,10 @@ async fn run_tui(config : AppConfig, initial : String?) -> Unit {
         name="goal",
         description="standing goal: /goal | /goal set <text> | /goal clear",
       ),
+      @ui.SlashCommandSpec::new(
+        name="undo",
+        description="undo last turn: /undo [count]",
+      ),
     ]),
     ui => run_app(config, initial, ui),
   )
