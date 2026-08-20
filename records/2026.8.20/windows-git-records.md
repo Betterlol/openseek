@@ -195,3 +195,29 @@ let process = @process.spawn(
    - 对照实验的价值：把 `no_console_window`、stdin 写端、继承方式拆开逐一验证，才从"看起来都有关"收敛到唯一决定变量。
 
 4. **遗留**：引擎级复现工具保留在 `C:\Users\17376\AppData\Local\Temp\opencode\engprobe\`（含 gitprobe 对照探针），可用于后续 Windows 子进程行为验证。
+
+---
+
+## 6. 沉淀到项目的回归测试
+
+排查中形成的验证思想已固化为自动化测试，防止此问题回归：
+
+### 6.1 `agent_tool/shell/shell_test.mbt`
+
+| 测试 | 平台 | 验证思想 |
+|------|------|----------|
+| `shell child sees an immediately-closed stdin pipe on Windows` | Windows | 子进程探针 `[Console]::IsInputRedirected` + `ReadToEnd()`：显式传 stdin 管道时 IsInputRedirected=True，写端关闭时 ReadToEnd 立即返回 0。若继承引擎的 host-held 管道则阻塞/返回 NOT-REDIRECTED → 测试失败 |
+| `shell child sees an immediately-closed stdin pipe on Unix` | Unix | 探针 `wc -c`：关闭管道立即读到 EOF 输出 0；继承终端/打开管道则阻塞直到工具超时 |
+| `shell runs git --version on Windows` | Windows | 直接复刻用户报告的原始症状（git 探 stdin 挂起）；git 未安装时跳过 |
+
+### 6.2 `agent_tool/shell_exec/execution.mbt`
+
+| 测试 | 平台 | 验证思想 |
+|------|------|----------|
+| `execution child sees an immediately-closed stdin pipe on Windows` | Windows | 覆盖 `ShellExecution::start` 这一第二条 spawn 路径，同样的 IsInputRedirected+ReadToEnd 探针 |
+
+### 6.3 核心断言
+
+三条测试共享的断言模式：**探针在有限超时内返回 + 输出为预期 EOF 特征值**。把"子进程 stdin 必须是写端立即关闭的独立管道"这一契约固化为行为测试，而不是测试内部实现细节——即使将来 spawn 库换了（如不再 fallback 到 `GetStdHandle`），测试依然有效。
+
+运行方式：`moon test agent_tool/shell agent_tool/shell_exec --target native`（Windows 平台下 3 条新测试均执行）。
