@@ -406,7 +406,7 @@ fn sessions_target_id(
 async fn sessions_list(matches : @argparse.Matches) -> Unit {
   let workspace_root = prepare_workspace_root(matches, log_created=false)
   let store = @store.SessionStore(session_root(matches, workspace_root~))
-  match session_list_format(matches) {
+  match session_format(matches) {
     Text =>
       for listing in store.listings() {
         println(format_session_listing(listing))
@@ -419,7 +419,11 @@ async fn sessions_list(matches : @argparse.Matches) -> Unit {
 async fn sessions_show(matches : @argparse.Matches) -> Unit {
   let workspace_root = prepare_workspace_root(matches, log_created=false)
   let store = @store.SessionStore(session_root(matches, workspace_root~))
-  println(store.load(sessions_target_id(matches)).to_json().stringify())
+  let session = store.load(sessions_target_id(matches))
+  match session_format(matches) {
+    Text => println(format_session_text(session))
+    Json => println(session.to_json().stringify())
+  }
 }
 
 ///|
@@ -759,8 +763,16 @@ fn root_command() -> @argparse.Command {
           ]),
           Command(
             "show",
-            about="Print the durable session JSON for <id>.",
-            options=[dir_option()],
+            about="Print the durable session for <id> (see --format).",
+            options=[
+              dir_option(),
+              OptionArg(
+                "format",
+                long="format",
+                default_values=["text"],
+                about="Output format: text or json.",
+              ),
+            ],
             positionals=[PositionArg("id", about="Session id.")],
           ),
           Command(
@@ -944,15 +956,15 @@ fn session_root(
 const PromptLabelMaxChars : Int = 60
 
 ///|
-/// Collapse a prompt to a single-line label: whitespace runs become one
-/// space, remaining control characters are dropped — a stored prompt must
-/// not be able to inject terminal escape sequences into the listing — and
-/// anything beyond `PromptLabelMaxChars` is elided with `…`. A session
-/// without a recorded prompt shows `-` so the column never vanishes.
-fn compact_prompt_label(prompt : String) -> String {
+/// Collapse text to a single-line label: whitespace runs become one space,
+/// remaining control characters are dropped — stored text must not be able to
+/// inject terminal escape sequences — and anything beyond `max_chars` is elided
+/// with `…`. Empty text (or text that collapses to nothing) shows `-` so a
+/// field never vanishes.
+fn compact_label(text : String, max_chars : Int) -> String {
   let out = StringBuilder()
-  for ch in prompt.trim(); last_was_space = false, count = 0 {
-    if count >= PromptLabelMaxChars {
+  for ch in text.trim(); last_was_space = false, count = 0 {
+    if count >= max_chars {
       out.write_char('…')
       break
     }
@@ -982,6 +994,13 @@ fn compact_prompt_label(prompt : String) -> String {
 }
 
 ///|
+/// Collapse a prompt to a single-line label capped at `PromptLabelMaxChars` —
+/// the `sessions list` row form.
+fn compact_prompt_label(prompt : String) -> String {
+  compact_label(prompt, PromptLabelMaxChars)
+}
+
+///|
 fn format_utc_minute(seconds : Int64) -> String {
   fn pad2(value : Int) -> String {
     value.to_string().pad_start(2, '0')
@@ -1005,13 +1024,139 @@ fn format_session_listing(listing : @store.SessionListing) -> String {
 }
 
 ///|
-priv enum SessionListFormat {
+/// Longest single line of user/assistant text a `sessions show` event row
+/// carries — enough to read a prompt or answer without wrapping the row.
+const SessionTextLineMaxChars : Int = 240
+
+///|
+/// Longest single line of tool/summary/terminal/notice detail a
+/// `sessions show` event row carries: tool output is usually a log, so its
+/// row stays shorter than conversational text.
+const SessionDetailMaxChars : Int = 160
+
+///|
+/// The `system:` header line of `sessions show` text: only the system
+/// prompt's FIRST line, elided — a generated prompt (skills, environment,
+/// layout) can run tens of thousands of characters, and burying the four rows
+/// of conversation under it is exactly what made the old whole-JSON dump
+/// unreadable. The full prompt stays reachable via `--format json`.
+const SystemPromptExcerptChars : Int = 120
+
+///|
+/// A tool result's `finished: ` / `completed: ` status marker, if it opens the
+/// detail. The `tool <name>:` label already reads as that state, so the marker
+/// is dropped rather than repeated (`tool finish: finished: …` → `tool finish:
+/// …`).
+fn strip_tool_status_prefix(detail : String) -> String {
+  let trimmed = detail.trim().to_owned()
+  for prefix in ["finished: ", "completed: ", "done: ", "ok: "] {
+    if trimmed.has_prefix(prefix) {
+      return trimmed[prefix.length():].trim().to_owned()
+    }
+  }
+  trimmed
+}
+
+///|
+/// A tool result's plain answer text: `brief` preferred (it is the one-line
+/// human summary the producer intended), otherwise the full content, with the
+/// status marker stripped.
+fn tool_answer_text(result : @agent_session.ToolResult) -> String {
+  let raw = match result.brief() {
+    Some(brief) => brief
+    None => result.content()
+  }
+  strip_tool_status_prefix(raw)
+}
+
+///|
+/// One `sessions show --format text` event row: `<seq> <kind>: <detail>`.
+/// Every detail is collapsed to a single line so `grep`, scrolling, and
+/// paste-into-terminal all see plain rows.
+fn format_session_event(event : @agent_session.SessionEvent) -> String {
+  let sequence = event.sequence()
+  match event.item() {
+    User(message) =>
+      "\{sequence} user: \{compact_label(message.content(), SessionTextLineMaxChars)}"
+    Assistant(message) =>
+      if message.content().is_blank() {
+        let calls = message.tool_calls()
+        if calls.length() == 0 {
+          "\{sequence} assistant: (no text)"
+        } else if calls.length() == 1 {
+          "\{sequence} assistant: tool call \{calls[0].name}"
+        } else {
+          let names = calls.map(call => call.name).join(", ")
+          "\{sequence} assistant: tool calls \{names}"
+        }
+      } else {
+        "\{sequence} assistant: \{compact_label(message.content(), SessionTextLineMaxChars)}"
+      }
+    Tool(result) =>
+      "\{sequence} tool \{result.tool_name()}: \{compact_label(tool_answer_text(result), SessionDetailMaxChars)}"
+    Runtime(notice) =>
+      "\{sequence} notice: \{compact_label(notice.content(), SessionDetailMaxChars)}"
+    Summary(summary) =>
+      "\{sequence} summary \{summary.from_sequence()}..\{summary.to_sequence()}: \{compact_label(summary.content(), SessionDetailMaxChars)}"
+    Terminal(terminal) =>
+      match terminal {
+        Finished(text) =>
+          "\{sequence} terminal finished: \{compact_label(text, SessionDetailMaxChars)}"
+        Aborted(text) =>
+          "\{sequence} terminal aborted: \{compact_label(text, SessionDetailMaxChars)}"
+        Interrupted(text) =>
+          "\{sequence} terminal interrupted: \{compact_label(text, SessionDetailMaxChars)}"
+        Failed(text) =>
+          "\{sequence} terminal failed: \{compact_label(text, SessionDetailMaxChars)}"
+      }
+  }
+}
+
+///|
+/// `sessions show --format text`: a header naming the session and its size,
+/// one `system:` line reduced to the prompt's first line, then one line per
+/// event in sequence order. A `Finished` terminal that only echoes the answer
+/// the finish tool's row above it already carried folds to a pointer — in the
+/// engine `finish` content is `finished: <answer>` and the terminal seals the
+/// same answer, so showing both rows would repeat the text.
+fn format_session_text(session : @agent_session.Session) -> String {
+  let lines : Array[String] = []
+  lines.push("session: \{session.id().value()}")
+  lines.push("events: \{session.events().length()}")
+  let system_first_line = match [..session.system_prompt().split("\n")] {
+    [first_line, ..] => first_line
+    [] => ""
+  }
+  lines.push(
+    "system: \{compact_label(system_first_line.to_owned(), SystemPromptExcerptChars)}",
+  )
+  let mut previous_tool_answer : String? = None
+  for event in session.events() {
+    lines.push(
+      match (event.item(), previous_tool_answer) {
+        (Terminal(Finished(answer)), Some(previous)) if answer == previous =>
+          "\{event.sequence()} terminal finished: (see tool result above)"
+        _ => format_session_event(event)
+      },
+    )
+    previous_tool_answer = match event.item() {
+      Tool(result) => Some(tool_answer_text(result))
+      _ => None
+    }
+  }
+  lines.join("\n")
+}
+
+///|
+priv enum SessionOutputFormat {
   Text
   Json
 }
 
 ///|
-fn session_list_format(matches : @argparse.Matches) -> SessionListFormat raise {
+/// The `--format` shared by `sessions list` and `sessions show`: `text`
+/// renders for humans, `json` is the machine-facing dump.
+fn session_format(matches : @argparse.Matches) -> SessionOutputFormat raise {
   match matches {
     { values: { "format": ["text", ..], .. }, .. } => Text
     { values: { "format": ["json", ..], .. }, .. } => Json
@@ -1956,25 +2101,141 @@ async test "session list command does not require deepseek setup" {
 ///|
 test "session list format defaults to text and rejects unknown values" {
   let default_format = sessions_leaf_matches(sub="list", argv=[], env=Map([]))
-  assert_true(session_list_format(default_format) is Text)
+  assert_true(session_format(default_format) is Text)
   let json_format = sessions_leaf_matches(
     sub="list",
     argv=["--format", "json"],
     env=Map([]),
   )
-  assert_true(session_list_format(json_format) is Json)
+  assert_true(session_format(json_format) is Json)
   let bogus = sessions_leaf_matches(
     sub="list",
     argv=["--format", "yaml"],
     env=Map([]),
   )
-  let _ = session_list_format(bogus) catch {
+  let _ = session_format(bogus) catch {
     error => {
       assert_true("\{error}".contains("--format must be text or json"))
       return
     }
   }
   fail("unknown format accepted")
+}
+
+///|
+test "session show format defaults to text and shares the list grammar" {
+  let default_format = sessions_leaf_matches(sub="show", argv=["demo"], env={
+    "DEEPSEEK": "k",
+  })
+  assert_true(session_format(default_format) is Text)
+  let json_format = sessions_leaf_matches(
+    sub="show",
+    argv=["demo", "--format", "json"],
+    env=Map([]),
+  )
+  assert_true(session_format(json_format) is Json)
+  let bogus = sessions_leaf_matches(
+    sub="show",
+    argv=["demo", "--format", "yaml"],
+    env=Map([]),
+  )
+  let _ = session_format(bogus) catch {
+    error => {
+      assert_true("\{error}".contains("--format must be text or json"))
+      return
+    }
+  }
+  fail("unknown format accepted")
+}
+
+///|
+test "session show text summarizes events without dumping the system prompt" {
+  let long_prompt = "You are a coding agent.\n\{String::make(1000, 'x')}"
+  let session = @agent_session.Session(
+      SessionId("demo"),
+      system_prompt=long_prompt,
+    )
+    .append(User(UserMessage("hello world")))
+    .append(Assistant(AssistantMessage("hi")))
+    .append(
+      Tool(
+        ToolResult(
+          tool_call_id="c1",
+          tool_name="finish",
+          content="completed\nlots of detail\nmore",
+        ),
+      ),
+    )
+    .append(Terminal(Finished("done")))
+  let text = format_session_text(session)
+  assert_true(text.has_prefix("session: demo\n"))
+  assert_true(text.contains("events: 4"))
+  assert_true(text.contains("\n1 user: hello world"))
+  assert_true(text.contains("\n2 assistant: hi"))
+  assert_true(text.contains("\n3 tool finish: completed"))
+  assert_true(text.contains("\n4 terminal finished: done"))
+  // The multi-kilobyte system prompt is reduced to its first line; the filler
+  // below it must not leak into the readable listing.
+  assert_true(text.contains("system: You are a coding agent."))
+  assert_true(text.contains("events: 4\nsystem:"))
+  assert_false(text.contains("xxx"))
+}
+
+///|
+test "session show text renders tool-only assistants and error terminals" {
+  let session = @agent_session.Session(
+      SessionId("demo"),
+      system_prompt="system",
+    )
+    .append(
+      Assistant(
+        AssistantMessage("", tool_calls=[
+          ToolCall(id="c1", name="edit", arguments="{}"),
+        ]),
+      ),
+    )
+    .append(
+      Tool(
+        ToolResult(
+          tool_call_id="c1",
+          tool_name="edit",
+          content="ok",
+          is_error=true,
+          brief="edited 2 files",
+        ),
+      ),
+    )
+    .append(Terminal(Failed("boom")))
+  let text = format_session_text(session)
+  assert_true(text.contains("\n1 assistant: tool call edit"))
+  assert_true(text.contains("\n2 tool edit: edited 2 files"))
+  assert_true(text.contains("\n3 terminal failed: boom"))
+}
+
+///|
+test "session show text folds a terminal that only echoes the finish tool answer" {
+  let session = @agent_session.Session(
+      SessionId("demo"),
+      system_prompt="system",
+    )
+    .append(User(UserMessage("go")))
+    .append(
+      Tool(
+        ToolResult(
+          tool_call_id="c1",
+          tool_name="finish",
+          content="finished: all done",
+        ),
+      ),
+    )
+    .append(Terminal(Finished("all done")))
+  let text = format_session_text(session)
+  assert_true(text.contains("\n1 user: go"))
+  // The `finished: ` status marker is not repeated against the tool name.
+  assert_true(text.contains("\n2 tool finish: all done"))
+  assert_false(text.contains("finished: all done"))
+  // The terminal row points at the tool row instead of repeating the answer.
+  assert_true(text.contains("\n3 terminal finished: (see tool result above)"))
 }
 
 ///|
