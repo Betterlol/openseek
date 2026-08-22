@@ -2,10 +2,10 @@
 /// Single-binary entry point. `openseek` is one argparse command tree: the
 /// interactive TUI is the default action (bare `openseek`) and also the explicit
 /// `tui` subcommand, while the headless engine lives under
-/// `run`/`serve`/`review`/`sessions`. argparse owns parsing, `--help`, and
-/// error reporting (including rejecting unknown subcommands); we only dispatch on
-/// the parsed result. Engine stdout-JSONL logging is installed per subcommand in
-/// the run/serve handlers, never on the UI path.
+/// `run`/`serve`/`review`/`sessions`/`export`. argparse owns parsing, `--help`,
+/// and error reporting (including rejecting unknown subcommands); we only
+/// dispatch on the parsed result. Engine stdout-JSONL logging is installed per
+/// subcommand in the run/serve handlers, never on the UI path.
 async fn main {
   dispatch() catch {
     error => {
@@ -33,6 +33,7 @@ async fn dispatch() -> Unit {
     Some(("subrun", m)) => run_subrun_command(m)
     Some(("mcp", m)) => run_mcp_command(m)
     Some(("sessions", m)) => run_sessions_command(m)
+    Some(("export", m)) => run_export_command(m)
     // argparse rejects unknown subcommands during parse, so this is unreachable.
     Some((name, _)) => fail("unhandled subcommand: \{name}")
     // Bare `openseek` IS `openseek tui`: re-parse through the `tui` subcommand so
@@ -80,6 +81,20 @@ fn sessions_leaf_matches(
     fail("expected a sessions leaf subcommand")
   }
   leaf
+}
+
+///|
+/// Test helper: parse `export <argv>` and return the subcommand's `Matches`
+/// (what `run_export_command` and its helpers see).
+fn export_matches(
+  argv~ : Array[String],
+  env~ : Map[String, String],
+) -> @argparse.Matches raise {
+  guard root_command().parse(argv=["export", ..argv], env~).subcommand
+    is Some((_, m)) else {
+    fail("expected an export subcommand")
+  }
+  m
 }
 
 ///|
@@ -803,6 +818,20 @@ fn root_command() -> @argparse.Command {
           ),
         ],
       ),
+      Command(
+        "export",
+        about="Export a durable session as Markdown on stdout (or --output).",
+        options=[
+          dir_option(),
+          OptionArg(
+            "output",
+            long="output",
+            default_values=[""],
+            about="Write the Markdown to this file (relative to the workspace) instead of stdout.",
+          ),
+        ],
+        positionals=[PositionArg("id", about="Session id.")],
+      ),
     ],
     subcommand_required=false,
     disable_help_subcommand=true,
@@ -1115,10 +1144,7 @@ fn format_session_event(event : @agent_session.SessionEvent) -> String {
 ///|
 /// `sessions show --format text`: a header naming the session and its size,
 /// one `system:` line reduced to the prompt's first line, then one line per
-/// event in sequence order. A `Finished` terminal that only echoes the answer
-/// the finish tool's row above it already carried folds to a pointer — in the
-/// engine `finish` content is `finished: <answer>` and the terminal seals the
-/// same answer, so showing both rows would repeat the text.
+/// event in sequence order.
 fn format_session_text(session : @agent_session.Session) -> String {
   let lines : Array[String] = []
   lines.push("session: \{session.id().value()}")
@@ -1130,19 +1156,257 @@ fn format_session_text(session : @agent_session.Session) -> String {
   lines.push(
     "system: \{compact_label(system_first_line.to_owned(), SystemPromptExcerptChars)}",
   )
-  let mut previous_tool_answer : String? = None
   for event in session.events() {
-    lines.push(
-      match (event.item(), previous_tool_answer) {
-        (Terminal(Finished(answer)), Some(previous)) if answer == previous =>
-          "\{event.sequence()} terminal finished: (see tool result above)"
-        _ => format_session_event(event)
-      },
-    )
-    previous_tool_answer = match event.item() {
-      Tool(result) => Some(tool_answer_text(result))
-      _ => None
+    lines.push(format_session_event(event))
+  }
+  lines.join("\n")
+}
+
+///|
+/// The `export` subcommand's `--output`: write the Markdown to this file
+/// (resolved relative to the workspace root, mirroring `sessions compact
+/// --file`) instead of stdout. Empty means stdout.
+fn exported_output_path(
+  matches : @argparse.Matches,
+  workspace_root~ : String,
+) -> String? raise {
+  match matches {
+    { values: { "output": [path, ..], .. }, .. } => {
+      let trimmed = path.trim().to_owned()
+      if trimmed.is_empty() {
+        None
+      } else {
+        Some(@workspace_path.resolve(workspace_root, trimmed))
+      }
     }
+    _ => fail("missing parsed argument: output")
+  }
+}
+
+///|
+/// `openseek export <id>` — the durable session rendered as Markdown, the
+/// opencode `/export` shape: a `# title` header with session metadata, then
+/// one `## …` section per event in sequence order. Prints to stdout (so it
+/// pipes and saves cleanly), or to `--output`.
+async fn run_export_command(matches : @argparse.Matches) -> Unit {
+  let workspace_root = prepare_workspace_root(matches, log_created=false)
+  let store = @store.SessionStore(session_root(matches, workspace_root~))
+  let session = store.load(sessions_target_id(matches))
+  let markdown = session_markdown(session)
+  match exported_output_path(matches, workspace_root~) {
+    Some(path) =>
+      @fs.write_file(path, markdown, create_mode=CreateOrTruncate) catch {
+        error => fail("failed to write export: \{error}")
+      }
+    None => println(markdown)
+  }
+}
+
+///|
+/// The first user-role text of a session, untrimmed; empty for a session with
+/// no user message.
+fn first_user_content(session : @agent_session.Session) -> String {
+  for event in session.events() {
+    if event.item() is User(message) {
+      return message.content()
+    }
+  }
+  ""
+}
+
+///|
+/// The `# title` of an exported session: the first user prompt's first line
+/// collapsed to a single line (a heading cannot carry newlines), elided, or
+/// the session id when the session has no user message.
+fn session_export_title(session : @agent_session.Session) -> String {
+  let title = markdown_inline(first_user_content(session), PromptLabelMaxChars)
+  if title.is_empty() {
+    session.id().value()
+  } else {
+    title
+  }
+}
+
+///|
+/// Collapse `text` to a single inline Markdown line (see `compact_label`), but
+/// with no `-` placeholder: empty stays empty, so metadata lines can be
+/// omitted rather than shown as a dash.
+fn markdown_inline(text : String, max_chars : Int) -> String {
+  let label = compact_label(text, max_chars)
+  if label == "-" {
+    ""
+  } else {
+    label
+  }
+}
+
+///|
+/// A full UTC wall clock for export metadata, `YYYY-MM-DD HH:MM:SS UTC`.
+fn format_utc_datetime(seconds : Int64) -> String {
+  fn pad2(value : Int) -> String {
+    value.to_string().pad_start(2, '0')
+  }
+
+  let time = @time.unix(seconds) catch { _ => return "-" }
+  "\{time.year()}-\{pad2(time.month())}-\{pad2(time.day())} \{pad2(time.hour())}:\{pad2(time.minute())}:\{pad2(time.second())} UTC"
+}
+
+///|
+/// The session's first and last event stamps (unix milliseconds); both `None`
+/// for an empty session or one whose events carry no clock stamp.
+fn session_boundary_millis(
+  session : @agent_session.Session,
+) -> (Int64?, Int64?) {
+  let mut first : Int64? = None
+  let mut last : Int64? = None
+  for event in session.events() {
+    let millis = event.unix_ms()
+    if millis > 0L {
+      if first is None {
+        first = Some(millis)
+      }
+      last = Some(millis)
+    }
+  }
+  (first, last)
+}
+
+///|
+/// An assistant message split into Markdown blocks: reasoning, visible text,
+/// then one `**Tool: <name>**` block per requested tool call with its parsed
+/// argument JSON. Empty when the message carries none of these.
+fn assistant_export_blocks(
+  message : @agent_session.AssistantMessage,
+) -> Array[Array[String]] {
+  let blocks : Array[Array[String]] = []
+  match message.reasoning_content() {
+    Some(reasoning) if !reasoning.is_blank() =>
+      blocks.push(["_Thinking:_", "", reasoning.trim().to_owned()])
+    _ => ()
+  }
+  if !message.content().is_blank() {
+    blocks.push([message.content().trim().to_owned()])
+  }
+  for call in message.tool_calls() {
+    let block : Array[String] = ["**Tool: \{call.name}**", ""]
+    if !call.arguments.is_blank() {
+      block.push("Input:")
+      block.push("```json")
+      block.push(call.arguments)
+      block.push("```")
+    }
+    blocks.push(block)
+  }
+  blocks
+}
+
+///|
+/// Append one event's Markdown section to `lines`. See `session_markdown` for
+/// the shape; a `Terminal` that merely echoes the finish tool's answer above
+/// is folded there by the caller, never here.
+fn append_export_event(
+  lines : Array[String],
+  event : @agent_session.SessionEvent,
+) -> Unit {
+  match event.item() {
+    User(message) => {
+      lines.push("## User")
+      lines.push("")
+      let content = message.content().trim().to_owned()
+      if content.is_empty() {
+        lines.push("(no text)")
+      } else {
+        lines.push(content)
+      }
+    }
+    Assistant(message) => {
+      lines.push("## Assistant")
+      lines.push("")
+      let blocks = assistant_export_blocks(message)
+      if blocks.is_empty() {
+        lines.push("(no text)")
+      } else {
+        for index, block in blocks {
+          if index > 0 {
+            lines.push("")
+          }
+          lines.append(block)
+        }
+      }
+    }
+    Tool(result) => {
+      lines.push("## Tool: \{result.tool_name()}")
+      lines.push("")
+      lines.push("Output:")
+      lines.push("```")
+      lines.push(tool_answer_text(result))
+      lines.push("```")
+    }
+    Runtime(notice) => {
+      lines.push("## Runtime")
+      lines.push("")
+      lines.push(notice.content().trim().to_owned())
+    }
+    Summary(summary) => {
+      lines.push(
+        "## Summary (events \{summary.from_sequence()}..\{summary.to_sequence()})",
+      )
+      lines.push("")
+      lines.push(summary.content().trim().to_owned())
+    }
+    Terminal(terminal) => {
+      let (label, text) = match terminal {
+        Finished(text) => ("Finished", text)
+        Aborted(text) => ("Aborted", text)
+        Interrupted(text) => ("Interrupted", text)
+        Failed(text) => ("Failed", text)
+      }
+      lines.push("## \{label}")
+      lines.push("")
+      let text = text.trim().to_owned()
+      if text.is_empty() {
+        lines.push("(no text)")
+      } else {
+        lines.push(text)
+      }
+    }
+  }
+}
+
+///|
+/// `openseek export <id>` — one full Markdown rendering of a durable session,
+/// modeled on opencode's `/export` transcript: `# <title>` header (id, system
+/// prompt first line, created/updated) then a `---`-separated `## …` section
+/// per event. Every event renders as-is: the terminal's `Finished` text appears
+/// even when it repeats the finish tool's output above, because an export is a
+/// full transcript, not a deduplicated summary.
+fn session_markdown(session : @agent_session.Session) -> String {
+  let lines : Array[String] = []
+  lines.push("# \{session_export_title(session)}")
+  lines.push("")
+  lines.push("**Session ID:** \{session.id().value()}")
+  let system_head = match [..session.system_prompt().split("\n")] {
+    [first, ..] => markdown_inline(first.to_owned(), SystemPromptExcerptChars)
+    [] => ""
+  }
+  if system_head != "" {
+    lines.push("**System prompt:** \{system_head}")
+  }
+  let (created, updated) = session_boundary_millis(session)
+  if created is Some(millis) {
+    lines.push("**Created:** \{format_utc_datetime(millis / 1000)}")
+  }
+  if updated is Some(millis) {
+    lines.push("**Updated:** \{format_utc_datetime(millis / 1000)}")
+  }
+  lines.push("")
+  lines.push("---")
+  lines.push("")
+  for event in session.events() {
+    append_export_event(lines, event)
+    lines.push("")
+    lines.push("---")
+    lines.push("")
   }
   lines.join("\n")
 }
@@ -2213,7 +2477,7 @@ test "session show text renders tool-only assistants and error terminals" {
 }
 
 ///|
-test "session show text folds a terminal that only echoes the finish tool answer" {
+test "session show text keeps a terminal answer that echoes a tool result" {
   let session = @agent_session.Session(
       SessionId("demo"),
       system_prompt="system",
@@ -2233,9 +2497,105 @@ test "session show text folds a terminal that only echoes the finish tool answer
   assert_true(text.contains("\n1 user: go"))
   // The `finished: ` status marker is not repeated against the tool name.
   assert_true(text.contains("\n2 tool finish: all done"))
-  assert_false(text.contains("finished: all done"))
-  // The terminal row points at the tool row instead of repeating the answer.
-  assert_true(text.contains("\n3 terminal finished: (see tool result above)"))
+  // The terminal renders its own text; it is not folded away even when that
+  // text repeats the finish tool's answer above.
+  assert_true(text.contains("\n3 terminal finished: all done"))
+}
+
+///|
+test "export parses its id and --output" {
+  let default_parsed = export_matches(argv=["demo"], env=Map([]))
+  assert_eq(sessions_target_id(default_parsed).value(), "demo")
+  assert_true(
+    exported_output_path(default_parsed, workspace_root="/tmp/w") is None,
+  )
+  let file_parsed = export_matches(
+    argv=["demo", "--output", "out.md"],
+    env=Map([]),
+  )
+  assert_true(
+    exported_output_path(file_parsed, workspace_root="/tmp/w") ==
+    Some("/tmp/w/out.md"),
+  )
+}
+
+///|
+test "export renders a session as markdown" {
+  let session = @agent_session.Session(
+      SessionId("demo"),
+      system_prompt="System prompt.\nsecond line",
+    )
+    .append(User(UserMessage("hello world")))
+    .append(Assistant(AssistantMessage("hi")))
+    .append(Terminal(Finished("done")))
+  let md = session_markdown(session)
+  assert_true(md.has_prefix("# hello world\n"))
+  assert_true(md.contains("\n**Session ID:** demo\n"))
+  assert_true(md.contains("**System prompt:** System prompt."))
+  // The session id stands in as the title when there is no user message, and
+  // the prompt's second line never leaks past the one-line header.
+  assert_false(md.contains("second line"))
+  assert_true(md.contains("\n## User\n\nhello world\n"))
+  assert_true(md.contains("\n## Assistant\n\nhi\n"))
+  assert_true(md.contains("\n## Finished\n\ndone\n"))
+  // A message separator sits between the sections.
+  assert_true(md.contains("hello world\n\n---\n\n## Assistant"))
+}
+
+///|
+test "export renders assistant tool calls with input json" {
+  let session = @agent_session.Session(SessionId("demo"), system_prompt="s").append(
+    Assistant(
+      AssistantMessage("", tool_calls=[
+        ToolCall(id="c1", name="edit", arguments="{\"path\":\"a.mbt\"}"),
+      ]),
+    ),
+  )
+  let md = session_markdown(session)
+  assert_true(md.contains("\n## Assistant\n\n**Tool: edit**\n"))
+  assert_true(md.contains("Input:\n```json\n{\"path\":\"a.mbt\"}\n```"))
+}
+
+///|
+test "export strips tool status markers and keeps the terminal answer" {
+  let session = @agent_session.Session(SessionId("demo"), system_prompt="s")
+    .append(User(UserMessage("go")))
+    .append(
+      Tool(
+        ToolResult(
+          tool_call_id="c1",
+          tool_name="finish",
+          content="finished: all done",
+        ),
+      ),
+    )
+    .append(Terminal(Finished("all done")))
+  let md = session_markdown(session)
+  // The status marker is not repeated next to the tool name…
+  assert_true(md.contains("\n## Tool: finish\n\nOutput:\n```\nall done\n```\n"))
+  assert_false(md.contains("finished: all done"))
+  // …and the terminal renders its own answer even when it matches the tool's.
+  assert_true(md.contains("\n## Finished\n\nall done\n"))
+}
+
+///|
+async test "export writes --output relative to the workspace" {
+  @vfs.with_tmpdir(prefix="openseek-cli-export-", root => {
+    let store = @store.SessionStore(root)
+    store.create(
+      @agent_session.Session(SessionId("demo"), system_prompt="s").append(
+        User(UserMessage("hello")),
+      ),
+    )
+    let parsed = export_matches(
+      argv=["demo", "--dir", root, "--session-root", root, "--output", "out.md"],
+      env=Map([]),
+    )
+    run_export_command(parsed)
+    let written = @fs.read_file("\{root}/out.md").text()
+    assert_true(written.has_prefix("# hello\n"))
+    assert_true(written.contains("**Session ID:** demo"))
+  })
 }
 
 ///|
