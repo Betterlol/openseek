@@ -784,7 +784,7 @@ fn root_command() -> @argparse.Command {
               OptionArg(
                 "format",
                 long="format",
-                default_values=["text"],
+                default_values=["json"],
                 about="Output format: text or json.",
               ),
             ],
@@ -2387,17 +2387,17 @@ test "session list format defaults to text and rejects unknown values" {
 }
 
 ///|
-test "session show format defaults to text and shares the list grammar" {
+test "session show format defaults to json and accepts text explicitly" {
   let default_format = sessions_leaf_matches(sub="show", argv=["demo"], env={
     "DEEPSEEK": "k",
   })
-  assert_true(session_format(default_format) is Text)
-  let json_format = sessions_leaf_matches(
+  assert_true(session_format(default_format) is Json)
+  let text_format = sessions_leaf_matches(
     sub="show",
-    argv=["demo", "--format", "json"],
+    argv=["demo", "--format", "text"],
     env=Map([]),
   )
-  assert_true(session_format(json_format) is Json)
+  assert_true(session_format(text_format) is Text)
   let bogus = sessions_leaf_matches(
     sub="show",
     argv=["demo", "--format", "yaml"],
