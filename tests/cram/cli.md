@@ -31,6 +31,7 @@ Commands:
   review    Read-only code review of base...HEAD; prints a JSON ReviewReport.
   subrun    INTERNAL: run one subagent kind as a child of this engine (input JSON on stdin; stdin EOF cancels).
   sessions  Manage durable sessions.
+  export    Export a durable session as Markdown on stdout (or --output).
 
 Options:
   -h, --help                     Show help information.
