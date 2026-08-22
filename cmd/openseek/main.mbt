@@ -1099,52 +1099,11 @@ fn tool_answer_text(result : @agent_session.ToolResult) -> String {
 }
 
 ///|
-/// One `sessions show --format text` event row: `<seq> <kind>: <detail>`.
-/// Every detail is collapsed to a single line so `grep`, scrolling, and
-/// paste-into-terminal all see plain rows.
-fn format_session_event(event : @agent_session.SessionEvent) -> String {
-  let sequence = event.sequence()
-  match event.item() {
-    User(message) =>
-      "\{sequence} user: \{compact_label(message.content(), SessionTextLineMaxChars)}"
-    Assistant(message) =>
-      if message.content().is_blank() {
-        let calls = message.tool_calls()
-        if calls.length() == 0 {
-          "\{sequence} assistant: (no text)"
-        } else if calls.length() == 1 {
-          "\{sequence} assistant: tool call \{calls[0].name}"
-        } else {
-          let names = calls.map(call => call.name).join(", ")
-          "\{sequence} assistant: tool calls \{names}"
-        }
-      } else {
-        "\{sequence} assistant: \{compact_label(message.content(), SessionTextLineMaxChars)}"
-      }
-    Tool(result) =>
-      "\{sequence} tool \{result.tool_name()}: \{compact_label(tool_answer_text(result), SessionDetailMaxChars)}"
-    Runtime(notice) =>
-      "\{sequence} notice: \{compact_label(notice.content(), SessionDetailMaxChars)}"
-    Summary(summary) =>
-      "\{sequence} summary \{summary.from_sequence()}..\{summary.to_sequence()}: \{compact_label(summary.content(), SessionDetailMaxChars)}"
-    Terminal(terminal) =>
-      match terminal {
-        Finished(text) =>
-          "\{sequence} terminal finished: \{compact_label(text, SessionDetailMaxChars)}"
-        Aborted(text) =>
-          "\{sequence} terminal aborted: \{compact_label(text, SessionDetailMaxChars)}"
-        Interrupted(text) =>
-          "\{sequence} terminal interrupted: \{compact_label(text, SessionDetailMaxChars)}"
-        Failed(text) =>
-          "\{sequence} terminal failed: \{compact_label(text, SessionDetailMaxChars)}"
-      }
-  }
-}
-
-///|
 /// `sessions show --format text`: a header naming the session and its size,
 /// one `system:` line reduced to the prompt's first line, then one line per
-/// event in sequence order.
+/// event in sequence order. `User` and `Assistant` events are the main
+/// narrative nodes; `Tool`, `Runtime`, `Summary`, and `Terminal` events are
+/// indented under the preceding main node as supplementary detail.
 fn format_session_text(session : @agent_session.Session) -> String {
   let lines : Array[String] = []
   lines.push("session: \{session.id().value()}")
@@ -1157,7 +1116,54 @@ fn format_session_text(session : @agent_session.Session) -> String {
     "system: \{compact_label(system_first_line.to_owned(), SystemPromptExcerptChars)}",
   )
   for event in session.events() {
-    lines.push(format_session_event(event))
+    let seq = event.sequence()
+    match event.item() {
+      User(message) =>
+        lines.push(
+          "\{seq} user: \{compact_label(message.content(), SessionTextLineMaxChars)}",
+        )
+      Assistant(message) => {
+        let detail = if message.content().is_blank() {
+          let calls = message.tool_calls()
+          if calls.length() == 0 {
+            "(no text)"
+          } else if calls.length() == 1 {
+            "tool call \{calls[0].name}"
+          } else {
+            let names = calls.map(call => call.name).join(", ")
+            "tool calls \{names}"
+          }
+        } else {
+          message.content()
+        }
+        lines.push(
+          "\{seq} assistant: \{compact_label(detail, SessionTextLineMaxChars)}",
+        )
+      }
+      Tool(result) =>
+        lines.push(
+          "  → tool \{result.tool_name()}: \{compact_label(tool_answer_text(result), SessionDetailMaxChars)}",
+        )
+      Runtime(notice) =>
+        lines.push(
+          "  → notice: \{compact_label(notice.content(), SessionDetailMaxChars)}",
+        )
+      Summary(summary) =>
+        lines.push(
+          "  → summary \{summary.from_sequence()}..\{summary.to_sequence()}: \{compact_label(summary.content(), SessionDetailMaxChars)}",
+        )
+      Terminal(terminal) => {
+        let (label, text) = match terminal {
+          Finished(text) => ("finished", text)
+          Aborted(text) => ("aborted", text)
+          Interrupted(text) => ("interrupted", text)
+          Failed(text) => ("failed", text)
+        }
+        lines.push(
+          "  → terminal \{label}: \{compact_label(text, SessionDetailMaxChars)}",
+        )
+      }
+    }
   }
   lines.join("\n")
 }
@@ -1219,7 +1225,10 @@ fn first_user_content(session : @agent_session.Session) -> String {
 /// collapsed to a single line (a heading cannot carry newlines), elided, or
 /// the session id when the session has no user message.
 fn session_export_title(session : @agent_session.Session) -> String {
-  let title = markdown_inline(first_user_content(session), PromptLabelMaxChars)
+  let title = markdown_inline(
+    first_user_content(session),
+    SessionTextLineMaxChars,
+  )
   if title.is_empty() {
     session.id().value()
   } else {
@@ -1242,12 +1251,13 @@ fn markdown_inline(text : String, max_chars : Int) -> String {
 
 ///|
 /// A full UTC wall clock for export metadata, `YYYY-MM-DD HH:MM:SS UTC`.
-fn format_utc_datetime(seconds : Int64) -> String {
+/// Accepts Unix milliseconds (as returned by `SessionEvent::unix_ms`).
+fn format_utc_datetime(millis : Int64) -> String {
   fn pad2(value : Int) -> String {
     value.to_string().pad_start(2, '0')
   }
 
-  let time = @time.unix(seconds) catch { _ => return "-" }
+  let time = @time.unix(millis / 1000) catch { _ => return "-" }
   "\{time.year()}-\{pad2(time.month())}-\{pad2(time.day())} \{pad2(time.hour())}:\{pad2(time.minute())}:\{pad2(time.second())} UTC"
 }
 
@@ -1261,7 +1271,7 @@ fn session_boundary_millis(
   let mut last : Int64? = None
   for event in session.events() {
     let millis = event.unix_ms()
-    if millis > 0L {
+    if millis >= 0L {
       if first is None {
         first = Some(millis)
       }
@@ -1281,11 +1291,15 @@ fn assistant_export_blocks(
   let blocks : Array[Array[String]] = []
   match message.reasoning_content() {
     Some(reasoning) if !reasoning.is_blank() =>
-      blocks.push(["_Thinking:_", "", reasoning.trim().to_owned()])
+      blocks.push([
+        "_Thinking:_",
+        "",
+        markdown_escape(reasoning.trim().to_owned()),
+      ])
     _ => ()
   }
   if !message.content().is_blank() {
-    blocks.push([message.content().trim().to_owned()])
+    blocks.push([markdown_escape(message.content().trim().to_owned())])
   }
   for call in message.tool_calls() {
     let block : Array[String] = ["**Tool: \{call.name}**", ""]
@@ -1298,6 +1312,44 @@ fn assistant_export_blocks(
     blocks.push(block)
   }
   blocks
+}
+
+///|
+/// Escape Markdown special characters in user-supplied text so it renders
+/// literally rather than being interpreted as formatting syntax. Handles the
+/// ASCII punctuation that has meaning in the CommonMark subset we use.
+fn markdown_escape(text : String) -> String {
+  let out = StringBuilder()
+  for ch in text {
+    out.write_char(
+      match ch {
+        '\\'
+        | '`'
+        | '*'
+        | '_'
+        | '{'
+        | '}'
+        | '['
+        | ']'
+        | '('
+        | ')'
+        | '#'
+        | '+'
+        | '-'
+        | '.'
+        | '!'
+        | '|'
+        | '~'
+        | '<'
+        | '>' => {
+          out.write_char('\\')
+          ch
+        }
+        _ => ch
+      },
+    )
+  }
+  out.to_string()
 }
 
 ///|
@@ -1316,7 +1368,7 @@ fn append_export_event(
       if content.is_empty() {
         lines.push("(no text)")
       } else {
-        lines.push(content)
+        lines.push(markdown_escape(content))
       }
     }
     Assistant(message) => {
@@ -1345,14 +1397,14 @@ fn append_export_event(
     Runtime(notice) => {
       lines.push("## Runtime")
       lines.push("")
-      lines.push(notice.content().trim().to_owned())
+      lines.push(markdown_escape(notice.content().trim().to_owned()))
     }
     Summary(summary) => {
       lines.push(
         "## Summary (events \{summary.from_sequence()}..\{summary.to_sequence()})",
       )
       lines.push("")
-      lines.push(summary.content().trim().to_owned())
+      lines.push(markdown_escape(summary.content().trim().to_owned()))
     }
     Terminal(terminal) => {
       let (label, text) = match terminal {
@@ -1367,7 +1419,7 @@ fn append_export_event(
       if text.is_empty() {
         lines.push("(no text)")
       } else {
-        lines.push(text)
+        lines.push(markdown_escape(text))
       }
     }
   }
@@ -1394,10 +1446,10 @@ fn session_markdown(session : @agent_session.Session) -> String {
   }
   let (created, updated) = session_boundary_millis(session)
   if created is Some(millis) {
-    lines.push("**Created:** \{format_utc_datetime(millis / 1000)}")
+    lines.push("**Created:** \{format_utc_datetime(millis)}")
   }
   if updated is Some(millis) {
-    lines.push("**Updated:** \{format_utc_datetime(millis / 1000)}")
+    lines.push("**Updated:** \{format_utc_datetime(millis)}")
   }
   lines.push("")
   lines.push("---")
@@ -2436,8 +2488,8 @@ test "session show text summarizes events without dumping the system prompt" {
   assert_true(text.contains("events: 4"))
   assert_true(text.contains("\n1 user: hello world"))
   assert_true(text.contains("\n2 assistant: hi"))
-  assert_true(text.contains("\n3 tool finish: completed"))
-  assert_true(text.contains("\n4 terminal finished: done"))
+  assert_true(text.contains("\n  → tool finish: completed"))
+  assert_true(text.contains("\n  → terminal finished: done"))
   // The multi-kilobyte system prompt is reduced to its first line; the filler
   // below it must not leak into the readable listing.
   assert_true(text.contains("system: You are a coding agent."))
@@ -2472,8 +2524,8 @@ test "session show text renders tool-only assistants and error terminals" {
     .append(Terminal(Failed("boom")))
   let text = format_session_text(session)
   assert_true(text.contains("\n1 assistant: tool call edit"))
-  assert_true(text.contains("\n2 tool edit: edited 2 files"))
-  assert_true(text.contains("\n3 terminal failed: boom"))
+  assert_true(text.contains("\n  → tool edit: edited 2 files"))
+  assert_true(text.contains("\n  → terminal failed: boom"))
 }
 
 ///|
@@ -2496,10 +2548,10 @@ test "session show text keeps a terminal answer that echoes a tool result" {
   let text = format_session_text(session)
   assert_true(text.contains("\n1 user: go"))
   // The `finished: ` status marker is not repeated against the tool name.
-  assert_true(text.contains("\n2 tool finish: all done"))
+  assert_true(text.contains("\n  → tool finish: all done"))
   // The terminal renders its own text; it is not folded away even when that
   // text repeats the finish tool's answer above.
-  assert_true(text.contains("\n3 terminal finished: all done"))
+  assert_true(text.contains("\n  → terminal finished: all done"))
 }
 
 ///|
