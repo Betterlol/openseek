@@ -48,20 +48,19 @@ fn platform_app_data_dir() -> @pathx.Path? {
 /// determined or created; callers then fall back to runtime defaults.
 pub async fn prepared_runtime_dir(executable : String) -> @pathx.Path? {
   guard app_runtime_dir(executable) is Some(dir) else { return None }
+  // Try to migrate from any legacy path first, regardless of whether the
+  // new path already exists. This handles the case where a previous run
+  // of this version already created an empty new directory — the old data
+  // would otherwise stay orphaned in the legacy location.
+  migrate_legacy_runtime_dir(dir)
   let exists = (@fs.kind(dir.to_string()) is Directory) catch {
     @os_error.OSError(_) as os_error if os_error.is_ENOENT() => false
     error => raise error
   }
   if !exists {
-    migrate_legacy_runtime_dir(dir)
-    let exists_after = (@fs.kind(dir.to_string()) is Directory) catch {
-      _ => false
-    }
-    if !exists_after {
-      @fs.mkdir(dir.to_string(), recursive=true) catch {
-        error if @async.is_being_cancelled() => raise error
-        _ => return None
-      }
+    @fs.mkdir(dir.to_string(), recursive=true) catch {
+      error if @async.is_being_cancelled() => raise error
+      _ => return None
     }
   }
   Some(dir)
@@ -86,20 +85,17 @@ async fn migrate_legacy_runtime_dir(new_dir : @pathx.Path) -> Unit {
 
 ///|
 /// Legacy runtime directory paths that earlier versions wrote to. Returns
-/// them in preference order: the most recent or intentional path first.
+/// all known legacy paths, regardless of the current platform, so a user
+/// switching machines or with a shared home directory gets their data
+/// migrated. Ordered by preference: the most intentional path first.
 fn legacy_runtime_dirs() -> Array[@pathx.Path] {
   let dirs : Array[@pathx.Path] = []
   guard @home.dir() is Some(home) else { return dirs }
-  if @platform.is_darwin() {
-    // macOS had no legacy path — the current path is the same as before.
-  } else {
-    // The old intentional fallback for all non-macOS.
-    dirs.push(home.join(".openseek-desktop"))
-    // The buggy path that the old directory-probe code could produce on
-    // Windows (and less likely on Linux) when ~/Library/Application Support
-    // happened to exist for unrelated reasons.
-    dirs.push(home.join("Library").join("Application Support").join("SeekMoon"))
-  }
+  // The old intentional fallback for all non-macOS.
+  dirs.push(home.join(".openseek-desktop"))
+  // The macOS path, also produced on Windows by the old directory-probe
+  // bug when ~/Library/Application Support happened to exist.
+  dirs.push(home.join("Library").join("Application Support").join("SeekMoon"))
   dirs
 }
 
