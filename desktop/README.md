@@ -266,7 +266,8 @@ Codex conversations appear beside OpenSeek conversations in the Desktop's
 global left sidebar; selecting one uses the same main transcript/composer area,
 backed by Codex's `app-server` mode and an isolated `CODEX_HOME` under the
 app's per-user runtime directory (`~/Library/Application Support/SeekMoon/codex`
-on macOS, `~/.openseek-desktop/codex` elsewhere). The Desktop never touches the
+on macOS, `%LOCALAPPDATA%\SeekMoon\codex` on Windows,
+`$XDG_DATA_HOME/SeekMoon/codex` on Linux). The Desktop never touches the
 CLI's `~/.codex`: Codex account, config, threads, and worktrees in the Desktop
 are separate from the CLI, and the first run requires a Desktop-side sign-in.
 OpenSeek does not bundle the Codex CLI or store its credentials.

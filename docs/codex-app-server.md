@@ -114,7 +114,8 @@ OpenSeek Desktop gives its app-server a dedicated `CODEX_HOME` instead of
 sharing the CLI's `~/.codex`:
 
 - macOS: `~/Library/Application Support/SeekMoon/codex`
-- Linux and other POSIX: `~/.openseek-desktop/codex`
+- Windows: `%LOCALAPPDATA%\SeekMoon\codex`
+- Linux and other POSIX: `$XDG_DATA_HOME/SeekMoon/codex` (fallback `~/.local/share/SeekMoon/codex`)
 - development (unbundled Moon host): `<checkout>/desktop/target/dev-state/codex`
 
 The directory is created at startup and restricted to its owner with mode
