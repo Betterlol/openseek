@@ -53,12 +53,54 @@ pub async fn prepared_runtime_dir(executable : String) -> @pathx.Path? {
     error => raise error
   }
   if !exists {
-    @fs.mkdir(dir.to_string(), recursive=true) catch {
-      error if @async.is_being_cancelled() => raise error
-      _ => return None
+    migrate_legacy_runtime_dir(dir)
+    let exists_after = (@fs.kind(dir.to_string()) is Directory) catch {
+      _ => false
+    }
+    if !exists_after {
+      @fs.mkdir(dir.to_string(), recursive=true) catch {
+        error if @async.is_being_cancelled() => raise error
+        _ => return None
+      }
     }
   }
   Some(dir)
+}
+
+///|
+/// One-time migration from legacy runtime directory paths used by earlier
+/// versions. Best-effort: failures are silently ignored.
+async fn migrate_legacy_runtime_dir(new_dir : @pathx.Path) -> Unit {
+  for legacy in legacy_runtime_dirs() {
+    let is_dir = (@fs.kind(legacy.to_string()) is Directory) catch {
+      _ => false
+    }
+    if is_dir {
+      @fs.rename(legacy.to_string(), new_dir.to_string(), replace=false) catch {
+        _ => ()
+      }
+      return
+    }
+  }
+}
+
+///|
+/// Legacy runtime directory paths that earlier versions wrote to. Returns
+/// them in preference order: the most recent or intentional path first.
+fn legacy_runtime_dirs() -> Array[@pathx.Path] {
+  let dirs : Array[@pathx.Path] = []
+  guard @home.dir() is Some(home) else { return dirs }
+  if @platform.is_darwin() {
+    // macOS had no legacy path — the current path is the same as before.
+  } else {
+    // The old intentional fallback for all non-macOS.
+    dirs.push(home.join(".openseek-desktop"))
+    // The buggy path that the old directory-probe code could produce on
+    // Windows (and less likely on Linux) when ~/Library/Application Support
+    // happened to exist for unrelated reasons.
+    dirs.push(home.join("Library").join("Application Support").join("SeekMoon"))
+  }
+  dirs
 }
 
 ///|
