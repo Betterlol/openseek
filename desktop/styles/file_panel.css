@@ -675,6 +675,41 @@ html.is-resizing * {
   font: inherit;
   font-size: var(--font-size-sm);
 }
+.search-semantic-source {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.search-semantic-source input {
+  flex: 1 1 auto;
+}
+.search-semantic-source > .search-option {
+  min-width: 58px;
+  justify-content: start;
+  font-size: var(--font-size-xs);
+}
+.search-builtin-rules {
+  display: grid;
+  gap: 2px;
+}
+.search-builtin-rules .search-option {
+  justify-content: start;
+  min-width: 0;
+  text-align: left;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+}
+.search-semantic-input-hint {
+  flex: 1 1 120px;
+  min-width: 80px;
+  height: 28px;
+  padding: 5px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xs);
+  background: var(--color-bg-subtle);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
 .search-toolbar {
   display: flex;
   flex-wrap: wrap;

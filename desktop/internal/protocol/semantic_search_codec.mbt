@@ -39,9 +39,9 @@ pub impl FromJson for SearchSemanticPayload with fn from_json(json, path) {
   let object = JsonObject::decode(json, path, "semantic-search payload")
   {
     root: object.required_string("root"),
-    query: object.required_string("query"),
-    rules_dir: object.required_string("rules_dir"),
-    enable_builtin_rules: object.required_bool("enable_builtin_rules"),
+    patterns: object.required_string_array("patterns"),
+    rule_files: object.required_string_array("rule_files"),
+    builtin_rules: object.required_string_array("builtin_rules"),
     exclude_glob: object.required_string("exclude_glob"),
     session_key: object.required_string("session_key"),
     generation: require_text_search_non_negative(
@@ -61,9 +61,9 @@ pub impl FromJson for SearchSemanticPayload with fn from_json(json, path) {
 pub impl ToJson for SearchSemanticPayload with fn to_json(self) {
   {
     "root": self.root,
-    "query": self.query,
-    "rules_dir": self.rules_dir,
-    "enable_builtin_rules": self.enable_builtin_rules,
+    "patterns": self.patterns,
+    "rule_files": self.rule_files,
+    "builtin_rules": self.builtin_rules,
     "exclude_glob": self.exclude_glob,
     "session_key": self.session_key,
     "generation": self.generation,
