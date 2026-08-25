@@ -313,7 +313,7 @@ fn semantic_search_args(
       args.append(["--rule", rule_file])
     }
   }
-  if !payload.builtin_rules.is_empty() {
+  if payload.builtin_rules_enabled {
     args.push("--enable-builtin-rules")
     let builtin_rule_ids = [
       "moonbitlang/catch_all", "moonbitlang/inspect_boolean", "moonbitlang/inspect_number",
@@ -512,7 +512,7 @@ async fn run_semantic_search(
   let native_root = root.to_string()
   if payload.patterns.is_empty() &&
     payload.rule_files.is_empty() &&
-    payload.builtin_rules.is_empty() {
+    (!payload.builtin_rules_enabled || payload.builtin_rules.is_empty()) {
     return empty_semantic_search_reply(reply_root, payload.generation, error={
       code: "invalid_request",
       message: "Provide a structural code pattern, a rule file, or select built-in rules.",
@@ -673,6 +673,7 @@ test "semantic search builds moonx and bundled moongrep invocations" {
     root: "/work",
     patterns: ["inspect($(x:arg))"],
     rule_files: [],
+    builtin_rules_enabled: false,
     builtin_rules: [],
     exclude_glob: "",
     session_key: "sem:one",
@@ -687,6 +688,7 @@ test "semantic search builds moonx and bundled moongrep invocations" {
     ..pattern,
     patterns: [],
     rule_files: ["/work/.moongrep/rules/match.yaml"],
+    builtin_rules_enabled: true,
     builtin_rules: ["moonbitlang/catch_all"],
   }
   assert_eq(semantic_search_args("/opt/bin/moongrep", rules), [
@@ -741,6 +743,7 @@ async test "semantic search argument validation requires a rule source" {
     root: resource_root,
     patterns: [],
     rule_files: [],
+    builtin_rules_enabled: false,
     builtin_rules: [],
     exclude_glob: "",
     session_key: "sem:none",
@@ -766,6 +769,7 @@ async test "cancel-before-semantic-search frontier rejects the stale generation"
       root: resource_root,
       patterns: ["foo()"],
       rule_files: [],
+      builtin_rules_enabled: false,
       builtin_rules: [],
       exclude_glob: "",
       session_key: "sem:stale",

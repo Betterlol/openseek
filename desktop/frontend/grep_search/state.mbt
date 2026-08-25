@@ -16,6 +16,7 @@ fn fresh_page() -> Page {
     include_glob: "",
     exclude_glob: "",
     semantic_sources: [{ kind: Pattern, value: "" }],
+    builtin_rules_enabled: false,
     builtin_rules: [],
     matches: [],
     semantic_hits: [],
@@ -46,6 +47,7 @@ pub fn State::reset_checkout(self : State) -> State {
       generation,
       mode: self.page.mode,
       semantic_sources: self.page.semantic_sources,
+      builtin_rules_enabled: self.page.builtin_rules_enabled,
       builtin_rules: self.page.builtin_rules,
     },
     generation,
@@ -69,7 +71,7 @@ fn State::schedule(
     Text => !page.query.is_empty()
     Semantic =>
       page.semantic_sources.any(source => !source.value.trim().is_empty()) ||
-      !page.builtin_rules.is_empty()
+      (page.builtin_rules_enabled && !page.builtin_rules.is_empty())
   }
   let page = if !has_query || input.root is None {
     {
@@ -128,6 +130,11 @@ pub fn State::handle(self : State, msg : Msg, input : Input) -> State {
         {
           ..page,
           mode,
+          details_open: if mode is Semantic {
+            true
+          } else {
+            false
+          },
           matches: [],
           semantic_hits: [],
           partial: false,
@@ -200,6 +207,19 @@ pub fn State::handle(self : State, msg : Msg, input : Input) -> State {
         immediate=false,
       )
     }
+    ToggleBuiltinRules => {
+      let enabled = !page.builtin_rules_enabled
+      let rules = if enabled && page.builtin_rules.is_empty() {
+        builtin_rule_ids()
+      } else {
+        page.builtin_rules
+      }
+      self.schedule(
+        { ..page, builtin_rules_enabled: enabled, builtin_rules: rules },
+        input,
+        immediate=false,
+      )
+    }
     ToggleBuiltinRule(rule_id) => {
       let rules = if page.builtin_rules.contains(rule_id) {
         page.builtin_rules.filter(rule => rule != rule_id)
@@ -208,7 +228,11 @@ pub fn State::handle(self : State, msg : Msg, input : Input) -> State {
         rules.push(rule_id)
         rules
       }
-      self.schedule({ ..page, builtin_rules: rules }, input, immediate=false)
+      self.schedule(
+        { ..page, builtin_rules_enabled: true, builtin_rules: rules },
+        input,
+        immediate=false,
+      )
     }
     Submit | Refresh => self.schedule(page, input, immediate=true)
     ClearResults => {
@@ -461,13 +485,14 @@ fn Page::semantic_request_payload(
   })
   guard !patterns.is_empty() ||
     !rule_files.is_empty() ||
-    !self.builtin_rules.is_empty() else {
+    (self.builtin_rules_enabled && !self.builtin_rules.is_empty()) else {
     return None
   }
   Some({
     root: root.path,
     patterns,
     rule_files,
+    builtin_rules_enabled: self.builtin_rules_enabled,
     builtin_rules: self.builtin_rules,
     exclude_glob: self.exclude_glob,
     session_key: "semantic-search:\{input.owner.channel.uri_authority()}:\{input.owner.session}:\{root.path}",

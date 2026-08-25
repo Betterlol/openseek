@@ -220,8 +220,12 @@ fn mode_options(page : Page, emit : @cmd.Emit[Msg]) -> @html.Html {
     ])
   } else {
     @html.div(class="search-mode-options", [
-      @html.span(class="search-option-label", "Built-in rules"),
-      @html.button(on_click=emit(ToggleDetails), "Configure"),
+      toggle_button(
+        "♯",
+        "Use Built-in Rules",
+        page.builtin_rules_enabled,
+        emit(ToggleBuiltinRules),
+      ),
     ])
   }
 }
@@ -759,10 +763,12 @@ fn page_view(
             ),
           )
         }
-        @html.div(
-          class="search-details",
-          sources + [@html.div(class="search-builtin-rules", builtin)],
-        )
+        let builtin_details = if page.builtin_rules_enabled {
+          @html.div(class="search-builtin-rules", builtin)
+        } else {
+          @html.nothing
+        }
+        @html.div(class="search-details", sources + [builtin_details])
       }
     }
   } else {
@@ -770,6 +776,7 @@ fn page_view(
   }
   @html.div(class="workspace-search", [
     @html.div(class="search-query-row", [
+      mode_control(page.mode, emit),
       if page.mode is Text {
         @html.input(
           input_type=@html.InputType::Text,
@@ -779,12 +786,8 @@ fn page_view(
           attrs=query_key_attrs(emit),
         )
       } else {
-        @html.span(
-          class="search-semantic-input-hint",
-          "Configure pattern or rule below",
-        )
+        @html.nothing
       },
-      mode_control(page.mode, emit),
       mode_options(page, emit),
       @html.button(
         class=if page.details_open {

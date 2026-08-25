@@ -399,11 +399,12 @@ pub(all) struct CancelSearchTextPayload {
 /// contract exactly, so one panel can own both modes without replaying an old
 /// semantic reply as current text results. `patterns` and `rule_files` are
 /// independently repeatable moongrep sources. `builtin_rules` contains the
-/// selected embedded rule ids; an empty array disables embedded rules.
+/// selected embedded rule ids when `builtin_rules_enabled` is true.
 pub(all) struct SearchSemanticPayload {
   root : String
   patterns : Array[String]
   rule_files : Array[String]
+  builtin_rules_enabled : Bool
   builtin_rules : Array[String]
   exclude_glob : String
   session_key : String

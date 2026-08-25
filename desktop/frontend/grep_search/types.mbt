@@ -63,6 +63,7 @@ struct Page {
   include_glob : String
   exclude_glob : String
   semantic_sources : Array[SemanticSource]
+  builtin_rules_enabled : Bool
   builtin_rules : Array[String]
   matches : Array[@protocol.TextSearchMatch]
   semantic_hits : Array[@protocol.SemanticSearchHit]
@@ -133,6 +134,7 @@ pub(all) enum Msg {
   SemanticSourceKindChanged(Int, SemanticSourceKind)
   AddSemanticSource
   RemoveSemanticSource(Int)
+  ToggleBuiltinRules
   ToggleBuiltinRule(String)
   Submit
   Refresh

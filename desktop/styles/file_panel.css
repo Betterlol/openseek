@@ -675,6 +675,9 @@ html.is-resizing * {
   font: inherit;
   font-size: var(--font-size-sm);
 }
+.search-query-row > .search-mode {
+  order: -1;
+}
 .search-semantic-source {
   display: flex;
   align-items: center;
