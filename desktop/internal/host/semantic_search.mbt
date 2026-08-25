@@ -308,25 +308,6 @@ fn semantic_search_args(
       args.append(["--pattern", pattern])
     }
   }
-  for rule_file in payload.rule_files {
-    if !rule_file.is_empty() {
-      args.append(["--rule", rule_file])
-    }
-  }
-  if !payload.builtin_rules.is_empty() {
-    args.push("--enable-builtin-rules")
-    let builtin_rule_ids = [
-      "moonbitlang/catch_all", "moonbitlang/inspect_boolean", "moonbitlang/inspect_number",
-      "moonbitlang/match_option", "moonbitlang/unnessary_else", "moonbitlang/simplifiable_assignment",
-      "moonbitlang/cstyle_forward_simple_forloop", "moonbitlang/cstyle_backward_simple_forloop",
-      "moonbitlang/cstyle_forward_array_iteration", "moonbitlang/cstyle_backward_array_iteration",
-    ]
-    for rule_id in builtin_rule_ids {
-      if !payload.builtin_rules.contains(rule_id) {
-        args.append(["--exclude-rule", rule_id])
-      }
-    }
-  }
   for entry in payload.exclude_glob.split(",") {
     let dir = entry.trim().to_owned()
     if !dir.is_empty() {
@@ -510,9 +491,7 @@ async fn run_semantic_search(
 ) -> SearchSemanticReply {
   let reply_root = root.resource_path()
   let native_root = root.to_string()
-  if payload.patterns.is_empty() &&
-    payload.rule_files.is_empty() &&
-    payload.builtin_rules.is_empty() {
+  if payload.patterns.is_empty() {
     return empty_semantic_search_reply(reply_root, payload.generation, error={
       code: "invalid_request",
       message: "Provide a structural code pattern, a rule file, or select built-in rules.",
@@ -672,8 +651,6 @@ test "semantic search builds moonx and bundled moongrep invocations" {
   let pattern : SearchSemanticPayload = {
     root: "/work",
     patterns: ["inspect($(x:arg))"],
-    rule_files: [],
-    builtin_rules: [],
     exclude_glob: "",
     session_key: "sem:one",
     generation: 1,
@@ -683,20 +660,12 @@ test "semantic search builds moonx and bundled moongrep invocations" {
     "moonbit-community/moongrep@0.1.18", "--", "scan", "--pattern", "inspect($(x:arg))",
     "--output-json",
   ])
-  let rules : SearchSemanticPayload = {
+  let second_pattern : SearchSemanticPayload = {
     ..pattern,
-    patterns: [],
-    rule_files: ["/work/.moongrep/rules/match.yaml"],
-    builtin_rules: ["moonbitlang/catch_all"],
+    patterns: ["match($x)"],
   }
-  assert_eq(semantic_search_args("/opt/bin/moongrep", rules), [
-    "scan", "--rule", "/work/.moongrep/rules/match.yaml", "--enable-builtin-rules",
-    "--exclude-rule", "moonbitlang/inspect_boolean", "--exclude-rule", "moonbitlang/inspect_number",
-    "--exclude-rule", "moonbitlang/match_option", "--exclude-rule", "moonbitlang/unnessary_else",
-    "--exclude-rule", "moonbitlang/simplifiable_assignment", "--exclude-rule", "moonbitlang/cstyle_forward_simple_forloop",
-    "--exclude-rule", "moonbitlang/cstyle_backward_simple_forloop", "--exclude-rule",
-    "moonbitlang/cstyle_forward_array_iteration", "--exclude-rule", "moonbitlang/cstyle_backward_array_iteration",
-    "--output-json",
+  assert_eq(semantic_search_args("/opt/bin/moongrep", second_pattern), [
+    "scan", "--pattern", "match($x)", "--output-json",
   ])
 }
 
@@ -740,8 +709,6 @@ async test "semantic search argument validation requires a rule source" {
   let payload : SearchSemanticPayload = {
     root: resource_root,
     patterns: [],
-    rule_files: [],
-    builtin_rules: [],
     exclude_glob: "",
     session_key: "sem:none",
     generation: 1,
@@ -765,8 +732,6 @@ async test "cancel-before-semantic-search frontier rejects the stale generation"
     let payload : SearchSemanticPayload = {
       root: resource_root,
       patterns: ["foo()"],
-      rule_files: [],
-      builtin_rules: [],
       exclude_glob: "",
       session_key: "sem:stale",
       generation: 7,

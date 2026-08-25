@@ -219,10 +219,7 @@ fn mode_options(page : Page, emit : @cmd.Emit[Msg]) -> @html.Html {
       ),
     ])
   } else {
-    @html.div(class="search-mode-options", [
-      @html.span(class="search-option-label", "Built-in rules"),
-      @html.button(on_click=emit(ToggleDetails), "Configure"),
-    ])
+    @html.nothing
   }
 }
 
@@ -662,114 +659,39 @@ fn page_view(
   open_match : (String, @common.Range) -> @cmd.Cmd,
 ) -> @html.Html {
   let details = if page.details_open {
-    match page.mode {
-      Text => {
-        let text_details : Array[@html.Html] = [
-          @html.label([
-            @html.span("files to include"),
-            @html.input(
-              input_type=@html.InputType::Text,
-              value=page.include_glob,
-              placeholder="e.g. src/**, tests/**",
-              on_input=emit.map(value => IncludeChanged(value)),
-              attrs=@html.Attrs::build()
-                .aria_label("files to include")
-                .data_set("focus-owner", ""),
-            ),
-          ]),
-          @html.label([
-            @html.span("files to exclude"),
-            @html.input(
-              input_type=@html.InputType::Text,
-              value=page.exclude_glob,
-              placeholder="e.g. **/*.snap, generated/**",
-              on_input=emit.map(value => ExcludeChanged(value)),
-              attrs=@html.Attrs::build()
-                .aria_label("files to exclude")
-                .data_set("focus-owner", ""),
-            ),
-          ]),
-        ]
-        @html.div(class="search-details", text_details)
-      }
-      Semantic => {
-        let sources : Array[@html.Html] = []
-        for index, source in page.semantic_sources {
-          let is_pattern = source.kind is Pattern
-          sources.push(
-            @html.div(class="search-semantic-source", [
-              @html.button(
-                class="search-option",
-                title="Switch source type",
-                on_click=emit(
-                  SemanticSourceKindChanged(
-                    index,
-                    if is_pattern {
-                      RuleFile
-                    } else {
-                      Pattern
-                    },
-                  ),
-                ),
-                if is_pattern {
-                  "pattern"
-                } else {
-                  "rule"
-                },
-              ),
-              @html.input(
-                input_type=@html.InputType::Text,
-                value=source.value,
-                placeholder=if is_pattern {
-                  "inspect($(x:arg))"
-                } else {
-                  "path/to/rule.yaml"
-                },
-                on_input=emit.map(value => SemanticSourceChanged(index, value)),
-                attrs=@html.Attrs::build()
-                  .aria_label(if is_pattern { "pattern" } else { "rule file" })
-                  .data_set("focus-owner", ""),
-              ),
-              @html.button(on_click=emit(RemoveSemanticSource(index)), "−"),
-            ]),
-          )
-        }
-        sources.push(
-          @html.button(
-            on_click=emit(AddSemanticSource),
-            "+ Add pattern or rule",
-          ),
-        )
-        let builtin : Array[@html.Html] = []
-        for rule_id in builtin_rule_ids() {
-          let checked = page.builtin_rules.contains(rule_id)
-          builtin.push(
-            @html.button(
-              class=if checked {
-                "search-option pressed"
-              } else {
-                "search-option"
-              },
-              on_click=emit(ToggleBuiltinRule(rule_id)),
-              if checked {
-                "☑ \{rule_id}"
-              } else {
-                "☐ \{rule_id}"
-              },
-            ),
-          )
-        }
-        @html.div(
-          class="search-details",
-          sources + [@html.div(class="search-builtin-rules", builtin)],
-        )
-      }
-    }
+    let details : Array[@html.Html] = [
+      @html.label([
+        @html.span("files to include"),
+        @html.input(
+          input_type=@html.InputType::Text,
+          value=page.include_glob,
+          placeholder="e.g. src/**, tests/**",
+          on_input=emit.map(value => IncludeChanged(value)),
+          attrs=@html.Attrs::build()
+            .aria_label("files to include")
+            .data_set("focus-owner", ""),
+        ),
+      ]),
+      @html.label([
+        @html.span("files to exclude"),
+        @html.input(
+          input_type=@html.InputType::Text,
+          value=page.exclude_glob,
+          placeholder="e.g. **/*.snap, generated/**",
+          on_input=emit.map(value => ExcludeChanged(value)),
+          attrs=@html.Attrs::build()
+            .aria_label("files to exclude")
+            .data_set("focus-owner", ""),
+        ),
+      ]),
+    ]
+    @html.div(class="search-details", details)
   } else {
     @html.nothing
   }
   @html.div(class="workspace-search", [
     @html.div(class="search-query-row", [
+      mode_control(page.mode, emit),
       if page.mode is Text {
         @html.input(
           input_type=@html.InputType::Text,
@@ -779,12 +701,16 @@ fn page_view(
           attrs=query_key_attrs(emit),
         )
       } else {
-        @html.span(
-          class="search-semantic-input-hint",
-          "Configure pattern or rule below",
+        @html.input(
+          input_type=@html.InputType::Text,
+          value=page.patterns[0],
+          placeholder="inspect($(x:arg))",
+          on_input=emit.map(value => PatternChanged(0, value)),
+          attrs=@html.Attrs::build()
+            .aria_label("pattern")
+            .data_set("focus-owner", ""),
         )
       },
-      mode_control(page.mode, emit),
       mode_options(page, emit),
       @html.button(
         class=if page.details_open {
@@ -799,6 +725,31 @@ fn page_view(
         "…",
       ),
     ]),
+    if page.mode is Semantic {
+      let patterns : Array[@html.Html] = []
+      for index, pattern in page.patterns {
+        if index > 0 {
+          patterns.push(
+            @html.div(class="search-semantic-source", [
+              @html.input(
+                input_type=@html.InputType::Text,
+                value=pattern,
+                placeholder="inspect($(x:arg))",
+                on_input=emit.map(value => PatternChanged(index, value)),
+                attrs=@html.Attrs::build()
+                  .aria_label("pattern")
+                  .data_set("focus-owner", ""),
+              ),
+              @html.button(on_click=emit(RemovePattern(index)), "−"),
+            ]),
+          )
+        }
+      }
+      patterns.push(@html.button(on_click=emit(AddPattern), "+ Add pattern"))
+      @html.div(class="search-code-patterns", patterns)
+    } else {
+      @html.nothing
+    },
     details,
     @html.div(class="search-toolbar", [
       @html.button(title="Refresh", on_click=emit(Refresh), "Refresh"),

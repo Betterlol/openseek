@@ -31,28 +31,6 @@ enum Mode {
 } derive(Eq, Debug)
 
 ///|
-enum SemanticSourceKind {
-  Pattern
-  RuleFile
-} derive(Eq, Debug)
-
-///|
-struct SemanticSource {
-  kind : SemanticSourceKind
-  value : String
-} derive(Eq, Debug)
-
-///|
-fn builtin_rule_ids() -> Array[String] {
-  [
-    "moonbitlang/catch_all", "moonbitlang/inspect_boolean", "moonbitlang/inspect_number",
-    "moonbitlang/match_option", "moonbitlang/unnessary_else", "moonbitlang/simplifiable_assignment",
-    "moonbitlang/cstyle_forward_simple_forloop", "moonbitlang/cstyle_backward_simple_forloop",
-    "moonbitlang/cstyle_forward_array_iteration", "moonbitlang/cstyle_backward_array_iteration",
-  ]
-}
-
-///|
 struct Page {
   mode : Mode
   query : String
@@ -62,8 +40,7 @@ struct Page {
   details_open : Bool
   include_glob : String
   exclude_glob : String
-  semantic_sources : Array[SemanticSource]
-  builtin_rules : Array[String]
+  patterns : Array[String]
   matches : Array[@protocol.TextSearchMatch]
   semantic_hits : Array[@protocol.SemanticSearchHit]
   match_count : Int
@@ -129,11 +106,9 @@ pub(all) enum Msg {
   IncludeChanged(String)
   ExcludeChanged(String)
   // Semantic-mode settings, mirroring the text-mode toggles.
-  SemanticSourceChanged(Int, String)
-  SemanticSourceKindChanged(Int, SemanticSourceKind)
-  AddSemanticSource
-  RemoveSemanticSource(Int)
-  ToggleBuiltinRule(String)
+  PatternChanged(Int, String)
+  AddPattern
+  RemovePattern(Int)
   Submit
   Refresh
   ClearResults

@@ -504,7 +504,8 @@ html.is-resizing * {
   flex: 0 0 auto;
   padding: 10px 10px 6px 12px;
 }
-.search-query-row > input {
+.search-query-row > input,
+.search-semantic-source input {
   flex: 1 1 120px;
   min-width: 80px;
   height: 28px;
@@ -675,40 +676,31 @@ html.is-resizing * {
   font: inherit;
   font-size: var(--font-size-sm);
 }
+.search-query-row > .search-mode {
+  order: -1;
+}
 .search-semantic-source {
   display: flex;
   align-items: center;
   gap: 4px;
 }
-.search-semantic-source input {
-  flex: 1 1 auto;
+.search-code-patterns {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 0 10px 6px 12px;
+  align-items: stretch;
+}
+.search-code-patterns .search-semantic-source {
+  width: 100%;
+}
+.search-code-patterns > button {
+  align-self: flex-start;
 }
 .search-semantic-source > .search-option {
   min-width: 58px;
   justify-content: start;
   font-size: var(--font-size-xs);
-}
-.search-builtin-rules {
-  display: grid;
-  gap: 2px;
-}
-.search-builtin-rules .search-option {
-  justify-content: start;
-  min-width: 0;
-  text-align: left;
-  font-family: var(--font-family-mono);
-  font-size: var(--font-size-xs);
-}
-.search-semantic-input-hint {
-  flex: 1 1 120px;
-  min-width: 80px;
-  height: 28px;
-  padding: 5px 8px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-xs);
-  background: var(--color-bg-subtle);
-  color: var(--color-text-secondary);
-  font-size: var(--font-size-sm);
 }
 .search-toolbar {
   display: flex;

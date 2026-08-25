@@ -15,8 +15,7 @@ fn fresh_page() -> Page {
     details_open: false,
     include_glob: "",
     exclude_glob: "",
-    semantic_sources: [{ kind: Pattern, value: "" }],
-    builtin_rules: [],
+    patterns: [""],
     matches: [],
     semantic_hits: [],
     match_count: 0,
@@ -45,8 +44,7 @@ pub fn State::reset_checkout(self : State) -> State {
       ..fresh_page(),
       generation,
       mode: self.page.mode,
-      semantic_sources: self.page.semantic_sources,
-      builtin_rules: self.page.builtin_rules,
+      patterns: self.page.patterns,
     },
     generation,
   }
@@ -67,9 +65,7 @@ fn State::schedule(
   let generation = self.generation + 1
   let has_query = match page.mode {
     Text => !page.query.is_empty()
-    Semantic =>
-      page.semantic_sources.any(source => !source.value.trim().is_empty()) ||
-      !page.builtin_rules.is_empty()
+    Semantic => page.patterns.any(pattern => !pattern.trim().is_empty())
   }
   let page = if !has_query || input.root is None {
     {
@@ -128,6 +124,11 @@ pub fn State::handle(self : State, msg : Msg, input : Input) -> State {
         {
           ..page,
           mode,
+          details_open: if mode is Semantic {
+            true
+          } else {
+            false
+          },
           matches: [],
           semantic_hits: [],
           partial: false,
@@ -158,57 +159,20 @@ pub fn State::handle(self : State, msg : Msg, input : Input) -> State {
       self.schedule({ ..page, include_glob, }, input, immediate=false)
     ExcludeChanged(exclude_glob) =>
       self.schedule({ ..page, exclude_glob, }, input, immediate=false)
-    SemanticSourceChanged(index, value) => {
-      let sources = page.semantic_sources.copy()
-      if index < sources.length() {
-        sources[index] = { ..sources[index], value, }
+    PatternChanged(index, value) => {
+      let patterns = page.patterns.copy()
+      if index < patterns.length() {
+        patterns[index] = value
       }
-      self.schedule(
-        { ..page, semantic_sources: sources },
-        input,
-        immediate=false,
-      )
+      self.schedule({ ..page, patterns, }, input, immediate=false)
     }
-    SemanticSourceKindChanged(index, kind) => {
-      let sources = page.semantic_sources.copy()
-      if index < sources.length() {
-        sources[index] = { ..sources[index], kind, }
+    AddPattern => { ..self, page: { ..page, patterns: page.patterns + [""] } }
+    RemovePattern(index) => {
+      let patterns = page.patterns.copy()
+      if index < patterns.length() && patterns.length() > 1 {
+        let _ = patterns.remove(index)
       }
-      self.schedule(
-        { ..page, semantic_sources: sources },
-        input,
-        immediate=false,
-      )
-    }
-    AddSemanticSource =>
-      {
-        ..self,
-        page: {
-          ..page,
-          semantic_sources: page.semantic_sources +
-          [{ kind: Pattern, value: "" }],
-        },
-      }
-    RemoveSemanticSource(index) => {
-      let sources = page.semantic_sources.copy()
-      if index < sources.length() && sources.length() > 1 {
-        let _ = sources.remove(index)
-      }
-      self.schedule(
-        { ..page, semantic_sources: sources },
-        input,
-        immediate=false,
-      )
-    }
-    ToggleBuiltinRule(rule_id) => {
-      let rules = if page.builtin_rules.contains(rule_id) {
-        page.builtin_rules.filter(rule => rule != rule_id)
-      } else {
-        let rules = page.builtin_rules.copy()
-        rules.push(rule_id)
-        rules
-      }
-      self.schedule({ ..page, builtin_rules: rules }, input, immediate=false)
+      self.schedule({ ..page, patterns, }, input, immediate=false)
     }
     Submit | Refresh => self.schedule(page, input, immediate=true)
     ClearResults => {
@@ -447,28 +411,11 @@ fn Page::semantic_request_payload(
 ) -> @protocol.SearchSemanticPayload? {
   guard self.mode is Semantic else { return None }
   guard input.root is Some(root) else { return None }
-  let patterns = self.semantic_sources.filter_map(source => {
-    match source.kind {
-      Pattern if !source.value.trim().is_empty() => Some(source.value)
-      _ => None
-    }
-  })
-  let rule_files = self.semantic_sources.filter_map(source => {
-    match source.kind {
-      RuleFile if !source.value.trim().is_empty() => Some(source.value)
-      _ => None
-    }
-  })
-  guard !patterns.is_empty() ||
-    !rule_files.is_empty() ||
-    !self.builtin_rules.is_empty() else {
-    return None
-  }
+  let patterns = self.patterns.filter(pattern => !pattern.trim().is_empty())
+  guard !patterns.is_empty() else { return None }
   Some({
     root: root.path,
     patterns,
-    rule_files,
-    builtin_rules: self.builtin_rules,
     exclude_glob: self.exclude_glob,
     session_key: "semantic-search:\{input.owner.channel.uri_authority()}:\{input.owner.session}:\{root.path}",
     generation: self.generation,

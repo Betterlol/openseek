@@ -425,14 +425,11 @@ pub(all) struct CancelSearchTextPayload {
 /// Search workspace MoonBit code with structural patterns through the Host's
 /// moongrep provider. `session_key` and `generation` follow the text-search
 /// contract exactly, so one panel can own both modes without replaying an old
-/// semantic reply as current text results. `patterns` and `rule_files` are
-/// independently repeatable moongrep sources. `builtin_rules` contains the
-/// selected embedded rule ids; an empty array disables embedded rules.
+/// semantic reply as current text results. `patterns` contains one or more
+/// anonymous structural moongrep patterns.
 pub(all) struct SearchSemanticPayload {
   root : String
   patterns : Array[String]
-  rule_files : Array[String]
-  builtin_rules : Array[String]
   exclude_glob : String
   session_key : String
   generation : Int
