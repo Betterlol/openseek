@@ -196,9 +196,7 @@ fn mode_control(mode : Mode, emit : @cmd.Emit[Msg]) -> @html.Html {
 }
 
 ///|
-/// The mode-specific query options. Text mode offers ripgrep's case /
-/// whole-word / regex toggles; semantic mode offers moongrep's embedded-rule
-/// toggle, mirroring semgrep's per-mode pattern options.
+/// The mode-specific query options.
 fn mode_options(page : Page, emit : @cmd.Emit[Msg]) -> @html.Html {
   if page.mode is Text {
     @html.div(class="search-mode-options", [
@@ -222,12 +220,8 @@ fn mode_options(page : Page, emit : @cmd.Emit[Msg]) -> @html.Html {
     ])
   } else {
     @html.div(class="search-mode-options", [
-      toggle_button(
-        "♯",
-        "Use Built-in Rules",
-        page.use_builtin_rules,
-        emit(ToggleBuiltinRules),
-      ),
+      @html.span(class="search-option-label", "Built-in rules"),
+      @html.button(on_click=emit(ToggleDetails), "Configure"),
     ])
   }
 }
@@ -698,38 +692,98 @@ fn page_view(
         ]
         @html.div(class="search-details", text_details)
       }
-      Semantic =>
-        @html.div(class="search-details", [
-          @html.label([
-            @html.span("moongrep rules directory"),
-            @html.input(
-              input_type=@html.InputType::Text,
-              value=page.rules_dir,
-              placeholder="e.g. .moongrep/rules, rules/**",
-              on_input=emit.map(value => RulesDirChanged(value)),
-              attrs=@html.Attrs::build()
-                .aria_label("moongrep rules directory")
-                .data_set("focus-owner", ""),
+      Semantic => {
+        let sources : Array[@html.Html] = []
+        for index, source in page.semantic_sources {
+          let is_pattern = source.kind is Pattern
+          sources.push(
+            @html.div(class="search-semantic-source", [
+              @html.button(
+                class="search-option",
+                title="Switch source type",
+                on_click=emit(
+                  SemanticSourceKindChanged(
+                    index,
+                    if is_pattern {
+                      RuleFile
+                    } else {
+                      Pattern
+                    },
+                  ),
+                ),
+                if is_pattern {
+                  "pattern"
+                } else {
+                  "rule"
+                },
+              ),
+              @html.input(
+                input_type=@html.InputType::Text,
+                value=source.value,
+                placeholder=if is_pattern {
+                  "inspect($(x:arg))"
+                } else {
+                  "path/to/rule.yaml"
+                },
+                on_input=emit.map(value => SemanticSourceChanged(index, value)),
+                attrs=@html.Attrs::build()
+                  .aria_label(if is_pattern { "pattern" } else { "rule file" })
+                  .data_set("focus-owner", ""),
+              ),
+              @html.button(on_click=emit(RemoveSemanticSource(index)), "−"),
+            ]),
+          )
+        }
+        sources.push(
+          @html.button(
+            on_click=emit(AddSemanticSource),
+            "+ Add pattern or rule",
+          ),
+        )
+        let builtin : Array[@html.Html] = []
+        for rule_id in builtin_rule_ids() {
+          let checked = page.builtin_rules.contains(rule_id)
+          builtin.push(
+            @html.button(
+              class=if checked {
+                "search-option pressed"
+              } else {
+                "search-option"
+              },
+              on_click=emit(ToggleBuiltinRule(rule_id)),
+              if checked {
+                "☑ \{rule_id}"
+              } else {
+                "☐ \{rule_id}"
+              },
             ),
-          ]),
-        ])
+          )
+        }
+        @html.div(
+          class="search-details",
+          sources + [@html.div(class="search-builtin-rules", builtin)],
+        )
+      }
     }
   } else {
     @html.nothing
   }
   @html.div(class="workspace-search", [
     @html.div(class="search-query-row", [
-      @html.input(
-        input_type=@html.InputType::Text,
-        value=page.query,
-        placeholder=if page.mode is Text {
-          "Search"
-        } else {
-          "Code pattern (e.g. inspect($(x:arg)))"
-        },
-        on_input=emit.map(value => QueryChanged(value)),
-        attrs=query_key_attrs(emit),
-      ),
+      if page.mode is Text {
+        @html.input(
+          input_type=@html.InputType::Text,
+          value=page.query,
+          placeholder="Search",
+          on_input=emit.map(value => QueryChanged(value)),
+          attrs=query_key_attrs(emit),
+        )
+      } else {
+        @html.span(
+          class="search-semantic-input-hint",
+          "Configure pattern or rule below",
+        )
+      },
       mode_control(page.mode, emit),
       mode_options(page, emit),
       @html.button(

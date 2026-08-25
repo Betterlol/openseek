@@ -303,14 +303,29 @@ fn semantic_search_args(
     []
   }
   args.push("scan")
-  if !payload.query.is_empty() {
-    args.append(["--pattern", payload.query])
+  for pattern in payload.patterns {
+    if !pattern.is_empty() {
+      args.append(["--pattern", pattern])
+    }
   }
-  if !payload.rules_dir.is_empty() {
-    args.append(["--rules", payload.rules_dir])
+  for rule_file in payload.rule_files {
+    if !rule_file.is_empty() {
+      args.append(["--rule", rule_file])
+    }
   }
-  if payload.enable_builtin_rules {
+  if !payload.builtin_rules.is_empty() {
     args.push("--enable-builtin-rules")
+    let builtin_rule_ids = [
+      "moonbitlang/catch_all", "moonbitlang/inspect_boolean", "moonbitlang/inspect_number",
+      "moonbitlang/match_option", "moonbitlang/unnessary_else", "moonbitlang/simplifiable_assignment",
+      "moonbitlang/cstyle_forward_simple_forloop", "moonbitlang/cstyle_backward_simple_forloop",
+      "moonbitlang/cstyle_forward_array_iteration", "moonbitlang/cstyle_backward_array_iteration",
+    ]
+    for rule_id in builtin_rule_ids {
+      if !payload.builtin_rules.contains(rule_id) {
+        args.append(["--exclude-rule", rule_id])
+      }
+    }
   }
   for entry in payload.exclude_glob.split(",") {
     let dir = entry.trim().to_owned()
@@ -495,12 +510,12 @@ async fn run_semantic_search(
 ) -> SearchSemanticReply {
   let reply_root = root.resource_path()
   let native_root = root.to_string()
-  if payload.query.is_empty() &&
-    payload.rules_dir.is_empty() &&
-    !payload.enable_builtin_rules {
+  if payload.patterns.is_empty() &&
+    payload.rule_files.is_empty() &&
+    payload.builtin_rules.is_empty() {
     return empty_semantic_search_reply(reply_root, payload.generation, error={
       code: "invalid_request",
-      message: "Provide a structural code pattern, a rules directory, or enable built-in rules.",
+      message: "Provide a structural code pattern, a rule file, or select built-in rules.",
     })
   }
   guard command is Some(command) else {
@@ -656,9 +671,9 @@ async fn cancel_search_semantic_op(
 test "semantic search builds moonx and bundled moongrep invocations" {
   let pattern : SearchSemanticPayload = {
     root: "/work",
-    query: "inspect($(x:arg))",
-    rules_dir: "",
-    enable_builtin_rules: false,
+    patterns: ["inspect($(x:arg))"],
+    rule_files: [],
+    builtin_rules: [],
     exclude_glob: "",
     session_key: "sem:one",
     generation: 1,
@@ -670,12 +685,18 @@ test "semantic search builds moonx and bundled moongrep invocations" {
   ])
   let rules : SearchSemanticPayload = {
     ..pattern,
-    query: "",
-    rules_dir: "/work/.moongrep/rules",
-    enable_builtin_rules: true,
+    patterns: [],
+    rule_files: ["/work/.moongrep/rules/match.yaml"],
+    builtin_rules: ["moonbitlang/catch_all"],
   }
   assert_eq(semantic_search_args("/opt/bin/moongrep", rules), [
-    "scan", "--rules", "/work/.moongrep/rules", "--enable-builtin-rules", "--output-json",
+    "scan", "--rule", "/work/.moongrep/rules/match.yaml", "--enable-builtin-rules",
+    "--exclude-rule", "moonbitlang/inspect_boolean", "--exclude-rule", "moonbitlang/inspect_number",
+    "--exclude-rule", "moonbitlang/match_option", "--exclude-rule", "moonbitlang/unnessary_else",
+    "--exclude-rule", "moonbitlang/simplifiable_assignment", "--exclude-rule", "moonbitlang/cstyle_forward_simple_forloop",
+    "--exclude-rule", "moonbitlang/cstyle_backward_simple_forloop", "--exclude-rule",
+    "moonbitlang/cstyle_forward_array_iteration", "--exclude-rule", "moonbitlang/cstyle_backward_array_iteration",
+    "--output-json",
   ])
 }
 
@@ -718,9 +739,9 @@ async test "semantic search argument validation requires a rule source" {
   let resource_root = root.resource_path()
   let payload : SearchSemanticPayload = {
     root: resource_root,
-    query: "",
-    rules_dir: "",
-    enable_builtin_rules: false,
+    patterns: [],
+    rule_files: [],
+    builtin_rules: [],
     exclude_glob: "",
     session_key: "sem:none",
     generation: 1,
@@ -743,9 +764,9 @@ async test "cancel-before-semantic-search frontier rejects the stale generation"
     let resource_root = root.resource_path()
     let payload : SearchSemanticPayload = {
       root: resource_root,
-      query: "foo()",
-      rules_dir: "",
-      enable_builtin_rules: false,
+      patterns: ["foo()"],
+      rule_files: [],
+      builtin_rules: [],
       exclude_glob: "",
       session_key: "sem:stale",
       generation: 7,

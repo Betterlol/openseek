@@ -1662,9 +1662,9 @@ pub fn SearchFilesReply::to_repr(Self) -> @debug.Repr
 
 pub(all) struct SearchSemanticPayload {
   root : String
-  query : String
-  rules_dir : String
-  enable_builtin_rules : Bool
+  patterns : Array[String]
+  rule_files : Array[String]
+  builtin_rules : Array[String]
   exclude_glob : String
   session_key : String
   generation : Int
