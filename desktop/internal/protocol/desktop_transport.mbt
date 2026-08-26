@@ -31,6 +31,7 @@ pub(all) enum NotificationKind {
   FsWatchFailed
   TerminalOutput
   TerminalExit
+  SemanticSearchProgress
 } derive(Debug, Eq, Hash)
 
 ///|
@@ -62,6 +63,7 @@ pub fn NotificationKind::wire_name(self : NotificationKind) -> String {
     FsWatchFailed => "fs.watch_failed"
     TerminalOutput => "terminal.output"
     TerminalExit => "terminal.exit"
+    SemanticSearchProgress => "semantic.search_progress"
   }
 }
 
@@ -94,6 +96,7 @@ pub fn NotificationKind::all() -> Array[NotificationKind] {
     FsWatchFailed,
     TerminalOutput,
     TerminalExit,
+    SemanticSearchProgress,
   ]
 }
 
@@ -130,6 +133,7 @@ pub(all) enum Notification {
   FsWatchFailed(FsWatchFailedPayload)
   TerminalOutput(TerminalOutputPayload)
   TerminalExit(TerminalExitPayload)
+  SemanticSearchProgress(SemanticSearchProgressPayload)
 } derive(Debug, Eq)
 
 ///|
@@ -199,6 +203,14 @@ pub fn Notification::from_wire(name : String, params : Json) -> Notification? {
       Some(TerminalOutput(@json.from_json(params) catch { _ => return None }))
     "terminal.exit" =>
       Some(TerminalExit(@json.from_json(params) catch { _ => return None }))
+    "semantic.search_progress" =>
+      Some(
+        SemanticSearchProgress(
+          @json.from_json(params) catch {
+            _ => return None
+          },
+        ),
+      )
     _ => None
   }
 }
@@ -232,6 +244,7 @@ pub fn Notification::kind(self : Notification) -> NotificationKind {
     FsWatchFailed(_) => FsWatchFailed
     TerminalOutput(_) => TerminalOutput
     TerminalExit(_) => TerminalExit
+    SemanticSearchProgress(_) => SemanticSearchProgress
   }
 }
 
@@ -270,6 +283,7 @@ pub fn Notification::params(self : Notification) -> Json {
     FsWatchFailed(payload) => ToJson::to_json(payload)
     TerminalOutput(payload) => ToJson::to_json(payload)
     TerminalExit(payload) => ToJson::to_json(payload)
+    SemanticSearchProgress(payload) => ToJson::to_json(payload)
   }
 }
 
@@ -308,6 +322,42 @@ test "malformed agent errors remain visible notifications" {
     }
     assert_eq(payload.message, None)
   }
+}
+
+///|
+test "semantic search progress notifications round-trip at the wire edge" {
+  let wire : Json = {
+    "root": "/work",
+    "session_key": "semantic-search:local:one:/work",
+    "generation": 3,
+    "matches": [
+      {
+        "path": "src/main.mbt",
+        "rule_id": "pattern",
+        "description": "a desc",
+        "start_line": 1,
+        "start_column": 1,
+        "end_line": 1,
+        "end_column": 5,
+        "matched_source": "moon",
+        "source_context": [{ "line": 1, "text": "moon", "is_match": true }],
+      },
+    ],
+    "match_count": 1,
+    "file_count": 1,
+  }
+  guard Notification::from_wire("semantic.search_progress", wire)
+    is Some(SemanticSearchProgress(payload)) else {
+    fail("known notification was rejected")
+  }
+  assert_eq(payload.root, "/work")
+  assert_eq(payload.session_key, "semantic-search:local:one:/work")
+  assert_eq(payload.generation, 3)
+  assert_eq(payload.match_count, 1)
+  assert_eq(payload.file_count, 1)
+  assert_eq(payload.matches.length(), 1)
+  assert_eq(payload.matches[0].path, "src/main.mbt")
+  assert_eq(Notification::SemanticSearchProgress(payload).params(), wire)
 }
 
 ///|

@@ -291,3 +291,48 @@ pub impl ToJson for SearchSemanticReply with fn to_json(self) {
   }
   Json::object(fields)
 }
+
+///|
+pub impl FromJson for SemanticSearchProgressPayload with fn from_json(
+  json,
+  path,
+) {
+  let object = JsonObject::decode(
+    json, path, "semantic-search progress payload",
+  )
+  let matches : Array[SemanticSearchHit] = []
+  for index, raw in object.required_array("matches") {
+    matches.push(
+      @json.from_json(raw, path=path.add_key("matches").add_index(index)),
+    )
+  }
+  {
+    root: object.required_string("root"),
+    session_key: object.required_string("session_key"),
+    generation: require_text_search_non_negative(
+      object.required_int("generation"),
+      path.add_key("generation"),
+    ),
+    matches,
+    match_count: require_text_search_non_negative(
+      object.required_int("match_count"),
+      path.add_key("match_count"),
+    ),
+    file_count: require_text_search_non_negative(
+      object.required_int("file_count"),
+      path.add_key("file_count"),
+    ),
+  }
+}
+
+///|
+pub impl ToJson for SemanticSearchProgressPayload with fn to_json(self) {
+  {
+    "root": self.root,
+    "session_key": self.session_key,
+    "generation": self.generation,
+    "matches": self.matches,
+    "match_count": self.match_count,
+    "file_count": self.file_count,
+  }
+}

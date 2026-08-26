@@ -54,6 +54,14 @@ fn Input::root_text(self : Input) -> String {
 }
 
 ///|
+/// The session key a semantic request is issued under for this input. The
+/// Host echoes it back in progress notifications so a stream can be fenced
+/// against the same owner/root/generation triple as the final reply.
+fn Input::semantic_session_key(self : Input) -> String {
+  "semantic-search:\{self.owner.channel.uri_authority()}:\{self.owner.session}:\{self.root_text()}"
+}
+
+///|
 fn State::schedule(
   self : State,
   page : Page,
@@ -284,6 +292,35 @@ pub fn State::handle(self : State, msg : Msg, input : Input) -> State {
         },
       }
     }
+    SemanticProgress(
+      root~,
+      session_key~,
+      generation~,
+      matches~,
+      match_count~,
+      file_count~
+    ) => {
+      // Partial rows are only meaningful for the search that is currently
+      // in flight: once the final reply landed (Ready/Failed) or a newer
+      // generation started, late progress is stale and must not touch the
+      // authoritative result set.
+      guard input.root_text() == root &&
+        input.semantic_session_key() == session_key &&
+        page.generation == generation &&
+        page.mode is Semantic &&
+        page.phase is Loading else {
+        return self
+      }
+      {
+        ..self,
+        page: {
+          ..page,
+          semantic_hits: page.semantic_hits + matches,
+          match_count,
+          file_count,
+        },
+      }
+    }
     RequestFailed(owner~, root~, generation~, code~, message~) =>
       if input.owner == owner &&
         input.root_text() == root &&
@@ -395,7 +432,7 @@ fn Page::semantic_request_payload(
     root: root.path,
     patterns,
     exclude_glob: self.exclude_glob,
-    session_key: "semantic-search:\{input.owner.channel.uri_authority()}:\{input.owner.session}:\{root.path}",
+    session_key: input.semantic_session_key(),
     generation: self.generation,
     max_results: MaxSearchResults,
   })
@@ -465,6 +502,61 @@ test "query changes debounce and stale replies cannot replace the page" {
     input,
   )
   assert_true(unchanged == state)
+}
+
+///|
+test "semantic progress streams partial hits and late progress is fenced" {
+  let owner : @interop.ConversationKey = {
+    channel: @interop.ChannelId::Local,
+    session: "semantic-progress",
+  }
+  let root = @common.Uri::parse("file:///work")
+  let input : Input = { owner, root: Some(root) }
+  let state = State::empty()
+    .handle(ModeChanged(Semantic), input)
+    .handle(PatternChanged(0, "inspect($(x:arg))"), input)
+    .handle(Submit, input)
+  let page = state.page
+  assert_true(page.phase is Loading)
+  let session_key = "semantic-search:local:semantic-progress:/work"
+  let hit : @protocol.SemanticSearchHit = {
+    path: "src/main.mbt",
+    rule_id: "inspect",
+    description: None,
+    start_line: 1,
+    start_column: 1,
+    end_line: 1,
+    end_column: 5,
+    matched_source: "inspect(x)",
+    source_context: [{ line: 1, text: "inspect(x)", is_match: true }],
+  }
+  let streamed = state.handle(
+    SemanticProgress(
+      root=root.path,
+      session_key~,
+      generation=page.generation,
+      matches=[hit],
+      match_count=1,
+      file_count=1,
+    ),
+    input,
+  )
+  assert_eq(streamed.page.semantic_hits, [hit])
+  assert_eq(streamed.page.match_count, 1)
+  assert_eq(streamed.page.file_count, 1)
+  // A progress frame for a previous generation must not touch the page.
+  let stale = state.handle(
+    SemanticProgress(
+      root=root.path,
+      session_key~,
+      generation=page.generation - 1,
+      matches=[hit],
+      match_count=1,
+      file_count=1,
+    ),
+    input,
+  )
+  assert_true(stale.page.semantic_hits.is_empty())
 }
 
 ///|

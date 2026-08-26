@@ -445,6 +445,22 @@ pub(all) struct CancelSearchSemanticPayload {
 } derive(Debug, Eq)
 
 ///|
+/// One batch of an in-flight semantic search, pushed as a connection
+/// notification so the client can render hits before the final reply arrives.
+/// The reply remains authoritative: `matches` are the Host's partial
+/// accumulation and the client replaces them when `SearchSemanticReply`
+/// lands. `session_key`/`generation` carry the same fence as the reply so a
+/// stale stream can never overwrite a newer search.
+pub(all) struct SemanticSearchProgressPayload {
+  root : String
+  session_key : String
+  generation : Int
+  matches : Array[SemanticSearchHit]
+  match_count : Int
+  file_count : Int
+} derive(Debug, Eq)
+
+///|
 pub(all) struct ClearFileSearchCachePayload {
   cache_key : String
 } derive(Debug, Eq, FromJson, ToJson)

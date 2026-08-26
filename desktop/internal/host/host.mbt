@@ -154,7 +154,7 @@ pub async fn HostConnection::run(
     })
     group.spawn_bg(() => self.file_search.run())
     group.spawn_bg(() => self.text_search.run())
-    group.spawn_bg(() => self.semantic_search.run())
+    group.spawn_bg(() => self.semantic_search.run(emit))
     self.fs_watch.run(
       async fn(push) {
         emit(

@@ -130,6 +130,18 @@ pub(all) enum Msg {
     generation~ : Int,
     reply~ : @protocol.SearchSemanticReply
   )
+  // One partial batch of a semantic search still in flight. The Host pushes
+  // these through the notification channel so a long scan paints hits early;
+  // the final `SemanticLoaded` reply replaces them. The session_key/generation
+  // pair fences the stream exactly like the reply does.
+  SemanticProgress(
+    root~ : String,
+    session_key~ : String,
+    generation~ : Int,
+    matches~ : Array[@protocol.SemanticSearchHit],
+    match_count~ : Int,
+    file_count~ : Int
+  )
   RequestFailed(
     owner~ : @interop.ConversationKey,
     root~ : String,

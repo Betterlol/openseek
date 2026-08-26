@@ -155,6 +155,13 @@ let terminal_exit_event : @proton_contract.Event[@protocol.TerminalExitPayload] 
 )
 
 ///|
+let semantic_search_progress_event : @proton_contract.Event[
+  @protocol.SemanticSearchProgressPayload,
+] = @commands.extension_contract.event(
+  @protocol.NotificationKind::SemanticSearchProgress.wire_name(),
+)
+
+///|
 /// The one window-local event: native browser view events (navigation,
 /// title, load state), pumped in by `App::on_view_event` through
 /// `DesktopBridgeActor::notify_browser_event`. It deliberately has no
@@ -237,6 +244,8 @@ async fn PageEventTarget::emit(
     Hub(TerminalOutput(payload)) =>
       self.events.emit(terminal_output_event, payload)
     Hub(TerminalExit(payload)) => self.events.emit(terminal_exit_event, payload)
+    Hub(SemanticSearchProgress(payload)) =>
+      self.events.emit(semantic_search_progress_event, payload)
     BrowserEvent(payload) => self.events.emit(browser_event, payload)
   }
 }

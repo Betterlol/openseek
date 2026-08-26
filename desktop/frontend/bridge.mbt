@@ -143,6 +143,28 @@ fn notification_msg(
       } else {
         None
       }
+    // A long semantic scan streams partial hits while the final reply is
+    // still running. The Search reducer fences the stream by
+    // session_key/generation and the final reply replaces these rows, so a
+    // dropped frame only delays a paint — never corrupts the result set.
+    SemanticSearchProgress(payload) =>
+      Some(
+        FromDevice(
+          channel,
+          FilePanel(
+            @fileeditor.Msg::Search(
+              @grep_search.Msg::SemanticProgress(
+                root=payload.root,
+                session_key=payload.session_key,
+                generation=payload.generation,
+                matches=payload.matches,
+                match_count=payload.match_count,
+                file_count=payload.file_count,
+              ),
+            ),
+          ),
+        ),
+      )
     _ => device_msg(channel, notification).map(msg => FromDevice(channel, msg))
   }
 }

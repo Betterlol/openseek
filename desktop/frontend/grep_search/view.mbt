@@ -598,7 +598,13 @@ fn semantic_search_body(
   let children : Array[@html.Html] = []
   let busy = page.phase is Debouncing || page.phase is Loading
   let summary = if busy {
-    "Searching…"
+    if page.semantic_hits.is_empty() {
+      "Searching…"
+    } else {
+      // The scan is still running; these counts are the partial stream, not
+      // the final totals the reply will replace.
+      "\{page.match_count} matches in \{page.file_count} files so far…"
+    }
   } else if page.match_count == 1 {
     "1 match in \{page.file_count} file"
   } else {
