@@ -123,6 +123,7 @@ pub fn[G] spawn_host_pumps(
 pub async fn HostConnection::run(
   self : HostConnection,
   emit : async (@protocol.Notification) -> Unit,
+  emit_progress : async (@protocol.Notification) -> Unit,
 ) -> Unit {
   @async.with_task_group(group => {
     // Closing the request queue is the terminal pump's normal connection-end
@@ -154,7 +155,7 @@ pub async fn HostConnection::run(
     })
     group.spawn_bg(() => self.file_search.run())
     group.spawn_bg(() => self.text_search.run())
-    group.spawn_bg(() => self.semantic_search.run(emit))
+    group.spawn_bg(() => self.semantic_search.run(emit_progress))
     self.fs_watch.run(
       async fn(push) {
         emit(

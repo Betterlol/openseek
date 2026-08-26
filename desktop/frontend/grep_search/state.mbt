@@ -89,6 +89,21 @@ fn State::schedule(
   } else {
     {
       ..page,
+      semantic_hits: if page.mode is Semantic {
+        []
+      } else {
+        page.semantic_hits
+      },
+      match_count: if page.mode is Semantic {
+        0
+      } else {
+        page.match_count
+      },
+      file_count: if page.mode is Semantic {
+        0
+      } else {
+        page.file_count
+      },
       visible_lines: InitialVisibleSearchLines,
       phase: if immediate {
         Loading
@@ -131,6 +146,8 @@ pub fn State::handle(self : State, msg : Msg, input : Input) -> State {
           details_open: page.details_open,
           matches: [],
           semantic_hits: [],
+          match_count: 0,
+          file_count: 0,
           partial: false,
           collapsed: Map([]),
         },
@@ -271,7 +288,16 @@ pub fn State::handle(self : State, msg : Msg, input : Input) -> State {
         return self
       }
       if reply.cancelled {
-        return { ..self, page: { ..page, phase: Idle } }
+        return {
+          ..self,
+          page: {
+            ..page,
+            semantic_hits: [],
+            match_count: 0,
+            file_count: 0,
+            phase: Idle,
+          },
+        }
       }
       let phase = match reply.error {
         None => Ready
@@ -557,6 +583,114 @@ test "semantic progress streams partial hits and late progress is fenced" {
     input,
   )
   assert_true(stale.page.semantic_hits.is_empty())
+}
+
+///|
+test "semantic progress batches append only new hits" {
+  let owner : @interop.ConversationKey = {
+    channel: @interop.ChannelId::Local,
+    session: "semantic-batches",
+  }
+  let root = @common.Uri::parse("file:///work")
+  let input : Input = { owner, root: Some(root) }
+  let state = State::empty()
+    .handle(ModeChanged(Semantic), input)
+    .handle(PatternChanged(0, "inspect($(x:arg))"), input)
+    .handle(Submit, input)
+  let page = state.page
+  let hit : @protocol.SemanticSearchHit = {
+    path: "src/main.mbt",
+    rule_id: "inspect",
+    description: None,
+    start_line: 1,
+    start_column: 1,
+    end_line: 1,
+    end_column: 5,
+    matched_source: "inspect(x)",
+    source_context: [{ line: 1, text: "inspect(x)", is_match: true }],
+  }
+  let second = { ..hit, start_line: 2, end_line: 2 }
+  let session_key = input.semantic_session_key()
+  let first = state.handle(
+    SemanticProgress(
+      root=root.path,
+      session_key~,
+      generation=page.generation,
+      matches=[hit],
+      match_count=1,
+      file_count=1,
+    ),
+    input,
+  )
+  let streamed = first.handle(
+    SemanticProgress(
+      root=root.path,
+      session_key~,
+      generation=page.generation,
+      matches=[second],
+      match_count=2,
+      file_count=1,
+    ),
+    input,
+  )
+  assert_eq(streamed.page.semantic_hits, [hit, second])
+}
+
+///|
+test "new semantic search clears partial results and cancellation clears them" {
+  let owner : @interop.ConversationKey = {
+    channel: @interop.ChannelId::Local,
+    session: "semantic-clear",
+  }
+  let root = @common.Uri::parse("file:///work")
+  let input : Input = { owner, root: Some(root) }
+  let state = State::empty()
+    .handle(ModeChanged(Semantic), input)
+    .handle(PatternChanged(0, "inspect($(x:arg))"), input)
+    .handle(Submit, input)
+  let page = state.page
+  let hit : @protocol.SemanticSearchHit = {
+    path: "src/main.mbt",
+    rule_id: "inspect",
+    description: None,
+    start_line: 1,
+    start_column: 1,
+    end_line: 1,
+    end_column: 5,
+    matched_source: "inspect(x)",
+    source_context: [{ line: 1, text: "inspect(x)", is_match: true }],
+  }
+  let session_key = input.semantic_session_key()
+  let streamed = state.handle(
+    SemanticProgress(
+      root=root.path,
+      session_key~,
+      generation=page.generation,
+      matches=[hit],
+      match_count=1,
+      file_count=1,
+    ),
+    input,
+  )
+  let next = streamed.handle(PatternChanged(0, "match($x)"), input)
+  assert_true(next.page.semantic_hits.is_empty())
+  assert_eq(next.page.match_count, 0)
+  let cancelled = streamed.handle(
+    SemanticLoaded(owner~, root=root.path, generation=page.generation, reply={
+      root: root.path,
+      generation: page.generation,
+      matches: [],
+      match_count: 0,
+      file_count: 0,
+      limit_hit: false,
+      cancelled: true,
+      partial: false,
+      error: None,
+    }),
+    input,
+  )
+  assert_true(cancelled.page.semantic_hits.is_empty())
+  assert_eq(cancelled.page.match_count, 0)
 }
 
 ///|

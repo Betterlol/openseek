@@ -177,9 +177,10 @@ async fn WsClientActor::serve(
       // Filesystem watch events belong to this WebSocket connection. They
       // bypass the shared hub so other desktop and remote clients never
       // receive this connection's `fs.changed` notifications.
-      self.host_connection.run(notification => {
-        enqueue_outgoing(out, Notify(notification))
-      })
+      self.host_connection.run(
+        notification => enqueue_outgoing(out, Notify(notification)),
+        notification => enqueue_outgoing(out, Notify(notification)),
+      )
     })
     group.spawn_bg(() => {
       // Tears the connection down either way it ends — the client

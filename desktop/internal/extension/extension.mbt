@@ -412,9 +412,14 @@ pub async fn DesktopBridgeActor::run(self : DesktopBridgeActor) -> Unit {
     // never enter the process-wide hub, so a remote client's watch cannot
     // trigger desktop file refreshes (or vice versa).
     group.spawn_bg(allow_failure=true, () => {
-      self.host_connection.run(notification => {
-        host_notifications.put(notification)
-      })
+      self.host_connection.run(
+        notification => host_notifications.put(notification),
+        notification => {
+          // Progress is disposable. Do not let a slow renderer or a full
+          // connection queue stall moongrep's stdout reader and its final reply.
+          ignore(host_notifications.try_put(notification) catch { _ => false })
+        },
+      )
     })
     let mut connected = false
     let mut target : PageEventTarget? = None

@@ -617,6 +617,7 @@ async fn run_semantic_search(
     let mut match_count = 0
     let mut limit_hit = false
     let mut first_error_line : String? = None
+    let mut published_hits = 0
     defer stdout_reader.close()
     for ;; {
       let line = stdout_reader.read_until("\n")
@@ -637,16 +638,29 @@ async fn run_semantic_search(
       files[hit.path] = true
       match_count += 1
       if match_count == 1 || match_count % SemanticSearchProgressBatch == 0 {
+        let batch = hits[published_hits:].to_owned()
         publish_semantic_progress(
           emit,
           reply_root,
           payload.session_key,
           payload.generation,
-          hits,
+          batch,
           match_count,
           files.length(),
         )
+        published_hits = hits.length()
       }
+    }
+    if published_hits < hits.length() {
+      publish_semantic_progress(
+        emit,
+        reply_root,
+        payload.session_key,
+        payload.generation,
+        hits[published_hits:].to_owned(),
+        match_count,
+        files.length(),
+      )
     }
     let exit_code = process.wait() catch {
       error if @async.is_being_cancelled() => raise error
