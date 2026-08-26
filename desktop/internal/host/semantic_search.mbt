@@ -442,6 +442,8 @@ fn semantic_search_error(stderr : String) -> (String, String) {
   } else if lower.contains("permission denied") ||
     lower.contains("access is denied") {
     "permission_denied"
+  } else if lower == "" {
+    "empty_stderr"
   } else {
     "search_failed"
   }
@@ -570,11 +572,17 @@ async fn run_semantic_search(
     let files : Map[String, Bool] = Map([])
     let mut match_count = 0
     let mut limit_hit = false
+    let mut first_error_line : String? = None
     defer stdout_reader.close()
     for ;; {
       let line = stdout_reader.read_until("\n")
       guard line is Some(line) else { break }
-      guard parse_moongrep_match(line) is Some(parsed) else { continue }
+      guard parse_moongrep_match(line) is Some(parsed) else {
+        if first_error_line is None && !line.trim().is_empty() {
+          first_error_line = Some(line.trim().to_owned())
+        }
+        continue
+      }
       if match_count >= max_results {
         limit_hit = true
         process.cancel()
@@ -599,15 +607,20 @@ async fn run_semantic_search(
     // crash on MoonBit syntax it does not parse yet. A nonzero exit alone is
     // therefore not fatal once some hits were already emitted: keep them, like
     // ripgrep's partial-results behavior, so the panel can use what it got.
+    let (code, message) = semantic_search_error(stderr)
+    let (code, message) = if code == "empty_stderr" &&
+      first_error_line is Some(line) {
+      semantic_search_error(line)
+    } else {
+      (code, message)
+    }
     if semantic_search_exit_is_fatal(exit_code, !hits.is_empty()) {
-      let (code, message) = semantic_search_error(stderr)
       return empty_semantic_search_reply(reply_root, payload.generation, error={
         code,
         message,
       })
     }
     let error : SemanticSearchError? = if exit_code != 0 {
-      let (code, message) = semantic_search_error(stderr)
       Some({ code, message })
     } else {
       None
