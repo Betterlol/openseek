@@ -247,6 +247,7 @@ test "parses ordered moon definition results and rejects unsafe entries" {
 }
 
 ///|
+#cfg(all(not(platform="windows"), target="native"))
 async test "moon definition provider invokes exact peek-def command" {
   @async.with_task_group() <| group => {
     let root = @fs.tmpdir(prefix="openseek-native-definition")
@@ -293,6 +294,7 @@ async test "moon definition provider invokes exact peek-def command" {
 }
 
 ///|
+#cfg(all(not(platform="windows"), target="native"))
 async test "moon references provider invokes exact find-references command" {
   @async.with_task_group() <| group => {
     let root = @fs.tmpdir(prefix="openseek-native-references")
