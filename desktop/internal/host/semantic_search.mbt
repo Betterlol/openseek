@@ -739,7 +739,11 @@ test "semantic search builds moonx and bundled moongrep invocations" {
     max_results: 20000,
   }
   assert_eq(semantic_search_args("moonx", pattern), [
-    MoongrepPackageCoordinate, "--", "scan", "--pattern", "inspect($(x:arg))",
+    MoongrepPackageCoordinate,
+    "--",
+    "scan",
+    "--pattern",
+    "inspect($(x:arg))",
     "--output-json",
   ])
   let second_pattern : SearchSemanticPayload = {
