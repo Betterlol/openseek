@@ -1387,6 +1387,7 @@ pub(all) enum Notification {
   FsWatchFailed(FsWatchFailedPayload)
   TerminalOutput(TerminalOutputPayload)
   TerminalExit(TerminalExitPayload)
+  SemanticSearchProgress(SemanticSearchProgressPayload)
 } derive(Eq, @debug.Debug)
 pub fn Notification::equal(Self, Self) -> Bool
 pub fn Notification::from_wire(String, Json) -> Self?
@@ -1422,6 +1423,7 @@ pub(all) enum NotificationKind {
   FsWatchFailed
   TerminalOutput
   TerminalExit
+  SemanticSearchProgress
 } derive(Eq, Hash, @debug.Debug)
 pub fn NotificationKind::all() -> Array[Self]
 pub fn NotificationKind::equal(Self, Self) -> Bool
@@ -1711,6 +1713,17 @@ pub(all) struct SemanticSearchHit {
 } derive(Eq, @debug.Debug)
 pub impl ToJson for SemanticSearchHit
 pub impl @json.FromJson for SemanticSearchHit
+
+pub(all) struct SemanticSearchProgressPayload {
+  root : String
+  session_key : String
+  generation : Int
+  matches : Array[SemanticSearchHit]
+  match_count : Int
+  file_count : Int
+} derive(Eq, @debug.Debug)
+pub impl ToJson for SemanticSearchProgressPayload
+pub impl @json.FromJson for SemanticSearchProgressPayload
 
 pub(all) struct SessionAssistantMessage {
   content : String
