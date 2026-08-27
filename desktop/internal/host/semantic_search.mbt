@@ -29,7 +29,7 @@ const SemanticSearchProgressBatch : Int = 50
 /// provider through `moonx <coordinate> --`; pinning the version keeps the
 /// search deterministic instead of silently running whatever the local
 /// registry index knows as "latest".
-const MoongrepPackageCoordinate : String = "moonbit-community/moongrep@0.1.18"
+const MoongrepPackageCoordinate : String = "moonbit-community/moongrep@0.2.2"
 
 ///|
 priv struct ParsedSemanticContextLine {
@@ -739,7 +739,7 @@ test "semantic search builds moonx and bundled moongrep invocations" {
     max_results: 20000,
   }
   assert_eq(semantic_search_args("moonx", pattern), [
-    "moonbit-community/moongrep@0.1.18", "--", "scan", "--pattern", "inspect($(x:arg))",
+    MoongrepPackageCoordinate, "--", "scan", "--pattern", "inspect($(x:arg))",
     "--output-json",
   ])
   let second_pattern : SearchSemanticPayload = {
