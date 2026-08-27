@@ -202,22 +202,47 @@ test "kimi highspeed uses the same code-model request policy" {
 }
 
 ///|
-test "assistant tool-call echo and tool result round-trip" {
+test "deepseek tool-enabled reasoning and tool result round-trip" {
+  let tool = @deepseek.ToolDefinition("shell", "Run a shell command.", {
+    "type": "object",
+    "properties": { "cmd": { "type": "string" } },
+    "required": ["cmd"],
+  })
   let call = @deepseek.ToolCall(
     id="call_42",
     name="shell",
     arguments="{\"cmd\":\"moon test\"}",
   )
-  let body = @deepseek.encode_chat_request(model=Deepseek(V4Flash)) <| [
+  let body = @deepseek.encode_chat_request(
+    model=Deepseek(V4Flash),
+    tools=[tool],
+  ) <| [
     ChatMessage(System, content="be terse"),
+    ChatMessage(User, content="check the setup"),
+    ChatMessage(
+      Assistant,
+      content="ready",
+      reasoning_content="checked the setup",
+    ),
     ChatMessage(User, content="run the tests"),
-    ChatMessage(Assistant, content="", tool_calls=[call]),
+    ChatMessage(
+      Assistant,
+      content="",
+      tool_calls=[call],
+      reasoning_content="need to run the tests",
+    ),
     ChatMessage(Tool("call_42"), content="exit=0\nok"),
   ]
   json_inspect(body, content={
     "model": "deepseek-v4-flash",
     "messages": [
       { "role": "system", "content": "be terse" },
+      { "role": "user", "content": "check the setup" },
+      {
+        "role": "assistant",
+        "content": "ready",
+        "reasoning_content": "checked the setup",
+      },
       { "role": "user", "content": "run the tests" },
       {
         "role": "assistant",
@@ -232,10 +257,25 @@ test "assistant tool-call echo and tool result round-trip" {
             },
           },
         ],
+        "reasoning_content": "need to run the tests",
       },
       { "role": "tool", "content": "exit=0\nok", "tool_call_id": "call_42" },
     ],
     "stream": false,
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "shell",
+          "description": "Run a shell command.",
+          "parameters": {
+            "type": "object",
+            "properties": { "cmd": { "type": "string" } },
+            "required": ["cmd"],
+          },
+        },
+      },
+    ],
   })
 }
 

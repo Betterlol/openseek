@@ -1,16 +1,20 @@
 ///|
-/// Keep assistant reasoning_content for Kimi K2.7 Code as per their documentation:
+/// Keep assistant reasoning_content when the provider requires it.
 ///
-/// > Because Preserved Thinking is always on, in multi-turn conversations you
-/// > must keep the `reasoning_content` of every historical assistant message in
-/// > `messages` as-is.
+/// DeepSeek requires every historical assistant reasoning trace to be sent
+/// back when tools are enabled. Kimi K2.7 Code always requires the reasoning
+/// from every historical assistant message to be preserved.
 ///
+/// See: https://api-docs.deepseek.com/guides/thinking_mode#thinking-mode-with-tool-calls
 /// See: https://platform.kimi.ai/docs/guide/use-kimi-k2-thinking-model#using-the-kimi-k2-7-code-model
 fn ChatMessage::reasoning_json_fields(
   message : ChatMessage,
   model : Model,
+  preserve_deepseek_reasoning : Bool,
 ) -> Array[(String, Json)] {
   match (model, message.role, message.reasoning_content) {
+    (Deepseek(_), Assistant, Some(reasoning)) if preserve_deepseek_reasoning =>
+      [("reasoning_content", Json::string(reasoning))]
     (Kimi(_), Assistant, Some(reasoning)) =>
       [("reasoning_content", Json::string(reasoning))]
     _ => []
@@ -22,7 +26,11 @@ fn ChatMessage::reasoning_json_fields(
 ///
 /// Assistant messages whose `content` is empty but carry tool calls are
 /// encoded with JSON `content: null`, as the API requires.
-fn ChatMessage::to_json_for_model(message : ChatMessage, model : Model) -> Json {
+fn ChatMessage::to_json_for_model(
+  message : ChatMessage,
+  model : Model,
+  preserve_deepseek_reasoning? : Bool = false,
+) -> Json {
   let content = match message.role {
     Assistant if message.tool_calls.length() > 0 && message.content == "" =>
       Json::null()
@@ -39,7 +47,7 @@ fn ChatMessage::to_json_for_model(message : ChatMessage, model : Model) -> Json 
         ..if message.tool_calls.length() > 0 {
           [("tool_calls", ([ for call in message.tool_calls => call ] : Json))]
         },
-        ..message.reasoning_json_fields(model),
+        ..message.reasoning_json_fields(model, preserve_deepseek_reasoning),
       ],
     ),
   )
@@ -94,7 +102,12 @@ pub fn encode_chat_request(
         (
           "messages",
           [
-            for message in messages => message.to_json_for_model(model)
+            for message in messages => {
+              message.to_json_for_model(
+                model,
+                preserve_deepseek_reasoning=tools.length() > 0,
+              )
+            }
           ],
         ),
         ("stream", Json::boolean(stream)),
@@ -167,9 +180,7 @@ test "tool definitions encode as native DeepSeek tools" {
 }
 
 ///|
-test "assistant tool call messages encode tool_calls, never reasoning" {
-  // reasoning_content is response-side data: it must not reach the wire even
-  // when the in-memory message carries it (see the codec doc comment).
+test "deepseek assistant tool calls preserve reasoning content" {
   let body = ChatMessage(
     Assistant,
     content="",
@@ -182,20 +193,45 @@ test "assistant tool call messages encode tool_calls, never reasoning" {
     ],
     reasoning_content="checked available tools",
   )
+  json_inspect(
+    body.to_json_for_model(Deepseek(V4Pro), preserve_deepseek_reasoning=true),
+    content={
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_123",
+          "type": "function",
+          "function": {
+            "name": "get_weather",
+            "arguments": "{\"location\":\"Hangzhou\"}",
+          },
+        },
+      ],
+      "reasoning_content": "checked available tools",
+    },
+  )
+}
+
+///|
+test "deepseek reasoning follows tool availability" {
+  let body = ChatMessage(
+    Assistant,
+    content="The tests pass.",
+    reasoning_content="checked the test output",
+  )
   json_inspect(body.to_json_for_model(Deepseek(V4Pro)), content={
     "role": "assistant",
-    "content": null,
-    "tool_calls": [
-      {
-        "id": "call_123",
-        "type": "function",
-        "function": {
-          "name": "get_weather",
-          "arguments": "{\"location\":\"Hangzhou\"}",
-        },
-      },
-    ],
+    "content": "The tests pass.",
   })
+  json_inspect(
+    body.to_json_for_model(Deepseek(V4Pro), preserve_deepseek_reasoning=true),
+    content={
+      "role": "assistant",
+      "content": "The tests pass.",
+      "reasoning_content": "checked the test output",
+    },
+  )
 }
 
 ///|

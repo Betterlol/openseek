@@ -29,12 +29,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
-      # Pre-release, to match CI: `mbtx`'s policy states its spawn
-      # allowlist with `process.allow`, which stable's moonrun rejects outright,
-      # so an agent working here on stable would find every snippet refused.
+      # Stable, matching CI. Current stable moonrun accepts the `process.allow`
+      # rules used by `mbtx` to restrict spawned programs and argument prefixes.
       - name: Set up MoonBit
         run: |
-          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash -s pre-release
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash -s -- latest
           echo "$HOME/.moon/bin" >> $GITHUB_PATH
 
       - name: Update MoonBit dependencies
