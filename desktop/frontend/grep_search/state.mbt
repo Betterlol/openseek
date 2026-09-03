@@ -23,6 +23,7 @@ fn fresh_page() -> Page {
     file_count: 0,
     limit_hit: false,
     collapsed: Map([]),
+    selected: Map([]),
     visible_lines: InitialVisibleSearchLines,
     phase: Idle,
     pattern_repair_phase: PatternRepairIdle,
@@ -85,6 +86,7 @@ fn State::schedule(
       ..page,
       text: { ..page.text, matches: [], },
       semantic: { ..page.semantic, hits: [], partial: false, },
+      selected: Map([]),
       match_count: 0,
       file_count: 0,
       limit_hit: false,
@@ -97,6 +99,7 @@ fn State::schedule(
       ..page,
       text: page.text,
       semantic: { ..page.semantic, hits: [], partial: false, },
+      selected: Map([]),
       match_count: if page.mode is Semantic {
         0
       } else {
@@ -158,6 +161,7 @@ pub fn State::handle(self : State, msg : Msg, input : Input) -> State {
           match_count: 0,
           file_count: 0,
           collapsed: Map([]),
+          selected: Map([]),
         },
         input,
         immediate=false,
@@ -365,6 +369,7 @@ pub fn State::handle(self : State, msg : Msg, input : Input) -> State {
       }
       { ..self, page: { ..page, collapsed, }, }
     }
+    ClearSelection => { ..self, page: { ..page, selected: Map([]), }, }
     ShowMore =>
       {
         ..self,
@@ -393,6 +398,47 @@ pub fn State::handle(self : State, msg : Msg, input : Input) -> State {
         collapsed[key] = true
       }
       { ..self, page: { ..page, collapsed, }, }
+    }
+    ToggleSemanticPattern(pattern) => {
+      let selected = page.selected.copy()
+      let hits = page.semantic.hits.filter(hit => hit.rule_id == pattern)
+      let all_selected = !hits.is_empty() &&
+        hits.all(hit => selected.get(semantic_hit_key(hit)).unwrap_or(false))
+      for hit in hits {
+        let hit_key = semantic_hit_key(hit)
+        if all_selected {
+          selected.remove(hit_key)
+        } else {
+          selected[hit_key] = true
+        }
+      }
+      { ..self, page: { ..page, selected, }, }
+    }
+    ToggleSemanticHit(key) => {
+      let selected = page.selected.copy()
+      if selected.get(key).unwrap_or(false) {
+        selected.remove(key)
+      } else {
+        selected[key] = true
+      }
+      { ..self, page: { ..page, selected, }, }
+    }
+    ToggleSemanticFile(pattern, path) => {
+      let selected = page.selected.copy()
+      let hits = page.semantic.hits.filter(hit => {
+        hit.rule_id == pattern && hit.path == path
+      })
+      let all_selected = !hits.is_empty() &&
+        hits.all(hit => selected.get(semantic_hit_key(hit)).unwrap_or(false))
+      for hit in hits {
+        let key = semantic_hit_key(hit)
+        if all_selected {
+          selected.remove(key)
+        } else {
+          selected[key] = true
+        }
+      }
+      { ..self, page: { ..page, selected, }, }
     }
     RequestStarted(owner~, root~, generation~) =>
       if input.owner == owner &&
@@ -611,6 +657,7 @@ fn Page::clear_results(self : Page) -> Page {
     ..self,
     text: { ..self.text, matches: [], },
     semantic: { ..self.semantic, hits: [], partial: false, },
+    selected: Map([]),
     match_count: 0,
     file_count: 0,
     limit_hit: false,

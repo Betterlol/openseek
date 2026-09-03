@@ -559,10 +559,11 @@ fn search_body(
   page : Page,
   emit : @cmd.Emit[Msg],
   open_match : (String, @common.Range) -> @cmd.Cmd,
+  send_selection : @cmd.Cmd,
 ) -> @html.Html {
   match page.mode {
     Text => text_search_body(page, emit, open_match)
-    Semantic => semantic_search_body(page, emit, open_match)
+    Semantic => semantic_search_body(page, emit, open_match, send_selection)
   }
 }
 
@@ -646,7 +647,9 @@ fn semantic_context_line_view(
 
 ///|
 fn semantic_hit_view(
+  page : Page,
   hit : @protocol.SemanticSearchHit,
+  emit : @cmd.Emit[Msg],
   open_match : (String, @common.Range) -> @cmd.Cmd,
 ) -> @html.Html {
   let target = @common.Range(
@@ -655,13 +658,30 @@ fn semantic_hit_view(
     hit.end_line,
     hit.end_column,
   )
+  let key = semantic_hit_key(hit)
+  let selected = page.selected.get(key).unwrap_or(false)
   @html.div(
-    class="search-semantic-hit",
-    attrs=@html.Attrs::build()
-      .data_set("semantic-hit-key", semantic_hit_key(hit))
-      .on_click(_ => open_match(hit.path, target)),
+    class=if selected {
+      "search-semantic-hit selected"
+    } else {
+      "search-semantic-hit"
+    },
+    attrs=@html.Attrs::build().data_set("semantic-hit-key", key),
     [
+      @html.button(
+        class="search-semantic-select",
+        attrs=@html.Attrs::build()
+          .aria_label(if selected { "Deselect match" } else { "Select match" })
+          .aria_pressed(selected.to_string())
+          .on_click(_ => emit(ToggleSemanticHit(key))),
+        if selected {
+          "☑"
+        } else {
+          "☐"
+        },
+      ),
       @html.div(
+        attrs=@html.Attrs::build().on_click(_ => open_match(hit.path, target)),
         class="search-semantic-context",
         hit.source_context.map(line => semantic_context_line_view(line)),
       ),
@@ -684,8 +704,15 @@ fn semantic_file_group_view(
   let rows = if collapsed {
     ([] : Array[@html.Html])
   } else {
-    group.hits.map(hit => semantic_hit_view(hit, open_match))
+    group.hits.map(hit => semantic_hit_view(page, hit, emit, open_match))
   }
+  let all_hits = page.semantic.hits.filter(hit => {
+    hit.rule_id == pattern && hit.path == group.path
+  })
+  let all_selected = !all_hits.is_empty() &&
+    all_hits.all(hit => {
+      page.selected.get(semantic_hit_key(hit)).unwrap_or(false)
+    })
   @html.div(class="search-file-group", [
     @html.button(
       class="search-file-header",
@@ -706,6 +733,27 @@ fn semantic_file_group_view(
         @html.span(class="search-file-name", name),
         @html.span(class="search-file-parent", parent),
         @html.span(class="search-file-count", "\{group.count}"),
+        @html.span(
+          class="search-semantic-group-select",
+          attrs=@html.Attrs::build()
+            .aria_label(
+              if all_selected {
+                "Deselect file"
+              } else {
+                "Select file"
+              },
+            )
+            .aria_pressed(all_selected.to_string())
+            .on_click(event => {
+              event.stop_propagation()
+              emit(ToggleSemanticFile(pattern, group.path))
+            }),
+          if all_selected {
+            "☑"
+          } else {
+            "☐"
+          },
+        ),
       ],
     ),
     @html.div(class="search-file-results", rows),
@@ -729,6 +777,11 @@ fn semantic_pattern_group_view(
       semantic_file_group_view(page, group.pattern, file, emit, open_match)
     })
   }
+  let all_hits = page.semantic.hits.filter(hit => hit.rule_id == group.pattern)
+  let all_selected = !all_hits.is_empty() &&
+    all_hits.all(hit => {
+      page.selected.get(semantic_hit_key(hit)).unwrap_or(false)
+    })
   @html.div(class="search-semantic-pattern-group", [
     @html.button(
       class="search-semantic-pattern-header",
@@ -748,6 +801,27 @@ fn semantic_pattern_group_view(
         ),
         @html.span(class="search-semantic-pattern", group.pattern),
         @html.span(class="search-file-count", "\{group.count}"),
+        @html.span(
+          class="search-semantic-group-select",
+          attrs=@html.Attrs::build()
+            .aria_label(
+              if all_selected {
+                "Deselect pattern"
+              } else {
+                "Select pattern"
+              },
+            )
+            .aria_pressed(all_selected.to_string())
+            .on_click(event => {
+              event.stop_propagation()
+              emit(ToggleSemanticPattern(group.pattern))
+            }),
+          if all_selected {
+            "☑"
+          } else {
+            "☐"
+          },
+        ),
       ],
     ),
     @html.div(class="search-semantic-pattern-results", files),
@@ -759,6 +833,7 @@ fn semantic_search_body(
   page : Page,
   emit : @cmd.Emit[Msg],
   open_match : (String, @common.Range) -> @cmd.Cmd,
+  send_selection : @cmd.Cmd,
 ) -> @html.Html {
   let children : Array[@html.Html] = []
   let busy = page.phase is Debouncing || page.phase is Loading
@@ -784,6 +859,16 @@ fn semantic_search_body(
       summary,
     ),
   )
+  let selected_count = page.selected.values().filter(value => value).length()
+  if selected_count > 0 {
+    children.push(
+      @html.div(class="search-selection-toolbar", [
+        @html.span("\{selected_count} selected"),
+        @html.button(on_click=send_selection, "Send to Agent"),
+        @html.button(on_click=emit(ClearSelection), "Clear selection"),
+      ]),
+    )
+  }
   if result_summary.limit_hit {
     children.push(
       @html.div(
@@ -834,6 +919,7 @@ fn page_view(
   page : Page,
   emit : @cmd.Emit[Msg],
   open_match : (String, @common.Range) -> @cmd.Cmd,
+  send_selection : @cmd.Cmd,
 ) -> @html.Html {
   let details = if page.details_open {
     let details : Array[@html.Html] = [
@@ -950,7 +1036,7 @@ fn page_view(
         "Collapse All",
       ),
     ]),
-    search_body(page, emit, open_match),
+    search_body(page, emit, open_match, send_selection),
   ])
 }
 
@@ -962,9 +1048,10 @@ pub fn State::explorer_view(
   input : Input,
   emit : @cmd.Emit[Msg],
   open_match : (String, @common.Range) -> @cmd.Cmd,
+  send_selection : @cmd.Cmd,
 ) -> @html.Html {
   match input.root {
-    Some(_) => page_view(self.page, emit, open_match)
+    Some(_) => page_view(self.page, emit, open_match, send_selection)
     None =>
       @html.div(class="workspace-search search-no-workspace", [
         @html.div(class="search-empty-title", "No checkout available"),

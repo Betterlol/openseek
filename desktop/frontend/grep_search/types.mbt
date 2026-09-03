@@ -74,6 +74,7 @@ struct Page {
   file_count : Int
   limit_hit : Bool
   collapsed : Map[String, Bool]
+  selected : Map[String, Bool]
   visible_lines : Int
   phase : Phase
   pattern_repair_phase : PatternRepairPhase
@@ -108,6 +109,19 @@ pub struct State {
 ///|
 pub fn State::empty() -> State {
   { page: fresh_page(), generation: 0, }
+}
+
+///|
+/// Return the semantic hits currently selected in the Search explorer.
+pub fn State::selected_semantic_hits(
+  self : State,
+) -> Array[@protocol.SemanticSearchHit] {
+  selected_semantic_hits(self.page.semantic.hits, self.page.selected)
+}
+
+///|
+pub fn State::selected_semantic_prompt(self : State) -> String {
+  selected_semantic_prompt(self.page.semantic.hits, self.page.selected)
 }
 
 ///|
@@ -162,9 +176,13 @@ pub(all) enum Msg {
   Refresh
   ClearResults
   CollapseAll
+  ClearSelection
   ShowMore
   ToggleFile(String)
   TogglePattern(String)
+  ToggleSemanticHit(String)
+  ToggleSemanticPattern(String)
+  ToggleSemanticFile(String, String)
   RequestStarted(
     owner~ : @interop.ConversationKey,
     root~ : String,
