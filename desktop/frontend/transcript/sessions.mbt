@@ -315,16 +315,17 @@ fn transcript_from_session(
 
 ///|
 /// Project one durable session item — a `session.event` commit's
-/// `{kind, payload}` — onto the transcript. Most events append 0..N rows; a
-/// tool result instead fills its earlier call row when the ids match. Returns
-/// whether the visible transcript changed. Unknown items deliberately change
-/// nothing: their event sequence still advances the durable watermark, while
-/// their raw JSON stays available to newer code. The same projector replays
-/// snapshots and live commits, so both paths agree by construction. `ts` is
-/// the committing event's stamp, carried onto every row the item appends so
-/// the view can date a turn; a store (or fixture) written without one leaves
-/// the rows undated. `sequence` is the committing event's sequence, likewise
-/// carried onto every appended row as its durable identity.
+/// `{kind, payload}` — onto the transcript. Every event appends at most one
+/// item, kept in the event's own shape; a tool result instead fills its call
+/// inside the response that made it. Returns whether the visible transcript
+/// changed. Unknown items deliberately change nothing: their event sequence
+/// still advances the durable watermark, while their raw JSON stays available
+/// to newer code. The same projector replays snapshots and live commits, so
+/// both paths agree by construction. `ts` is the committing event's stamp,
+/// carried onto the item it appends so the view can date a turn; a store (or
+/// fixture) written without one leaves the item undated. `sequence` is the
+/// committing event's sequence, likewise carried onto the appended item as
+/// its durable identity.
 pub fn apply_session_item(
   items : Array[TranscriptItem],
   item : @desktop_protocol.SessionItem,
@@ -337,116 +338,98 @@ pub fn apply_session_item(
     @desktop_protocol.User(payload) => {
       let content = payload.content.trim().to_owned()
       if !content.is_empty() {
-        items.push({ kind: User, content, ts, sequence, })
+        items.push({ kind: User(content), ts, sequence, })
       }
     }
     @desktop_protocol.Assistant(payload) => {
       let is_replay = payload.is_replay == Some(true)
       // Thinking-mode turns store the reasoning alongside the answer (the
-      // store omits the field entirely otherwise); the live transcript
-      // showed it first, so replay does too. A checkpoint replay already has
-      // its reasoning on the original durable provider response, so do not
-      // duplicate that activity or let it masquerade as a new step.
-      if !is_replay && payload.reasoning_content is Some(reasoning) {
-        let reasoning = reasoning.trim().to_owned()
-        if !reasoning.is_empty() {
-          items.push({ kind: Reasoning, content: reasoning, ts, sequence, })
-        }
+      // store omits the field entirely otherwise). A checkpoint replay
+      // already has its reasoning on the original durable provider response,
+      // so it carries none here rather than duplicating that activity.
+      let reasoning = if !is_replay &&
+        payload.reasoning_content is Some(text) &&
+        !text.is_blank() {
+        Some(text.trim().to_owned())
+      } else {
+        None
       }
-      let content = payload.content.trim().to_owned()
-      if !content.is_empty() {
-        items.push({
-          kind: if is_replay {
-            AssistantReplay
+      // The store writes an empty string for a response that said nothing.
+      let prose = if payload.content.is_blank() {
+        None
+      } else {
+        Some(payload.content.trim().to_owned())
+      }
+      // Tool calls stay in the exact order the model emitted them. Their
+      // results arrive as later durable events and fill them in by id.
+      let calls : Array[ToolCall] = []
+      for call in payload.tool_calls.unwrap_or([]) {
+        calls.push({
+          call_id: call.id,
+          name: if call.name.is_blank() {
+            "tool"
           } else {
-            Assistant(is_danger=false)
+            call.name
           },
-          content,
-          ts,
-          sequence,
+          arguments: Some(call.arguments),
+          outcome: Pending(output=None),
         })
       }
-      // Tool calls belong after this assistant event's reasoning and visible
-      // prose, in the exact order the model emitted them. Their results arrive
-      // as later durable events and fill these rows by id without reordering.
-      for call in payload.tool_calls.unwrap_or([]) {
+      if reasoning is Some(_) || prose is Some(_) || !calls.is_empty() {
         items.push({
-          kind: Tool(
-            call_id=call.id,
-            name=if call.name.is_blank() { "tool" } else { call.name },
-            arguments=Some(call.arguments),
-            has_result=false,
-            is_error=false,
-            brief=None,
+          kind: Assistant(
+            reasoning~,
+            prose~,
+            calls~,
+            replay=is_replay,
+            finished=false,
           ),
-          content: "",
           ts,
           sequence,
         })
       }
     }
     @desktop_protocol.ToolResult(payload) => {
-      // A valid result updates one unambiguous, still-pending recorded call in
-      // place. Completed calls must not match again, and duplicate pending ids
-      // are ambiguous: in either case the append-only result remains visible as
-      // an unmatched row instead of overwriting or guessing a call.
-      let mut matched : Int? = None
-      let mut pending_matches = 0
-      if !payload.tool_call_id.is_empty() {
-        for index, existing in items {
-          if existing.kind
-            is Tool(call_id~, arguments=Some(_), has_result=false, ..) &&
-            call_id == payload.tool_call_id {
-            matched = Some(index)
-            pending_matches += 1
-          }
+      // A result answers the still-pending call recorded with its id. The
+      // engine appends every response before running its calls, so the call
+      // is always on record; a result nothing is waiting for changes nothing,
+      // exactly as the engine's own replay projection drops it.
+      let mut index = items.length()
+      while index > 0 {
+        index -= 1
+        guard items[index].kind
+          is Assistant(reasoning~, prose~, calls~, replay~, finished~) else {
+          continue
         }
-      }
-      if pending_matches == 1 &&
-        matched is Some(index) &&
-        items[index].kind is Tool(call_id~, name=call_name, arguments~, ..) {
-        let tool_name = if payload.tool_name.is_blank() {
-          call_name
-        } else {
-          payload.tool_name
+        guard calls.search_by(call => {
+            call.call_id == payload.tool_call_id && call.outcome is Pending(..)
+          })
+          is Some(position) else {
+          continue
+        }
+        let call = calls[position]
+        // The response keeps its own stamp and sequence: the call is dated
+        // when the agent made it, not when its output came back.
+        let filled = calls.copy()
+        filled[position] = {
+          ..call,
+          name: if payload.tool_name.is_blank() {
+            call.name
+          } else {
+            payload.tool_name
+          },
+          outcome: Done(
+            content=payload.content,
+            is_error=payload.is_error,
+            brief=payload.brief,
+          ),
         }
         items[index] = {
-          kind: Tool(
-            call_id~,
-            name=tool_name,
-            arguments~,
-            has_result=true,
-            is_error=payload.is_error,
-            brief=payload.brief,
-          ),
-          content: payload.content,
-          // The row keeps the call's own stamp and sequence: it is one tool
-          // call, dated when the agent made it, not when its output came back.
-          ts: items[index].ts,
-          sequence: items[index].sequence,
+          ..items[index],
+          kind: Assistant(reasoning~, prose~, calls=filled, replay~, finished~),
         }
         updated_existing = true
-      } else {
-        // Older or malformed logs can contain an unmatched result. Keep the
-        // existing Desktop behavior for those records instead of hiding them.
-        let tool_name = if payload.tool_name.is_blank() {
-          "tool"
-        } else {
-          payload.tool_name
-        }
-        items.push({
-          kind: Tool(
-            call_id=payload.tool_call_id,
-            name=tool_name,
-            arguments=None,
-            has_result=true,
-            is_error=payload.is_error,
-            brief=payload.brief,
-          ),
-          content: payload.content,
-          ts,
-          sequence,
-        })
+        break
       }
     }
     @desktop_protocol.RuntimeNotice(payload) =>
@@ -458,57 +441,45 @@ pub fn apply_session_item(
           // label; a multi-line goal expands to its full text.
           Some(GoalSet(text)) =>
             items.push({
-              kind: Tool(
-                call_id="",
-                name="goal",
-                arguments=None,
-                has_result=true,
-                is_error=false,
+              kind: Notice(
+                label="goal",
                 brief=Some(goal_brief("Goal set", text)),
+                is_error=false,
+                body=goal_body(text),
               ),
-              content: goal_body(text),
               ts,
               sequence,
             })
           Some(GoalCleared) =>
             items.push({
-              kind: Tool(
-                call_id="",
-                name="goal",
-                arguments=None,
-                has_result=true,
-                is_error=false,
+              kind: Notice(
+                label="goal",
                 brief=Some("Goal cleared"),
+                is_error=false,
+                body=None,
               ),
-              content: "",
               ts,
               sequence,
             })
           Some(GoalBlocked(reason)) =>
             items.push({
-              kind: Tool(
-                call_id="",
-                name="goal",
-                arguments=None,
-                has_result=true,
-                is_error=true,
+              kind: Notice(
+                label="goal",
                 brief=Some(goal_brief("Goal blocked", reason)),
+                is_error=true,
+                body=goal_body(reason),
               ),
-              content: goal_body(reason),
               ts,
               sequence,
             })
           Some(GoalUnblocked) =>
             items.push({
-              kind: Tool(
-                call_id="",
-                name="goal",
-                arguments=None,
-                has_result=true,
-                is_error=false,
+              kind: Notice(
+                label="goal",
                 brief=Some("Goal resumed"),
+                is_error=false,
+                body=None,
               ),
-              content: "",
               ts,
               sequence,
             })
@@ -521,15 +492,12 @@ pub fn apply_session_item(
                 // Runtime notices keep the compact completed-result row used
                 // by the old projection, but the generic label no longer
                 // claims every background event came from `moon_check`.
-                kind: Tool(
-                  call_id="",
-                  name="runtime notice",
-                  arguments=None,
-                  has_result=true,
-                  is_error=false,
+                kind: Notice(
+                  label="runtime notice",
                   brief=None,
+                  is_error=false,
+                  body=Some(payload.content),
                 ),
-                content: payload.content,
                 ts,
                 sequence,
               })
@@ -539,7 +507,7 @@ pub fn apply_session_item(
     @desktop_protocol.Summary(payload) => {
       let content = payload.content.trim().to_owned()
       if !content.is_empty() {
-        items.push({ kind: Summary, content, ts, sequence, })
+        items.push({ kind: Summary(content), ts, sequence, })
       }
     }
     @desktop_protocol.Terminal(terminal) =>
@@ -573,37 +541,49 @@ fn SessionTerminalProjection::append_to(
   }
   let message = message.trim().to_owned()
   match kind {
-    // A current no-tool final is already the last assistant message. Promote
-    // that row instead of duplicating it, and replace its model-step stamp
-    // with the later terminal stamp that marks when the whole turn ended.
+    // A current no-tool final is already the last provider response. Mark
+    // that response finished instead of duplicating its prose; it keeps its
+    // own stamp and sequence, so the settled bubble stays the same keyed node.
     "finished" =>
       if !message.is_empty() &&
         items is [.., last] &&
-        last.kind is Assistant(is_danger=false) &&
-        last.content == message {
+        last.kind
+        is Assistant(
+          reasoning~,
+          prose=Some(prose),
+          calls=[],
+          replay=false,
+          finished=false
+        ) &&
+        prose == message {
         items[items.length() - 1] = {
-          kind: TerminalAnswer,
-          content: message,
-          ts,
-          sequence,
+          ..last,
+          kind: Assistant(
+            reasoning~,
+            prose=Some(prose),
+            calls=[],
+            replay=false,
+            finished=true,
+          ),
         }
         true
       } else {
         if !message.is_empty() {
           // A differing terminal message, such as a completion-tool answer,
           // remains a new final bubble.
-          items.push({ kind: TerminalAnswer, content: message, ts, sequence, })
+          items.push({ kind: Answer(message), ts, sequence, })
         }
         false
       }
     "aborted" => {
       items.push({
-        kind: Assistant(is_danger=true),
-        content: if message.is_empty() {
-          "aborted"
-        } else {
-          "aborted: \{message}"
-        },
+        kind: Failure(
+          if message.is_empty() {
+            "aborted"
+          } else {
+            "aborted: \{message}"
+          },
+        ),
         ts,
         sequence,
       })
@@ -611,12 +591,13 @@ fn SessionTerminalProjection::append_to(
     }
     "interrupted" => {
       items.push({
-        kind: Assistant(is_danger=true),
-        content: if message.is_empty() {
-          "cancelled"
-        } else {
-          "cancelled: \{message}"
-        },
+        kind: Failure(
+          if message.is_empty() {
+            "cancelled"
+          } else {
+            "cancelled: \{message}"
+          },
+        ),
         ts,
         sequence,
       })
@@ -624,12 +605,7 @@ fn SessionTerminalProjection::append_to(
     }
     "failed" => {
       items.push({
-        kind: Assistant(is_danger=true),
-        content: if message.is_empty() {
-          "failed"
-        } else {
-          message
-        },
+        kind: Failure(if message.is_empty() { "failed" } else { message }),
         ts,
         sequence,
       })
@@ -651,13 +627,13 @@ fn goal_brief(label : String, text : String) -> String {
 }
 
 ///|
-/// A single-line goal is fully carried by its brief — an empty body keeps
-/// the card a plain label instead of an expandable fold around a duplicate.
-fn goal_body(text : String) -> String {
+/// A single-line goal is fully carried by its brief — with no body the card
+/// stays a plain label instead of an expandable fold around a duplicate.
+fn goal_body(text : String) -> String? {
   if text.contains("\n") {
-    text
+    Some(text)
   } else {
-    ""
+    None
   }
 }
 
@@ -961,17 +937,18 @@ test "projected rows carry their event's stamp, tool rows the call's own" {
     #|{"sequence":2,"ts":1781144352000,"item":{"kind":"assistant","payload":{"content":"answer","tool_calls":[{"id":"c1","name":"read","arguments":"{}"}]}}},
     #|{"sequence":3,"ts":1781144399000,"item":{"kind":"tool_result","payload":{"tool_call_id":"c1","tool_name":"read","content":"out","is_error":false}}}
   let items = session_from_reply(session_reply(events)).items
-  inspect(items.length(), content="3")
+  inspect(items.length(), content="2")
   assert_true(items[0].ts is Some(1781144351123))
   assert_true(items[0].sequence is Some(1))
+  // The result filled the call inside its response; the response is dated
+  // when the call was made, not when its output came back — and keeps that
+  // event's sequence for the same reason.
+  guard items[1].kind is Assistant(calls=[call], ..) else {
+    fail("expected the response with its one call")
+  }
+  assert_true(call.outcome is Done(content="out", ..))
   assert_true(items[1].ts is Some(1781144352000))
   assert_true(items[1].sequence is Some(2))
-  // The result filled the call row in place; the row is dated when the call
-  // was made, not when its output came back — and keeps that event's
-  // sequence for the same reason.
-  assert_true(items[2].kind is Tool(has_result=true, ..))
-  assert_true(items[2].ts is Some(1781144352000))
-  assert_true(items[2].sequence is Some(2))
 }
 
 ///|
@@ -1003,8 +980,8 @@ test "session load keeps unknown items without hiding known transcript" {
   let view = session_from_reply(reply)
   inspect(view.watermark, content="3")
   inspect(view.items.length(), content="2")
-  inspect(view.items[0].content, content="question")
-  inspect(view.items[1].content, content="answer")
+  assert_eq(view.items[0].text(), Some("question"))
+  assert_eq(view.items[1].text(), Some("answer"))
 }
 
 ///|
@@ -1027,23 +1004,25 @@ test "transcript mapping replays a finished conversation" {
     #|{"sequence":3,"ts":1000,"item":{"kind":"assistant","payload":{"content":"answer","tool_calls":[],"reasoning_content":"thought"}}},
     #|{"sequence":4,"ts":2000,"item":{"kind":"terminal","payload":{"kind":"finished","message":"answer"}}}
   let items = transcript_from_session(session_reply(events))
-  inspect(items.length(), content="4")
-  guard items[0].kind is User else { fail("expected user item") }
-  inspect(items[0].content, content="question")
+  // The result at sequence 2 answers no recorded call and is dropped.
+  inspect(items.length(), content="2")
+  guard items[0].kind is User(_) else { fail("expected user item") }
+  assert_eq(items[0].text(), Some("question"))
   guard items[1].kind
-    is Tool(name="shell", is_error=true, brief=Some(brief), ..) else {
-    fail("expected tool card")
+    is Assistant(
+      reasoning=Some(thought),
+      prose=Some(_),
+      calls=[],
+      replay=false,
+      finished=true
+    ) else {
+    fail("expected the terminal-confirmed answer with its reasoning")
   }
-  inspect(brief, content="ran ls → exit 1")
-  inspect(items[1].content, content="output")
-  guard items[2].kind is Reasoning else { fail("expected reasoning item") }
-  inspect(items[2].content, content="thought")
-  guard items[3].kind is TerminalAnswer else {
-    fail("expected terminal-confirmed answer")
-  }
-  inspect(items[3].content, content="answer")
-  assert_true(items[3].ts is Some(2000))
-  assert_true(items[3].sequence is Some(4))
+  inspect(thought, content="thought")
+  assert_eq(items[1].text(), Some("answer"))
+  // The confirming terminal leaves the response its own stamp and sequence.
+  assert_true(items[1].ts is Some(1000))
+  assert_true(items[1].sequence is Some(3))
 }
 
 ///|
@@ -1055,16 +1034,17 @@ test "a finished turn marks only its last assistant message as final" {
     #|{"sequence":4,"ts":2000,"item":{"kind":"assistant","payload":{"content":"Done.","tool_calls":[]}}},
     #|{"sequence":5,"ts":3000,"item":{"kind":"terminal","payload":{"kind":"finished","message":"Done."}}}
   let items = transcript_from_session(session_reply(events))
-  inspect(items.length(), content="4")
-  guard items[1].kind is Assistant(is_danger=false) else {
+  inspect(items.length(), content="3")
+  guard items[1].kind is Assistant(calls=[call], finished=false, ..) else {
     fail("expected tool-prefacing narration to stay non-final")
   }
-  inspect(items[1].content, content="I will inspect it.")
-  guard items[3].kind is TerminalAnswer else {
+  assert_eq(items[1].text(), Some("I will inspect it."))
+  assert_true(call.outcome is Done(..))
+  guard items[2].kind is Assistant(calls=[], finished=true, ..) else {
     fail("expected only the last answer to be terminal-confirmed")
   }
-  inspect(items[3].content, content="Done.")
-  assert_true(items[3].ts is Some(3000))
+  assert_eq(items[2].text(), Some("Done."))
+  assert_true(items[2].ts is Some(2000))
 }
 
 ///|
@@ -1073,10 +1053,10 @@ test "checkpoint assistant provenance projects without duplicate reasoning" {
     #|{"sequence":1,"item":{"kind":"assistant","payload":{"content":"kept answer","tool_calls":[],"reasoning_content":"old thought","is_replay":true}}}
   let items = transcript_from_session(session_reply(events))
   inspect(items.length(), content="1")
-  guard items[0].kind is AssistantReplay else {
-    fail("expected a checkpoint replay")
+  guard items[0].kind is Assistant(reasoning=None, replay=true, ..) else {
+    fail("expected a checkpoint replay without its reasoning")
   }
-  inspect(items[0].content, content="kept answer")
+  assert_eq(items[0].text(), Some("kept answer"))
 }
 
 ///|
@@ -1087,97 +1067,45 @@ test "tool results fill calls by id without changing call order" {
     #|{"sequence":3,"item":{"kind":"tool_result","payload":{"tool_call_id":"c1","tool_name":"","content":"module contents","is_error":false,"brief":"read moon.mod"}}}
   let view = session_from_reply(session_reply(events))
   let items = view.items
-  inspect(items.length(), content="2")
-  guard items[0].kind
-    is Tool(
-      call_id="c1",
-      name="read",
-      arguments=Some(read_args),
-      has_result=true,
+  inspect(items.length(), content="1")
+  guard items[0].kind is Assistant(calls=[read, shell], ..) else {
+    fail("expected one response carrying both calls in order")
+  }
+  inspect(read.call_id, content="c1")
+  inspect(read.name, content="read")
+  assert_true(read.arguments is Some("{\"path\":\"moon.mod\"}"))
+  assert_true(
+    read.outcome
+    is Done(
+      content="module contents",
       is_error=false,
       brief=Some("read moon.mod")
-    ) else {
-    fail("expected the first call to remain first")
-  }
-  inspect(read_args, content="{\"path\":\"moon.mod\"}")
-  inspect(items[0].content, content="module contents")
-  guard items[1].kind
-    is Tool(
-      call_id="c2",
-      name="shell",
-      arguments=Some(shell_args),
-      has_result=true,
-      is_error=false,
-      brief=Some("ran moon test")
-    ) else {
-    fail("expected the second call to remain second")
-  }
-  inspect(shell_args, content="{\"cmd\":\"moon test\"}")
-  inspect(items[1].content, content="tests passed")
+    ),
+  )
+  inspect(shell.call_id, content="c2")
+  inspect(shell.name, content="shell")
+  assert_true(shell.arguments is Some("{\"cmd\":\"moon test\"}"))
+  assert_true(
+    shell.outcome
+    is Done(content="tests passed", is_error=false, brief=Some("ran moon test")),
+  )
 }
 
 ///|
-test "duplicate tool results preserve every durable event" {
+test "a result no recorded call is waiting for changes nothing" {
   let events =
     #|{"sequence":1,"item":{"kind":"assistant","payload":{"content":"","tool_calls":[{"id":"d","name":"read","arguments":"{\"path\":\"x\"}"}]}}},
     #|{"sequence":2,"item":{"kind":"tool_result","payload":{"tool_call_id":"d","tool_name":"read","content":"one","is_error":false}}},
     #|{"sequence":3,"item":{"kind":"tool_result","payload":{"tool_call_id":"d","tool_name":"read","content":"two","is_error":false}}}
   let view = session_from_reply(session_reply(events))
   let items = view.items
-  inspect(items.length(), content="2")
-  // The first result fills the call in place; the duplicate result appends at
-  // its own durable boundary instead of replacing the completed call.
-  guard items[0].kind
-    is Tool(
-      call_id="d",
-      arguments=Some("{\"path\":\"x\"}"),
-      has_result=true,
-      ..
-    ) else {
+  inspect(items.length(), content="1")
+  // The first result fills the call; the second answers nothing pending, so
+  // it is dropped rather than shown as a call the model never made.
+  guard items[0].kind is Assistant(calls=[call], ..) else {
     fail("expected the recorded call with its first result")
   }
-  inspect(items[0].content, content="one")
-  guard items[1].kind is Tool(call_id="d", arguments=None, has_result=true, ..) else {
-    fail("expected the duplicate result as an unmatched row")
-  }
-  inspect(items[1].content, content="two")
-}
-
-///|
-test "duplicate tool call ids keep their result unpaired" {
-  let events =
-    #|{"sequence":1,"item":{"kind":"assistant","payload":{"content":"","tool_calls":[{"id":"dup","name":"read","arguments":"{\"path\":\"x\"}"},{"id":"dup","name":"shell","arguments":"{\"cmd\":\"pwd\"}"}]}}},
-    #|{"sequence":2,"item":{"kind":"tool_result","payload":{"tool_call_id":"dup","tool_name":"read","content":"result","is_error":false}}}
-  let view = session_from_reply(session_reply(events))
-  let items = view.items
-  inspect(items.length(), content="3")
-  // Both calls stay pending because their shared id cannot identify which one
-  // produced the result; the result is preserved at its own durable boundary.
-  guard items[0].kind
-    is Tool(
-      call_id="dup",
-      name="read",
-      arguments=Some("{\"path\":\"x\"}"),
-      has_result=false,
-      ..
-    ) else {
-    fail("expected the first duplicate call to remain pending")
-  }
-  guard items[1].kind
-    is Tool(
-      call_id="dup",
-      name="shell",
-      arguments=Some("{\"cmd\":\"pwd\"}"),
-      has_result=false,
-      ..
-    ) else {
-    fail("expected the second duplicate call to remain pending")
-  }
-  guard items[2].kind
-    is Tool(call_id="dup", name="read", arguments=None, has_result=true, ..) else {
-    fail("expected the ambiguous result as an unmatched row")
-  }
-  inspect(items[2].content, content="result")
+  assert_true(call.outcome is Done(content="one", ..))
 }
 
 ///|
@@ -1197,12 +1125,10 @@ test "transcript mapping renders non-finished terminals as error bubbles" {
     #|{"sequence":3,"item":{"kind":"terminal","payload":{"kind":"failed","message":"engine error"}}}
   let items = transcript_from_session(session_reply(events))
   inspect(items.length(), content="3")
-  guard items[0].kind is Assistant(is_danger=true) else {
-    fail("expected error bubble")
-  }
-  inspect(items[0].content, content="cancelled")
-  inspect(items[1].content, content="aborted: the agent gave up")
-  inspect(items[2].content, content="engine error")
+  guard items[0].kind is Failure(_) else { fail("expected error bubble") }
+  assert_eq(items[0].text(), Some("cancelled"))
+  assert_eq(items[1].text(), Some("aborted: the agent gave up"))
+  assert_eq(items[2].text(), Some("engine error"))
 }
 
 ///|
@@ -1213,12 +1139,12 @@ test "transcript mapping keeps summaries and background notices" {
     #|{"sequence":3,"item":{"kind":"runtime_notice","payload":{"content":""}}}
   let items = transcript_from_session(session_reply(events))
   inspect(items.length(), content="2")
-  guard items[0].kind is Summary else { fail("expected summary") }
+  guard items[0].kind is Summary(_) else { fail("expected summary") }
   guard items[1].kind
-    is Tool(name="runtime notice", arguments=None, is_error=false, ..) else {
+    is Notice(label="runtime notice", brief=None, is_error=false, ..) else {
     fail("expected runtime notice row")
   }
-  inspect(items[1].content, content="background job bg-1 finished (exit=0)")
+  assert_eq(items[1].text(), Some("background job bg-1 finished (exit=0)"))
 }
 
 ///|
@@ -1231,14 +1157,14 @@ test "transcript mapping renders goal markers as cards and reduces the standing 
   let view = session_from_reply(session_reply(events))
   inspect(view.items.length(), content="2")
   guard view.items[0].kind
-    is Tool(name="goal", is_error=false, brief=Some(set_brief), ..) else {
+    is Notice(label="goal", is_error=false, brief=Some(set_brief), ..) else {
     fail("expected the set card")
   }
   inspect(set_brief, content="Goal set: ship the feature")
   // A single-line goal is fully carried by its brief; no expandable body.
-  inspect(view.items[0].content, content="")
+  assert_true(view.items[0].text() is None)
   guard view.items[1].kind
-    is Tool(name="goal", is_error=true, brief=Some(blocked_brief), ..) else {
+    is Notice(label="goal", is_error=true, brief=Some(blocked_brief), ..) else {
     fail("expected the blocked card")
   }
   inspect(blocked_brief, content="Goal blocked: needs a decision")
@@ -1270,10 +1196,10 @@ test "transcript mapping drops the plan reminder instead of carding it" {
   let items = transcript_from_session(session_reply(events))
   inspect(items.length(), content="1")
   guard items[0].kind
-    is Tool(name="runtime notice", arguments=None, is_error=false, ..) else {
+    is Notice(label="runtime notice", brief=None, is_error=false, ..) else {
     fail("expected only the runtime notice row")
   }
-  inspect(items[0].content, content="background job bg-2 finished (exit=1)")
+  assert_eq(items[0].text(), Some("background job bg-2 finished (exit=1)"))
 }
 
 ///|
@@ -1283,19 +1209,22 @@ test "a cleared goal leaves cards but no standing goal" {
     #|{"sequence":2,"item":{"kind":"runtime_notice","payload":{"content":"[goal cleared]"}}}
   let view = session_from_reply(session_reply(events))
   inspect(view.items.length(), content="2")
-  guard view.items[0].kind is Tool(name="goal", brief=Some(set_brief), ..) else {
+  guard view.items[0].kind is Notice(label="goal", brief=Some(set_brief), ..) else {
     fail("expected the set card")
   }
   // A multi-line goal folds to its first line and expands to the full text.
   inspect(set_brief, content="Goal set: line one …")
+  guard view.items[0].text() is Some(body) else {
+    fail("expected the full goal text as the card's body")
+  }
   inspect(
-    view.items[0].content,
+    body,
     content=(
       #|line one
       #|line two
     ),
   )
-  guard view.items[1].kind is Tool(name="goal", brief=Some(cleared), ..) else {
+  guard view.items[1].kind is Notice(label="goal", brief=Some(cleared), ..) else {
     fail("expected the cleared card")
   }
   inspect(cleared, content="Goal cleared")
@@ -1309,12 +1238,12 @@ test "transcript mapping replays a context checkpoint and yield guidance" {
     #|{"sequence":2,"item":{"kind":"terminal","payload":{"kind":"finished","message":"[context ceiling] continue in a new turn"}}}
   let items = transcript_from_session(session_reply(events))
   inspect(items.length(), content="2")
-  guard items[0].kind is Summary else { fail("expected checkpoint summary") }
-  inspect(items[0].content, content="checkpoint recap")
-  guard items[1].kind is TerminalAnswer else {
+  guard items[0].kind is Summary(_) else { fail("expected checkpoint summary") }
+  assert_eq(items[0].text(), Some("checkpoint recap"))
+  guard items[1].kind is Answer(_) else {
     fail("expected context-yield guidance")
   }
-  inspect(items[1].content, content="[context ceiling] continue in a new turn")
+  assert_eq(items[1].text(), Some("[context ceiling] continue in a new turn"))
 }
 
 ///|

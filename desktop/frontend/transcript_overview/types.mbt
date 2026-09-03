@@ -84,31 +84,36 @@ pub fn entries(
 ) -> Array[Entry] {
   let result : Array[Entry] = []
   for index, item in items {
-    guard item.kind is User else { continue }
-    // The turn's answer is its first assistant row — reasoning and tool
-    // cards in between belong to the same turn. An abort/failure bubble
-    // counts: it is what the turn got.
+    guard item.kind is User(prompt) else { continue }
+    // The turn's answer is the first prose the agent said — a response that
+    // only thought or only ran tools is not an answer yet. An abort/failure
+    // bubble counts: it is what the turn got.
     //
     // Failures are collected over the whole turn rather than stopping at the
-    // answer: a tool that failed after the first assistant row still failed in
-    // this turn, and the reply search stops early by design.
+    // answer: a tool that failed after the first answer still failed in this
+    // turn, and the reply search stops early by design.
     let mut reply : String? = None
     let mut failed = false
     for cursor in (index + 1)..<items.length() {
-      if items[cursor].kind is User {
+      let item = items[cursor]
+      if item.kind is User(_) {
         break
       }
-      if items[cursor].kind is Tool(is_error=true, ..) {
-        failed = true
+      match item.kind {
+        Assistant(calls~, ..) =>
+          if calls.iter().any(call => call.outcome is Done(is_error=true, ..)) {
+            failed = true
+          }
+        Notice(is_error=true, ..) => failed = true
+        _ => ()
       }
-      if reply is None &&
-        items[cursor].kind is (Assistant(_) | AssistantReplay | TerminalAnswer) {
-        reply = Some(items[cursor].content)
+      if reply is None && item.kind is (Assistant(..) | Answer(_) | Failure(_)) {
+        reply = item.text()
       }
     }
     result.push({
       key: TurnKey::of(item, index~),
-      text: display(item.content),
+      text: display(prompt),
       ts: item.ts,
       reply,
       failed,

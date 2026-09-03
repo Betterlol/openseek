@@ -1,15 +1,19 @@
 ///|
 test "transcript stream children use stable typed keys in display order" {
-  let first_tool : @transcript.TranscriptItem = {
-    kind: Tool(
-      call_id="c1",
-      name="shell",
-      arguments=None,
-      has_result=true,
-      is_error=false,
-      brief=Some("moon check"),
+  let call : @transcript.ToolCall = {
+    call_id: "c1",
+    name: "shell",
+    arguments: Some("{}"),
+    outcome: Pending(output=None),
+  }
+  let response : @transcript.TranscriptItem = {
+    kind: Assistant(
+      reasoning=None,
+      prose=Some("I will check it."),
+      calls=[call],
+      replay=false,
+      finished=false,
     ),
-    content: "output",
     ts: None,
     sequence: Some(42),
   }
@@ -21,10 +25,10 @@ test "transcript stream children use stable typed keys in display order" {
     submission_generation=1,
     items=[
       {
-        item: { kind: User, content: "question", ts: None, sequence: Some(41), },
-        identity: "s41\u{0}o0",
+        item: { kind: User("question"), ts: None, sequence: Some(41), },
+        identity: "s41",
       },
-      { item: first_tool, identity: "s42\u{0}o0", },
+      { item: response, identity: "s42", },
     ],
     streaming_response=Some("partial answer"),
     streaming_identity="r7",
@@ -36,34 +40,104 @@ test "transcript stream children use stable typed keys in display order" {
     on_open_session: _ => @cmd.none,
   }
   let keys = renderer.stream_children().to_array().map(pair => pair.0)
-  assert_eq(keys, [
-    "row\u{0}s41\u{0}o0", "rule\u{0}s41\u{0}o0", "activity\u{0}after\u{0}s41\u{0}o0",
-    "streaming\u{0}r7",
-  ])
-  // A newly discovered row from the same durable Assistant step extends the
-  // same card; it does not replace its browser-owned disclosure.
-  let extended = {
+  assert_eq(keys, ["row\u{0}s41", "rule\u{0}s41", "row\u{0}s42", "live\u{0}r7"])
+  // The result filling the call, and the durable reasoning the same event
+  // turns out to carry, change the response's node, never its identity: the
+  // browser-owned disclosures inside it survive both.
+  let settled = {
     ..input,
     items: [
       input.items[0],
       {
         item: {
-          kind: Reasoning,
-          content: "thinking",
-          ts: None,
-          sequence: Some(42),
+          ..response,
+          kind: Assistant(
+            reasoning=Some("thinking"),
+            prose=Some("I will check it."),
+            calls=[
+              {
+                ..call,
+                outcome: Done(content="output", is_error=false, brief=None),
+              },
+            ],
+            replay=false,
+            finished=false,
+          ),
         },
-        identity: "s42\u{0}o0",
+        identity: "s42",
       },
-      { item: first_tool, identity: "s42\u{0}o1", },
     ],
   }
-  let extended_renderer = { ..renderer, input: extended, }
-  let extended_keys = extended_renderer
+  let settled_renderer = { ..renderer, input: settled, }
+  let settled_keys = settled_renderer
     .stream_children()
     .to_array()
     .map(pair => pair.0)
-  assert_eq(extended_keys, keys)
+  assert_eq(settled_keys, keys)
+}
+
+///|
+test "the live response is one node, replaced by the durable one" {
+  let user : VisibleRow = {
+    item: { kind: User("question"), ts: None, sequence: Some(1), },
+    identity: "s1",
+  }
+  let live_input = Input(
+    source=OpenSeek,
+    focused=@interop.ChannelId::Local,
+    active_session="desktop-test",
+    root=None,
+    submission_generation=1,
+    items=[user],
+    streaming_response=None,
+    streaming_reasoning="next thought",
+    streaming_identity="r7",
+  )
+  let renderer : TranscriptRenderer = {
+    input: live_input,
+    on_open: _ => @cmd.none,
+    on_jump: _ => @cmd.none,
+    on_open_session: _ => @cmd.none,
+  }
+  let live_keys = renderer.stream_children().to_array().map(pair => pair.0)
+  assert_eq(live_keys, ["row\u{0}s1", "rule\u{0}s1", "live\u{0}r7"])
+  // The answer streaming after the thought joins the same node.
+  let answering = {
+    ..renderer,
+    input: { ..live_input, streaming_response: Some("partial"), },
+  }
+  assert_eq(
+    answering.stream_children().to_array().map(pair => pair.0),
+    live_keys,
+  )
+  // The durable commit is its own node; the preview is gone with the run.
+  let settled = {
+    ..renderer,
+    input: {
+      ..live_input,
+      items: [
+        user,
+        {
+          item: {
+            kind: Assistant(
+              reasoning=Some("next thought"),
+              prose=Some("answer"),
+              calls=[],
+              replay=false,
+              finished=false,
+            ),
+            ts: None,
+            sequence: Some(2),
+          },
+          identity: "s2",
+        },
+      ],
+      streaming_reasoning: None,
+    },
+  }
+  assert_eq(settled.stream_children().to_array().map(pair => pair.0), [
+    "row\u{0}s1", "rule\u{0}s1", "row\u{0}s2",
+  ])
 }
 
 ///|
