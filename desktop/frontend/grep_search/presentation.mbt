@@ -7,6 +7,36 @@ fn semantic_hit_key(hit : @protocol.SemanticSearchHit) -> String {
 }
 
 ///|
+/// Return the retained semantic hits whose stable identities are selected.
+/// Selection is resolved against the flat result set, not the current view
+/// projection, so it remains valid if the presentation is rearranged later.
+fn selected_semantic_hits(
+  hits : Array[@protocol.SemanticSearchHit],
+  selected : Map[String, Bool],
+) -> Array[@protocol.SemanticSearchHit] {
+  hits.filter(hit => selected.get(semantic_hit_key(hit)).unwrap_or(false))
+}
+
+///|
+fn selected_semantic_prompt(
+  hits : Array[@protocol.SemanticSearchHit],
+  selected : Map[String, Bool],
+) -> String {
+  let lines : Array[String] = [
+    "Please inspect these selected semantic search matches:", "",
+  ]
+  for hit in selected_semantic_hits(hits, selected) {
+    lines.push("- Pattern: \{hit.rule_id}")
+    lines.push("  File: \{hit.path}")
+    lines.push(
+      "  Range: \{hit.start_line}:\{hit.start_column}-\{hit.end_line}:\{hit.end_column}",
+    )
+    lines.push("  Match: \{hit.matched_source}")
+  }
+  lines.join("\n")
+}
+
+///|
 /// Presentation identity is kept separate from the hit identity so a future
 /// File -> Pattern projection can reuse selection state and only change the
 /// grouping pass.
