@@ -840,6 +840,7 @@ fn edit_reject_report(
 }
 
 ///|
+#warnings("-unused_field")
 priv struct EditRegion {
   prefix : String
   body : String
