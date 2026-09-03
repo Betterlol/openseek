@@ -1,0 +1,14 @@
+import {
+  "bobzhang/openseek/agent_subrun",
+  "bobzhang/openseek/agent_tool",
+  "bobzhang/openseek/deepseek",
+  "moonbitlang/core/json",
+}
+
+supported_targets = "+native"
+
+dev_build(
+  rule: "md_to_mbt_string",
+  input: "pattern_repair_system_prompt.mbt.md",
+  output: "generated_pattern_repair_system_prompt.mbt",
+)

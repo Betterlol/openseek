@@ -9,6 +9,7 @@ import {
   "openseek_desktop/internal/commands",
   "openseek_desktop/internal/protocol",
   "openseek_desktop/frontend/interop",
+  "openseek_desktop/frontend/icons",
   "openseek_desktop/frontend/resource",
 }
 
@@ -17,7 +18,3 @@ supported_targets = "js"
 import {
   "moonbitlang/core/debug",
 } for "test"
-
-import {
-  "moonbit-community/rabbita",
-} for "wbtest"

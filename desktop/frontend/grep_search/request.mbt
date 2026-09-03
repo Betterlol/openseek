@@ -195,7 +195,7 @@ fn search_request_loader(
 /// tree, or opening a Browser tab may leave an issued search running. Query,
 /// mode, and checkout generations still replace the subscription and cancel
 /// its child.
-pub fn State::subscription(
+fn State::search_subscription(
   self : State,
   input : Input,
   emit : @cmd.Emit[Msg],
@@ -212,7 +212,9 @@ pub fn State::subscription(
       .text_request_payload(input)
       .map(payload => SearchRequest::Text(payload))
     Semantic =>
-      page.semantic_request_payload(input).map(payload => Semantic(payload))
+      page
+      .semantic_request_payload(input)
+      .map(payload => SearchRequest::Semantic(payload))
   }
   guard request is Some(request) else { return @sub.none }
   let identity = request.identity()

@@ -24,14 +24,14 @@ const MaxSemanticSearchErrorMessageUnits : Int = 1000
 const SemanticSearchProgressBatch : Int = 50
 
 ///|
+const MoongrepErrorJsonParseEnabled : Bool = true
+
+///|
 /// The mooncakes coordinate pinned for the interim `moonx` provider. moongrep
 /// publishes no upstream release binaries, so a trial bundle resolves the
 /// provider through `moonx <coordinate> --`; pinning the version keeps the
 /// search deterministic instead of silently running whatever the local
 /// registry index knows as "latest".
-const MoongrepPackageCoordinate : String = "moonbit-community/moongrep@0.2.2"
-
-///|
 priv struct ParsedSemanticContextLine {
   line : Int
   text : String
@@ -426,6 +426,7 @@ fn parse_semantic_context_line(line : Json) -> ParsedSemanticContextLine? {
 fn parse_moongrep_match(line : String) -> ParsedSemanticMatch? {
   let json = @json.parse(line) catch { _ => return None }
   guard json is Object(message) &&
+    message.get("type") is Some(String("finding")) &&
     message.get("file") is Some(String(path)) &&
     message.get("rule_id") is Some(String(rule_id)) &&
     nested_semantic_object(message, "range") is Some(range) &&
@@ -467,6 +468,34 @@ fn parse_moongrep_match(line : String) -> ParsedSemanticMatch? {
 }
 
 ///|
+fn parse_moongrep_error(line : String) -> (String, String)? {
+  let json = @json.parse(line) catch { _ => return None }
+  guard json is Object(fields) && fields.get("type") is Some(String("error")) else {
+    return None
+  }
+  let message = match fields.get("message") {
+    Some(String(value)) => value
+    _ => "moongrep reported an error"
+  }
+  let reason = match fields.get("reason") {
+    Some(String(value)) if !value.is_empty() => " \{value}"
+    _ => ""
+  }
+  let code = project_moongrep_error_code(message)
+  Some((code, message + ": " + reason))
+}
+
+///|
+fn project_moongrep_error_code(message : String) -> String {
+  let lower = message.to_lower()
+  if lower == "invalid anonymous pattern" {
+    "invalid_pattern"
+  } else {
+    "search_failed"
+  }
+}
+
+///|
 fn project_semantic_match(parsed : ParsedSemanticMatch) -> SemanticSearchHit {
   {
     path: parsed.path,
@@ -500,7 +529,8 @@ fn semantic_search_error(stderr : String) -> (String, String) {
   let lower = detail.to_lower()
   let code = if lower.contains("not a valid moonbit expression") ||
     lower.contains("lexical errors") ||
-    lower.contains("is not a valid") {
+    lower.contains("is not a valid") ||
+    lower.contains("invalid metavar syntax") {
     "invalid_pattern"
   } else if lower.contains("missing required --rules") ||
     lower.contains("missing required rule") {
@@ -508,8 +538,6 @@ fn semantic_search_error(stderr : String) -> (String, String) {
   } else if lower.contains("permission denied") ||
     lower.contains("access is denied") {
     "permission_denied"
-  } else if lower == "" {
-    "empty_stderr"
   } else {
     "search_failed"
   }
@@ -672,40 +700,35 @@ async fn run_semantic_search(
     let files : Map[String, Bool] = Map([])
     let mut match_count = 0
     let mut limit_hit = false
-    let mut first_error_line : String? = None
     let mut published_hits = 0
     defer stdout_reader.close()
     for ;; {
       let line = stdout_reader.read_until("\n")
       guard line is Some(line) else { break }
-      guard parse_moongrep_match(line) is Some(parsed) else {
-        if first_error_line is None && !line.trim().is_empty() {
-          first_error_line = Some(line.trim().to_owned())
+      if parse_moongrep_match(line) is Some(parsed) {
+        guard semantic_path_is_included(parsed.path, payload) else { continue }
+        if match_count >= max_results {
+          limit_hit = true
+          process.cancel()
+          break
         }
-        continue
-      }
-      guard semantic_path_is_included(parsed.path, payload) else { continue }
-      if match_count >= max_results {
-        limit_hit = true
-        process.cancel()
-        break
-      }
-      let hit = project_semantic_match(parsed)
-      hits.push(hit)
-      files[hit.path] = true
-      match_count += 1
-      if match_count == 1 || match_count % SemanticSearchProgressBatch == 0 {
-        let batch = hits[published_hits:].to_owned()
-        publish_semantic_progress(
-          emit,
-          reply_root,
-          payload.session_key,
-          payload.generation,
-          batch,
-          match_count,
-          files.length(),
-        )
-        published_hits = hits.length()
+        let hit = project_semantic_match(parsed)
+        hits.push(hit)
+        files[hit.path] = true
+        match_count += 1
+        if match_count == 1 || match_count % SemanticSearchProgressBatch == 0 {
+          let batch = hits[published_hits:].to_owned()
+          publish_semantic_progress(
+            emit,
+            reply_root,
+            payload.session_key,
+            payload.generation,
+            batch,
+            match_count,
+            files.length(),
+          )
+          published_hits = hits.length()
+        }
       }
     }
     if published_hits < hits.length() {
@@ -725,6 +748,14 @@ async fn run_semantic_search(
       _ => 2
     }
     let stderr = stderr_task.wait() catch { _ => "" }
+    let mut json_error : (String, String)? = None
+    if MoongrepErrorJsonParseEnabled {
+      for line in stderr.split("\n") {
+        if parse_moongrep_error(line.to_owned()) is Some(parsed_error) {
+          json_error = Some(parsed_error)
+        }
+      }
+    }
     let lower = stderr.to_lower()
     let partial = lower.contains("warning:") ||
       lower.contains("skipping") ||
@@ -733,12 +764,9 @@ async fn run_semantic_search(
     // crash on MoonBit syntax it does not parse yet. A nonzero exit alone is
     // therefore not fatal once some hits were already emitted: keep them, like
     // ripgrep's partial-results behavior, so the panel can use what it got.
-    let (code, message) = semantic_search_error(stderr)
-    let (code, message) = if code == "empty_stderr" &&
-      first_error_line is Some(line) {
-      semantic_search_error(line)
-    } else {
-      (code, message)
+    let (code, message) = match json_error {
+      Some(pair) => pair
+      None => semantic_search_error(stderr)
     }
     if semantic_search_exit_is_fatal(exit_code, !hits.is_empty()) {
       return empty_semantic_search_reply(reply_root, payload.generation, error={

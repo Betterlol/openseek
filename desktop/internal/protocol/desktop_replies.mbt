@@ -1385,6 +1385,24 @@ pub impl ToJson for ReadFileReply with fn to_json(self) {
 }
 
 ///|
+/// Candidate produced by one Pattern Repair request. It is not applied to the
+/// active search until the user explicitly accepts it.
+pub(all) struct PatternRepairReply {
+  root : String
+  generation : Int
+  candidate_pattern : String
+  valid : Bool
+  validation_status : String
+  message : String
+} derive(Debug, Eq)
+
+///|
+pub extend PatternRepairReply with Debug::{to_repr}
+
+///|
+pub extend PatternRepairReply with Eq::{equal, not_equal}
+
+///|
 pub impl FromJson for ReadFileReply with fn from_json(json, path) {
   guard json is Object(fields) && fields.get("kind") is Some(String(kind_)) else {
     raise JsonDecodeError((path, "expected file reply"))
