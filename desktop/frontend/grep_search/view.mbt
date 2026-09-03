@@ -247,7 +247,12 @@ fn pattern_repair_control(page : Page, emit : @cmd.Emit[Msg]) -> @html.Html {
           "Fix Pattern"
         },
       )
-      .aria_pressed(requested.to_string())
+      .aria_pressed(
+        (requested ||
+        completed ||
+        failed ||
+        page.pattern_repair_phase is PatternRepairComposer).to_string(),
+      )
       .on_click(_ => {
         if requested {
           @cmd.none

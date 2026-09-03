@@ -475,14 +475,14 @@ fn parse_moongrep_error(line : String) -> (String, String)? {
   }
   let message = match fields.get("message") {
     Some(String(value)) => value
-    _ => "moongrep reported an error."
+    _ => "moongrep reported an error"
   }
   let reason = match fields.get("reason") {
     Some(String(value)) if !value.is_empty() => " \{value}"
     _ => ""
   }
   let code = project_moongrep_error_code(message)
-  Some((code, reason))
+  Some((code, message + ": " + reason))
 }
 
 ///|
