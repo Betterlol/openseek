@@ -352,9 +352,9 @@ pub fn State::handle(self : State, msg : Msg, input : Input) -> State {
     CollapseAll => {
       let collapsed : Map[String, Bool] = Map([])
       if page.mode is Semantic {
-        for pattern in semantic_grouped_hits(page.semantic.hits) {
+        for pattern in semantic_pattern_groups(page.semantic.hits) {
           collapsed[semantic_pattern_key(pattern.pattern)] = true
-          for file in semantic_file_groups(pattern) {
+          for file in semantic_file_groups(pattern.hits) {
             collapsed[semantic_file_key(pattern.pattern, file.path)] = true
           }
         }

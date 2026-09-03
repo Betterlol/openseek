@@ -626,93 +626,6 @@ fn text_search_body(
 }
 
 ///|
-priv struct SemanticFileGroup {
-  path : String
-  hits : Array[@protocol.SemanticSearchHit]
-  count : Int
-}
-
-///|
-priv struct SemanticPatternGroup {
-  pattern : String
-  hits : Array[@protocol.SemanticSearchHit]
-  count : Int
-}
-
-///|
-fn semantic_pattern_key(pattern : String) -> String {
-  "semantic-pattern:\{pattern}"
-}
-
-///|
-fn semantic_file_key(pattern : String, path : String) -> String {
-  "semantic-file:\{pattern}:\{path}"
-}
-
-///|
-fn semantic_grouped_hits(
-  hits : Array[@protocol.SemanticSearchHit],
-) -> Array[SemanticPatternGroup] {
-  let groups : Array[SemanticPatternGroup] = []
-  let indexes : Map[String, Int] = Map([])
-  for hit in hits {
-    match indexes.get(hit.rule_id) {
-      Some(index) => {
-        let group = groups[index]
-        let rows = group.hits
-        rows.push(hit)
-        groups[index] = { ..group, hits: rows, count: group.count + 1, }
-      }
-      None => {
-        indexes[hit.rule_id] = groups.length()
-        groups.push({ pattern: hit.rule_id, hits: [hit], count: 1, })
-      }
-    }
-  }
-  groups
-}
-
-///|
-fn semantic_file_groups(
-  pattern : SemanticPatternGroup,
-) -> Array[SemanticFileGroup] {
-  let groups : Array[SemanticFileGroup] = []
-  let indexes : Map[String, Int] = Map([])
-  for hit in pattern.hits {
-    match indexes.get(hit.path) {
-      Some(index) => {
-        let group = groups[index]
-        let rows = group.hits
-        rows.push(hit)
-        groups[index] = { ..group, hits: rows, count: group.count + 1, }
-      }
-      None => {
-        indexes[hit.path] = groups.length()
-        groups.push({ path: hit.path, hits: [hit], count: 1, })
-      }
-    }
-  }
-  groups
-}
-
-///|
-fn visible_semantic_pattern_groups(page : Page) -> Array[SemanticPatternGroup] {
-  let visible : Array[SemanticPatternGroup] = []
-  let mut remaining = page.visible_lines.max(0)
-  for group in semantic_grouped_hits(page.semantic.hits) {
-    guard remaining > 0 else { break }
-    let rows : Array[@protocol.SemanticSearchHit] = []
-    for hit in group.hits {
-      guard rows.length() < remaining else { break }
-      rows.push(hit)
-    }
-    visible.push({ ..group, hits: rows, })
-    remaining -= rows.length()
-  }
-  visible
-}
-
-///|
 /// One moongrep context line: gutter line number plus the source text, with the
 /// matched lines highlighted, in the style of semgrep's pattern-match output.
 fn semantic_context_line_view(
@@ -744,7 +657,9 @@ fn semantic_hit_view(
   )
   @html.div(
     class="search-semantic-hit",
-    attrs=@html.Attrs::build().on_click(_ => open_match(hit.path, target)),
+    attrs=@html.Attrs::build()
+      .data_set("semantic-hit-key", semantic_hit_key(hit))
+      .on_click(_ => open_match(hit.path, target)),
     [
       @html.div(
         class="search-semantic-context",
@@ -810,7 +725,7 @@ fn semantic_pattern_group_view(
   let files = if collapsed {
     []
   } else {
-    semantic_file_groups(group).map(file => {
+    semantic_file_groups(group.hits).map(file => {
       semantic_file_group_view(page, group.pattern, file, emit, open_match)
     })
   }
@@ -890,7 +805,11 @@ fn semantic_search_body(
   if search_message(page, emit) is Some(message) {
     children.push(message)
   }
-  for group in visible_semantic_pattern_groups(page) {
+  for
+    group in visible_semantic_pattern_groups(
+      page.semantic.hits,
+      page.visible_lines,
+    ) {
     children.push(semantic_pattern_group_view(page, group, emit, open_match))
   }
   let shown = page.visible_lines.min(page.semantic.hits.length())
