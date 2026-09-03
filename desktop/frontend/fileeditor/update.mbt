@@ -2893,6 +2893,7 @@ fn update_inner(
       })
       (update_search_match_highlights(highlights), next)
     }
+    SearchSelectionSubmitted(_) => (@cmd.none, state)
     ExplorerModeSelected(mode) => {
       let already_selected = state.explorer_mode == mode
       let selected = { ..state, explorer_mode: mode, }
