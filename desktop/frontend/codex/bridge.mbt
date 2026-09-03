@@ -685,6 +685,7 @@ fn State::mention_input(self : State, mention : @composer.Mention) -> Json? {
       })
     }
     @mention_context.Symbol(..)
+    | @mention_context.SemanticSearch(_)
     | @mention_context.Annotation(..)
     | @mention_context.ReviewChanges(_) =>
       Some({
