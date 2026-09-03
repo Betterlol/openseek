@@ -780,6 +780,10 @@ html:is(
   font: inherit;
   cursor: pointer;
 }
+.search-selection-toolbar button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
 .search-selection-toolbar button:hover {
   color: var(--color-text-primary);
   background: var(--color-bg-hover);
