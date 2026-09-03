@@ -88,6 +88,7 @@ priv struct EngineSettings {
   deepseek_api_key : String?
   glm_api_key : String?
   custom_api_key : String?
+  followup_behavior : String
 }
 
 ///|
@@ -140,6 +141,10 @@ fn decode_settings(raw : Map[String, Json]) -> EngineSettings {
     deepseek_api_key: settings_text(raw, "deepseek_api_key"),
     glm_api_key: settings_text(raw, "glm_api_key"),
     custom_api_key: settings_text(raw, "custom_api_key"),
+    followup_behavior: match settings_text(raw, "followup_behavior") {
+      Some("queue") => "queue"
+      _ => "steer"
+    },
   }
 }
 
@@ -173,6 +178,7 @@ fn settings_status_payload(
     @env.get("DEEPSEEK") is Some(_),
     has_glm_key: settings.glm_api_key is Some(_) || @env.get("GLM") is Some(_),
     has_custom_key: settings.custom_api_key is Some(_),
+    followup_behavior: settings.followup_behavior,
   }
 }
 
@@ -204,6 +210,7 @@ pub async fn settings_status(
 pub async fn update_settings(
   manager : EngineManager,
   patch : SettingsPatch,
+  followup_behavior? : String,
   legacy_migration? : Bool = false,
   on_committed? : (@protocol.SettingsStatusPayload) -> Unit,
 ) -> @protocol.SettingsStatusPayload {
@@ -242,6 +249,12 @@ pub async fn update_settings(
   apply_text_patch(raw, "deepseek_api_key", patch.deepseek_api_key)
   apply_text_patch(raw, "glm_api_key", patch.glm_api_key)
   apply_text_patch(raw, "custom_api_key", patch.custom_api_key)
+  if followup_behavior is Some(value) {
+    guard value == "steer" || value == "queue" else {
+      raise EngineError("unknown follow-up behavior '\{value}'")
+    }
+    raw["followup_behavior"] = Json(value)
+  }
   // Version 2 retired the WSL engine mode. A settings write also removes the
   // old group so the durable file no longer advertises an ignored capability.
   raw.remove("wsl")
@@ -440,6 +453,7 @@ async test "missing settings read as the BYOK defaults" {
       "has_deepseek_key": false,
       "has_glm_key": false,
       "has_custom_key": false,
+      "followup_behavior": "steer",
     })
   })
 }
@@ -457,6 +471,7 @@ async test "the DEEPSEEK env fallback reads as a usable key" {
       "has_deepseek_key": true,
       "has_glm_key": false,
       "has_custom_key": false,
+      "followup_behavior": "steer",
     })
   })
 }
@@ -477,6 +492,7 @@ async test "a saved key round-trips as presence, never as text" {
       "has_deepseek_key": true,
       "has_glm_key": false,
       "has_custom_key": false,
+      "followup_behavior": "steer",
     })
     // The status never carries the key; the file carries it trimmed.
     assert_false(status.to_json().stringify().contains("sk-secret"))
@@ -511,6 +527,7 @@ async test "retired hosted providers converge on the DeepSeek default" {
       "has_deepseek_key": false,
       "has_glm_key": false,
       "has_custom_key": false,
+      "followup_behavior": "steer",
     })
     let text = @fsx.read_text(settings_file(dir))
     assert_true(text.contains("\"provider\": \"deepseek\""))
@@ -546,6 +563,7 @@ async test "a present-but-blank field clears the stored value" {
       "has_deepseek_key": false,
       "has_glm_key": false,
       "has_custom_key": false,
+      "followup_behavior": "steer",
     })
   })
 }
@@ -878,6 +896,7 @@ async test "the GLM provider stores its own key and reports presence" {
       "has_deepseek_key": false,
       "has_glm_key": true,
       "has_custom_key": false,
+      "followup_behavior": "steer",
     })
     // The status never carries the key; the store carries it trimmed, in its
     // own slot rather than DeepSeek's.
@@ -902,6 +921,7 @@ async test "the GLM env fallback reads as a usable key" {
       "has_deepseek_key": false,
       "has_glm_key": true,
       "has_custom_key": false,
+      "followup_behavior": "steer",
     })
   })
 }

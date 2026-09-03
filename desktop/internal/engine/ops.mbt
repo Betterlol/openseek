@@ -78,8 +78,16 @@ pub async fn start_run(
   // during one of them holds the engine now, and the Running transition
   // below would silently clobber it. Re-check on the engine this run will
   // actually use.
-  if live.phase is Compacting(..) {
-    raise EngineError("this conversation is compacting; wait for it to finish")
+  match live.phase {
+    Compacting(..) =>
+      raise EngineError(
+        "this conversation is compacting; wait for it to finish",
+      )
+    Running(..) =>
+      raise EngineError(
+        "this conversation resumed a queued follow-up; wait for it to finish",
+      )
+    Idle(..) => ()
   }
   let run_id = mint_run_id()
   // The normalized tag rides the wire command so the engine records it on the
@@ -275,6 +283,8 @@ pub async fn compact_run(
       raise EngineError(
         "a compaction is already queued behind the running turn",
       )
+    Running(..) if !live.queued_runs.is_empty() =>
+      raise EngineError("cannot compact while follow-up messages are queued")
     // Sent mid-turn, the command queues behind the open run; the flag makes
     // the turn's terminal event land in Compacting so nothing slips into the
     // gap before the engine's own compaction_started.
@@ -445,6 +455,73 @@ pub fn steer_run(
   // settles it without restoring a duplicate draft.
   live.steer_runs.record_sent(payload.text, submission_id) |> ignore
   { steered: true, run_id: Some(run_id), }
+}
+
+///|
+/// Mutate the currently running turn's in-memory follow-up queue. Queued text
+/// stays in the Desktop controller and reaches the serve process only when it
+/// is promoted to an ordinary prompt or explicitly steered into the open turn.
+pub fn queue_run(
+  manager : EngineManager,
+  payload : @protocol.QueuePayload,
+) -> @protocol.QueueReply raise EngineError {
+  let id = match payload.action {
+    QueueAdd(id~, ..)
+    | QueueEdit(id~, ..)
+    | QueueWithdraw(id~)
+    | QueueSteer(id~) => id.trim().to_owned()
+  }
+  guard !id.is_empty() else { return { accepted: false, } }
+  guard open_run_engine(manager, run_id=payload.run_id) is Some(live) &&
+    live.phase is Running(run_id~, ..) else {
+    return { accepted: false, }
+  }
+  if run_id != payload.run_id {
+    return { accepted: false, }
+  }
+  match payload.action {
+    QueueAdd(text~, ..) => {
+      guard !(live.phase is Running(compact_queued=true, ..)) else {
+        return { accepted: false, }
+      }
+      guard !text.is_blank() else { return { accepted: false, } }
+      guard !live.queued_runs.iter().any(queued => queued.id == id) else {
+        return { accepted: false, }
+      }
+      live.queued_runs.push({ id, run_id: mint_run_id(), content: text, })
+    }
+    QueueEdit(text~, ..) => {
+      guard !text.is_blank() else { return { accepted: false, } }
+      guard live.queued_runs.search_by(queued => queued.id == id) is Some(index) else {
+        return { accepted: false, }
+      }
+      let queued = live.queued_runs[index]
+      live.queued_runs[index] = { ..queued, content: text, }
+    }
+    QueueWithdraw(..) => {
+      guard live.queued_runs.search_by(queued => queued.id == id) is Some(index) else {
+        return { accepted: false, }
+      }
+      ignore(live.queued_runs.remove(index))
+    }
+    QueueSteer(..) => {
+      guard live.queued_runs.search_by(queued => queued.id == id) is Some(index) else {
+        return { accepted: false, }
+      }
+      let queued = live.queued_runs[index]
+      guard live.submit(
+        @protocol.steer(queued.content),
+        failure_reason="failed to write steering to the engine",
+      ) else {
+        return { accepted: false, }
+      }
+      // The ordinary steer receipt carries this queue id, keeping the
+      // transient Steering row attached to the exact promoted input.
+      ignore(live.steer_runs.record_sent(queued.content, Some(id)))
+      ignore(live.queued_runs.remove(index))
+    }
+  }
+  { accepted: true, }
 }
 
 ///|

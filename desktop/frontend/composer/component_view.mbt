@@ -186,7 +186,7 @@ fn Entry::action_buttons(
           content: @icons.icon(@icons.icon_arrow_up),
         },
       ]
-    Running(steer_available~, can_stop~) => {
+    Running(steer_available~, can_stop~, submit~) => {
       let actions : Array[ActionButton] = [
         {
           id: "stop",
@@ -202,7 +202,11 @@ fn Entry::action_buttons(
         actions.push({
           id: "send",
           class_name: "icon-button send-button",
-          title: "Steer the running task",
+          title: match submit {
+            Steer => "Steer the running task"
+            Queue => "Queue for the next turn"
+            SaveQueue => "Save queued message"
+          },
           disabled: false,
           command: emit(SubmitRequested),
           content: @icons.icon(@icons.icon_arrow_up),

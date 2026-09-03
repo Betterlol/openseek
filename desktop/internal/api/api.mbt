@@ -431,6 +431,9 @@ pub fn endpoints(
     @endpoint.Endpoint::remote(@commands.agent_steer, fn(payload) {
       @engine.steer_run(state.manager, payload)
     }),
+    @endpoint.Endpoint::remote(@commands.agent_queue, payload => {
+      @engine.queue_run(state.manager, payload)
+    }),
     @endpoint.Endpoint::remote(@commands.agent_compact, async fn(payload) {
       @engine.compact_run(state.manager, payload)
     }),
@@ -517,6 +520,7 @@ pub fn endpoints(
         let status = @engine.update_settings(
           state.manager,
           payload.to_patch(),
+          followup_behavior?=payload.followup_behavior,
           legacy_migration=payload.legacy_migration == Some(true),
           on_committed=fn(status) {
             // Every client renders these settings; clients that did not ask

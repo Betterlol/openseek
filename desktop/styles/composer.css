@@ -502,6 +502,85 @@
   animation: caretBlink 1.4s steps(1) infinite;
 }
 
+/* Queued follow-ups are composer state until the engine promotes them into
+   the conversation. Keep them in the same centered lane as pending steers. */
+.queued-inputs {
+  max-width: 820px;
+  margin: 0 auto 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-subtle);
+  padding: 4px 10px;
+}
+.queued-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 4px 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-md);
+  line-height: var(--line-height-normal);
+}
+.queued-input-row + .queued-input-row {
+  border-top: 1px solid var(--color-border-subtle);
+}
+.queued-input-icon {
+  flex: none;
+  color: var(--color-text-secondary);
+}
+.queued-input-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.queued-input-state {
+  flex: none;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+}
+.queued-input-state.pending {
+  animation: caretBlink 1.4s steps(1) infinite;
+}
+.queued-input-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+}
+.queued-input-action {
+  --icon-size: var(--icon-lg);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  padding: 0;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+.queued-input-action:hover,
+.queued-input-action.active {
+  background: var(--color-hover-subtle);
+  color: var(--color-text-primary);
+}
+.queued-input-action.active {
+  color: var(--color-accent-strong);
+}
+.queued-input-action.danger:hover {
+  color: var(--color-danger);
+}
+.queued-input-action:focus-visible {
+  outline: 1px solid var(--color-focus-ring);
+  outline-offset: 1px;
+}
+
 .composer textarea {
   /* Grow with wrapped or explicit lines; once the cap is reached, keep the
      composer stable and scroll the textarea's contents instead. */

@@ -17,6 +17,8 @@ pub let agent_compact : Command[@protocol.CompactPayload, @protocol.CompactReply
 
 pub let agent_goal : Command[@protocol.GoalPayload, @protocol.GoalReply]
 
+pub let agent_queue : Command[@protocol.QueuePayload, @protocol.QueueReply]
+
 pub let agent_runs : Command[@protocol.RunsPayload, @protocol.RunsReply]
 
 pub let agent_start : Command[@protocol.StartPayload, @protocol.StartReply]

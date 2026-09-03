@@ -444,6 +444,29 @@ priv enum ApiProvider {
 } derive(Eq)
 
 ///|
+priv enum FollowupBehavior {
+  FollowupSteer
+  FollowupQueue
+} derive(Eq)
+
+///|
+fn FollowupBehavior::parse(value : String) -> FollowupBehavior {
+  if value == "queue" {
+    FollowupQueue
+  } else {
+    FollowupSteer
+  }
+}
+
+///|
+fn FollowupBehavior::wire(self : FollowupBehavior) -> String {
+  match self {
+    FollowupSteer => "steer"
+    FollowupQueue => "queue"
+  }
+}
+
+///|
 fn ApiProvider::wire(self : ApiProvider) -> String {
   match self {
     Deepseek => "deepseek"
@@ -825,12 +848,17 @@ priv struct Conversation {
   pull_request_generation : Int
   // Everything belonging to the turn in flight; see `RunState`.
   turn : RunState
-  // Steers submitted into an open run and not yet acknowledged — the queue
-  // the composer renders as pending, and never a second text queue beside
-  // it. Entries leave on their exact id-bearing receipt, or with the run
-  // they belong to. Canonical User text never claims ownership, so identical
+  // Follow-ups submitted into an open run and not yet acknowledged. Queue
+  // additions leave when the Desktop host accepts the in-memory mutation;
+  // steers leave on their exact id-bearing receipt, or with the run they
+  // belong to. Canonical User text never claims ownership, so identical
   // steers from multiple clients cannot collide.
   pending_steers : Array[PendingSteer]
+  // Prompts waiting in the Desktop engine process to become later turns.
+  // They are transient controller state and never part of the transcript.
+  queued_inputs : Array[QueuedInput]
+  // The queued prompt currently loaded into the main composer for editing.
+  queue_edit_id : String?
   // The permission question this conversation's engine is blocked on, if any.
   //
   // A field rather than a queue because the engine can only be blocked on one
@@ -975,11 +1003,11 @@ fn GoalRequest::settled_by(
 }
 
 ///|
-/// One steer submitted into an open run and awaiting its id-bearing receipt.
-/// The globally unique `submission_id` is the only ownership proof: canonical
-/// transcript text and legacy receipts without an id never settle this entry.
-/// The original draft shape is retained so a definitive refusal can restore
-/// it to the composer without exposing the serialized mention envelope.
+/// One follow-up submitted into an open run. A queued follow-up waits for its
+/// host reply; a steer waits for its id-bearing receipt. The globally unique
+/// `submission_id` is the only ownership proof. The original draft shape is
+/// retained so a definitive refusal can restore it to the composer without
+/// exposing the serialized mention envelope.
 priv struct PendingSteer {
   submission_id : String
   // The run this steer was sent into. A receipt names it too, which is what
@@ -988,6 +1016,17 @@ priv struct PendingSteer {
   content : String
   draft : String
   mentions : Array[Mention]
+  // The action this particular submission took. The setting may change while
+  // it is in flight, so presentation cannot be derived from the current
+  // global default.
+  behavior : FollowupBehavior
+} derive(Eq)
+
+///|
+/// One prompt waiting in the Desktop engine's in-memory follow-up queue.
+priv struct QueuedInput {
+  id : String
+  content : String
 } derive(Eq)
 
 ///|
@@ -1268,6 +1307,7 @@ priv enum SelectMenu {
   CodexModelMenu
   CodexReasoningMenu
   ApiProviderMenu
+  FollowupBehaviorMenu
   ThemeMenu
   FontMenu
   FontSizeMenu
@@ -1325,6 +1365,7 @@ priv struct Model {
   // edited through `settings.set`.
   api_provider : ApiProvider
   custom_api_url : String
+  followup_behavior : FollowupBehavior
   // Host-settings writes still in flight. While any are, incoming
   // `settings.changed` broadcasts and `settings.get` replies may predate an
   // optimistic edit, so the newest revision is deferred until the last write
@@ -1597,6 +1638,7 @@ priv struct HostSettings {
   has_deepseek_key : Bool
   has_glm_key : Bool
   has_custom_key : Bool
+  followup_behavior : String
 } derive(Eq)
 
 ///|
@@ -1681,6 +1723,7 @@ priv enum Msg {
   MaxStepsChanged(String)
   SetupApiKeyChanged(String)
   ProviderChanged(String)
+  FollowupBehaviorChanged(String)
   CustomApiUrlChanged(String)
   // The Settings choice of which window corner error toasts pop up in.
   NotificationCornerChanged(String)
@@ -2039,6 +2082,18 @@ priv enum DeviceMsg {
   // this client did not send it and must not put another client's text in
   // this composer.
   SteerRejected(session~ : String, submission_id~ : String, run_id~ : String)
+  QueueAccepted(
+    session~ : String,
+    action~ : @protocol.QueueAction,
+    run_id~ : String
+  )
+  QueueAddRejected(session~ : String, submission_id~ : String, run_id~ : String)
+  QueueSteerRejected(
+    session~ : String,
+    submission_id~ : String,
+    run_id~ : String,
+    message~ : String
+  )
   // The addressed run was already absent when Stop reached the host. This is
   // success for the user's intent, but no future Finished notification can
   // retire a stale local Cancelling phase, so the reply itself must do it.
@@ -2388,6 +2443,8 @@ fn empty_conversation(
     pull_request_generation: 0,
     turn: RunState::empty(),
     pending_steers: [],
+    queued_inputs: [],
+    queue_edit_id: None,
     pending_approval: None,
     pending_prompt: None,
     messages: [],
@@ -2467,6 +2524,7 @@ fn initial_model() -> Model {
     setup_api_key: "",
     api_provider: Deepseek,
     custom_api_url: "",
+    followup_behavior: FollowupSteer,
     settings_saves: 0,
     host_settings_revision: -1,
     deferred_host_settings: None,
@@ -2655,6 +2713,7 @@ fn Model::clear_host_settings(self : Model) -> Model {
     api_setup_open: false,
     api_provider: Deepseek,
     custom_api_url: "",
+    followup_behavior: FollowupSteer,
     deepseek_key_saved: false,
     glm_key_saved: false,
     custom_key_saved: false,
@@ -2679,6 +2738,7 @@ fn Model::apply_host_settings(self : Model, settings : HostSettings) -> Model {
     deferred_host_settings: None,
     api_provider: ApiProvider::parse(settings.provider),
     custom_api_url: settings.custom_api_url,
+    followup_behavior: FollowupBehavior::parse(settings.followup_behavior),
     deepseek_key_saved: settings.has_deepseek_key,
     glm_key_saved: settings.has_glm_key,
     custom_key_saved: settings.has_custom_key,
@@ -3582,6 +3642,7 @@ fn Conversation::enqueue_steer(
   content : String,
   draft : String,
   mentions : Array[Mention],
+  behavior : FollowupBehavior,
 ) -> Conversation {
   let pending_steers = self.pending_steers.copy()
   pending_steers.push({
@@ -3590,8 +3651,42 @@ fn Conversation::enqueue_steer(
     content,
     draft,
     mentions: mentions.copy(),
+    behavior,
   })
-  { ..self, pending_steers, }
+  let queued_inputs = if behavior is FollowupQueue {
+    let queued_inputs = self.queued_inputs.copy()
+    queued_inputs.push({ id: submission_id, content, })
+    queued_inputs
+  } else {
+    self.queued_inputs
+  }
+  { ..self, pending_steers, queued_inputs, }
+}
+
+///|
+fn Conversation::remove_queued_input(
+  self : Conversation,
+  id : String,
+) -> (Conversation, Bool) {
+  for index, item in self.queued_inputs {
+    if item.id == id {
+      let queued_inputs = self.queued_inputs.copy()
+      ignore(queued_inputs.remove(index))
+      return (
+        {
+          ..self,
+          queued_inputs,
+          queue_edit_id: if self.queue_edit_id == Some(id) {
+            None
+          } else {
+            self.queue_edit_id
+          },
+        },
+        true,
+      )
+    }
+  }
+  (self, false)
 }
 
 ///|
@@ -3795,15 +3890,10 @@ fn Conversation::settle_pending_prompt(
 }
 
 ///|
-/// Forget every submission still waiting for a receipt.
-///
-/// A submitted input is sent once. The composer keeps its entry only until
-/// the host answers, and a boundary that makes the answer unobtainable — a
-/// reconnect, a run ending without the commit — ends the entry rather than
-/// converting it into a guess about the record. The record is authoritative
-/// and the client can read it; a notice that says "delivery could not be
-/// confirmed" adds nothing the transcript does not already show, and cannot
-/// be retracted correctly when it is wrong.
+/// Forget submissions whose transient acknowledgement cannot cross a
+/// reconnect. Optimistic queue rows remain visible: the Desktop engine may
+/// already hold them, and a later action or promoted Started boundary settles
+/// their actual state without putting uncommitted text in the transcript.
 fn Conversation::forget_awaiting_inputs(self : Conversation) -> Conversation {
   if self.pending_steers.is_empty() && self.pending_prompt is None {
     return self
@@ -3813,14 +3903,17 @@ fn Conversation::forget_awaiting_inputs(self : Conversation) -> Conversation {
 }
 
 ///|
-/// Forget every submission this exact run owned, whatever it was waiting for.
-/// See `forget_awaiting_inputs` for why nothing is retained.
+/// Forget receipt-driven steers owned by this exact run. Queue-add requests
+/// keep waiting for their direct host reply: unlike a steer receipt, that
+/// reply can still arrive after the run's terminal event.
 fn Conversation::forget_steers_for_run(
   self : Conversation,
   run_id : String,
 ) -> Conversation {
   let pending_steers = self.pending_steers.filter(input => {
-    !(input.run_id is Some(owner) && owner == run_id)
+    !(input.behavior is FollowupSteer &&
+    input.run_id is Some(owner) &&
+    owner == run_id)
   })
   if pending_steers.length() == self.pending_steers.length() {
     return self

@@ -1232,6 +1232,77 @@ async fn steer_delivered(
 }
 
 ///|
+fn queue_openseek(
+  dispatch : @cmd.Emit[Msg],
+  channel : @interop.ChannelId,
+  session : String,
+  action : @protocol.QueueAction,
+  run_id : String,
+) -> @cmd.Cmd {
+  let root_dispatch = dispatch
+  let dispatch = dispatch.map((msg : DeviceMsg) => FromDevice(channel, msg))
+  @cmd.custom_cmd(scheduler => {
+    @js.async_run(() => {
+      let accepted = try {
+        let reply = @interop.bridge_request(channel, @commands.agent_queue, {
+          action,
+          run_id,
+        })
+        reply.accepted
+      } catch {
+        error => {
+          scheduler.add(
+            match action {
+              QueueAdd(id~, ..) =>
+                dispatch(QueueAddRejected(session~, submission_id=id, run_id~))
+              QueueSteer(id~) =>
+                dispatch(
+                  QueueSteerRejected(
+                    session~,
+                    submission_id=id,
+                    run_id~,
+                    message="Queue action failed: \{@interop.bridge_error_text(error)}",
+                  ),
+                )
+              QueueEdit(..) | QueueWithdraw(..) =>
+                root_dispatch(
+                  HostActionFailed(
+                    "Queue action failed: \{@interop.bridge_error_text(error)}",
+                  ),
+                )
+            },
+          )
+          return
+        }
+      }
+      if !accepted {
+        scheduler.add(
+          match action {
+            QueueAdd(id~, ..) =>
+              dispatch(QueueAddRejected(session~, submission_id=id, run_id~))
+            QueueSteer(id~) =>
+              dispatch(
+                QueueSteerRejected(
+                  session~,
+                  submission_id=id,
+                  run_id~,
+                  message="The queued message is no longer available.",
+                ),
+              )
+            QueueEdit(..) | QueueWithdraw(..) =>
+              root_dispatch(
+                HostActionFailed("The queued message is no longer available."),
+              )
+          },
+        )
+      } else {
+        scheduler.add(dispatch(QueueAccepted(session~, action~, run_id~)))
+      }
+    })
+  })
+}
+
+///|
 /// Ask a conversation's engine to compact (summarize and shrink) its history,
 /// carrying the same engine settings as a start: a conversation with no live
 /// serve process (resumed after a restart) gets one spawned on the durable

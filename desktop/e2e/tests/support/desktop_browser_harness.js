@@ -43,6 +43,7 @@ export class DesktopBrowserHarness {
       has_deepseek_key: true,
       has_glm_key: false,
       has_custom_key: false,
+      followup_behavior: 'steer',
     };
     this.installedSkills = [
       {

@@ -47,7 +47,7 @@ test "a running draft keeps Stop beside Steer" {
     ..base,
     presentation: {
       ..base.presentation,
-      primary_action: Running(steer_available=true, can_stop=true),
+      primary_action: Running(steer_available=true, can_stop=true, submit=Steer),
     },
   }
   let actions = Model(input)

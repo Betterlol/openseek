@@ -74,9 +74,16 @@ pub(all) struct SlashCommand {
 /// Which primary action the composer should expose for the visible
 /// conversation. Availability is root-owned; button behavior remains a typed
 /// composer action.
+pub(all) enum RunningSubmit {
+  Steer
+  Queue
+  SaveQueue
+} derive(Eq, @debug.Debug)
+
+///|
 pub(all) enum PrimaryAction {
   Send(available~ : Bool)
-  Running(steer_available~ : Bool, can_stop~ : Bool)
+  Running(steer_available~ : Bool, can_stop~ : Bool, submit~ : RunningSubmit)
 } derive(Eq, @debug.Debug)
 
 ///|
@@ -87,6 +94,19 @@ pub(all) struct ApprovalNotice {
   detail : String
   body : String?
   answered : Bool
+} derive(Eq)
+
+///|
+pub(all) enum QueuedInputState {
+  Queueing
+  Queued(editing~ : Bool, interactive~ : Bool)
+} derive(Eq)
+
+///|
+pub(all) struct QueuedInput {
+  id : String
+  content : String
+  state : QueuedInputState
 } derive(Eq)
 
 ///|
@@ -112,6 +132,7 @@ pub(all) enum ContextComponent {
   CodexRequests(requests~ : Array[CodexRequestInput])
   ArchivedInputNotice(text~ : String)
   PendingSteerPanel(items~ : Array[String])
+  QueuedInputPanel(items~ : Array[QueuedInput])
   CompactionNotice(queued~ : Bool)
   WorktreePlacementNotice
   MissingWorktreeNoticeComponent(MissingWorktreeNotice)
@@ -258,6 +279,9 @@ pub(all) enum Action {
   WorktreeModeToggled(identity~ : Identity)
   ApiSetupRequested(identity~ : Identity)
   ArchivedInputDismissed(identity~ : Identity)
+  QueuedInputEditRequested(identity~ : Identity, id~ : String)
+  QueuedInputSteerRequested(identity~ : Identity, id~ : String)
+  QueuedInputDeleteRequested(identity~ : Identity, id~ : String)
   WorktreePlacementRetried(identity~ : Identity)
   MissingWorktreeRebuildRequested(identity~ : Identity)
   MissingWorktreeArchiveRequested(identity~ : Identity)
@@ -294,6 +318,9 @@ pub fn Action::identity(self : Action) -> Identity {
     | WorktreeModeToggled(identity~)
     | ApiSetupRequested(identity~)
     | ArchivedInputDismissed(identity~)
+    | QueuedInputEditRequested(identity~, ..)
+    | QueuedInputSteerRequested(identity~, ..)
+    | QueuedInputDeleteRequested(identity~, ..)
     | WorktreePlacementRetried(identity~)
     | MissingWorktreeRebuildRequested(identity~)
     | MissingWorktreeArchiveRequested(identity~) => identity
@@ -304,6 +331,12 @@ pub fn Action::identity(self : Action) -> Identity {
 #deprecated("Use `==` or the `Eq` trait directly", skip_current_package=true)
 #doc(hidden)
 pub extend ApprovalNotice with Eq::{equal, not_equal}
+
+///|
+pub extend QueuedInputState with Eq::{equal, not_equal}
+
+///|
+pub extend QueuedInput with Eq::{equal, not_equal}
 
 ///|
 #deprecated("Use `==` or the `Eq` trait directly", skip_current_package=true)
@@ -369,6 +402,12 @@ pub extend PrimaryAction with Debug::{to_repr}
 
 ///|
 pub extend PrimaryAction with Eq::{equal, not_equal}
+
+///|
+pub extend RunningSubmit with Debug::{to_repr}
+
+///|
+pub extend RunningSubmit with Eq::{equal, not_equal}
 
 ///|
 pub extend Replacement with Debug::{to_repr}

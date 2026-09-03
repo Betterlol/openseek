@@ -186,6 +186,7 @@
    at the operating-system level. Static shape and color still show each state. */
 @media (prefers-reduced-motion: reduce) {
   .pending-steer-state,
+  .queued-input-state.pending,
   .subrun-mark,
   .composer-running-mark,
   .notification,

@@ -51,6 +51,11 @@ pub let agent_steer : Command[@protocol.SteerPayload, @protocol.SteerReply] = Co
 )
 
 ///|
+pub let agent_queue : Command[@protocol.QueuePayload, @protocol.QueueReply] = Command(
+  "agent.queue",
+)
+
+///|
 pub let agent_compact : Command[
   @protocol.CompactPayload,
   @protocol.CompactReply,

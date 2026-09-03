@@ -53,6 +53,49 @@ pub impl ToJson for StartPayload with fn to_json(self) {
 }
 
 ///|
+pub impl FromJson for QueuePayload with fn from_json(json, path) {
+  let object = JsonObject::decode(json, path, "agent.queue payload")
+  let id = object.required_string("id")
+  let action = match object.required_string("action") {
+    "add" => QueueAdd(id~, text=object.required_string("text"))
+    "edit" => QueueEdit(id~, text=object.required_string("text"))
+    "withdraw" => QueueWithdraw(id~)
+    "steer" => QueueSteer(id~)
+    _ =>
+      raise JsonDecodeError(
+        (path.add_key("action"), "expected add, edit, withdraw, or steer"),
+      )
+  }
+  { action, run_id: object.required_string("run_id"), }
+}
+
+///|
+pub impl ToJson for QueuePayload with fn to_json(self) {
+  let fields : Map[String, Json] = { "run_id": self.run_id.to_json() }
+  match self.action {
+    QueueAdd(id~, text~) => {
+      fields["action"] = "add".to_json()
+      fields["id"] = id.to_json()
+      fields["text"] = text.to_json()
+    }
+    QueueEdit(id~, text~) => {
+      fields["action"] = "edit".to_json()
+      fields["id"] = id.to_json()
+      fields["text"] = text.to_json()
+    }
+    QueueWithdraw(id~) => {
+      fields["action"] = "withdraw".to_json()
+      fields["id"] = id.to_json()
+    }
+    QueueSteer(id~) => {
+      fields["action"] = "steer".to_json()
+      fields["id"] = id.to_json()
+    }
+  }
+  Json(fields)
+}
+
+///|
 pub impl FromJson for CompactPayload with fn from_json(json, path) {
   let object = JsonObject::decode(json, path, "agent.compact payload")
   {

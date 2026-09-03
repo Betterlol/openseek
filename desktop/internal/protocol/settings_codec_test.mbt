@@ -24,6 +24,7 @@ test "settings status preserves and requires the GLM capability flag" {
     "has_deepseek_key": false,
     "has_glm_key": true,
     "has_custom_key": false,
+    "followup_behavior": "queue",
     "future_field": true,
   })
   assert_true(status.has_glm_key)
@@ -33,6 +34,7 @@ test "settings status preserves and requires the GLM capability flag" {
     "has_deepseek_key": false,
     "has_glm_key": true,
     "has_custom_key": false,
+    "followup_behavior": "queue",
   })
   let missing : @protocol.SettingsStatusPayload? = Some(
     @json.from_json({
@@ -45,6 +47,18 @@ test "settings status preserves and requires the GLM capability flag" {
     _ => None
   }
   assert_true(missing is None)
+  let missing_followup : @protocol.SettingsStatusPayload? = Some(
+    @json.from_json({
+      "revision": 8,
+      "provider": "glm",
+      "has_deepseek_key": false,
+      "has_glm_key": true,
+      "has_custom_key": false,
+    }),
+  ) catch {
+    _ => None
+  }
+  assert_true(missing_followup is None)
   let malformed : @protocol.SettingsStatusPayload? = Some(
     @json.from_json({
       "revision": 8,

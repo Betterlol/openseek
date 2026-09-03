@@ -23,6 +23,48 @@ test "agent start preserves all engine settings" {
 }
 
 ///|
+test "queue payloads expose only valid operation-specific data" {
+  let add : @protocol.QueuePayload = @json.from_json({
+    "action": "add",
+    "id": "queue-1",
+    "text": "first",
+    "run_id": "run-1",
+  })
+  assert_true(add.action is QueueAdd(id="queue-1", text="first"))
+  @debug.assert_eq(add.to_json(), {
+    "action": "add",
+    "id": "queue-1",
+    "text": "first",
+    "run_id": "run-1",
+  })
+
+  let withdraw : @protocol.QueuePayload = @json.from_json({
+    "action": "withdraw",
+    "id": "queue-1",
+    "run_id": "run-1",
+  })
+  assert_true(withdraw.action is QueueWithdraw(id="queue-1"))
+  @debug.assert_eq(withdraw.to_json(), {
+    "action": "withdraw",
+    "id": "queue-1",
+    "run_id": "run-1",
+  })
+
+  let missing_text : @protocol.QueuePayload? = Some(
+    @json.from_json({ "action": "edit", "id": "queue-1", "run_id": "run-1" }),
+  ) catch {
+    _ => None
+  }
+  let missing_run : @protocol.QueuePayload? = Some(
+    @json.from_json({ "action": "steer", "id": "queue-1" }),
+  ) catch {
+    _ => None
+  }
+  assert_true(missing_text is None)
+  assert_true(missing_run is None)
+}
+
+///|
 test "OpenSeek thinking values round-trip through their closed codec" {
   let off : @protocol.OpenSeekThinking = @json.from_json(Json("no"))
   let high : @protocol.OpenSeekThinking = @json.from_json(Json("high"))

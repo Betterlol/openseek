@@ -105,6 +105,22 @@ pub(all) struct SteerReply {
 } derive(Debug, Eq, FromJson, ToJson)
 
 ///|
+pub(all) struct QueueReply {
+  accepted : Bool
+} derive(Debug, Eq)
+
+///|
+pub impl FromJson for QueueReply with fn from_json(json, path) {
+  let object = JsonObject::decode(json, path, "queue reply")
+  { accepted: object.required_bool("accepted"), }
+}
+
+///|
+pub impl ToJson for QueueReply with fn to_json(self) {
+  { "accepted": self.accepted }
+}
+
+///|
 pub(all) struct ApprovalReply {
   // Whether the decision reached a live engine that could still be waiting
   // for it. False means the question is already gone — the turn that asked it
@@ -2650,6 +2666,18 @@ pub extend SteerReply with Eq::{equal, not_equal}
 
 ///|
 pub extend SteerReply with ToJson::{to_json}
+
+///|
+pub extend QueueReply with Debug::{to_repr}
+
+///|
+pub extend QueueReply with FromJson::{from_json}
+
+///|
+pub extend QueueReply with Eq::{equal, not_equal}
+
+///|
+pub extend QueueReply with ToJson::{to_json}
 
 ///|
 pub extend SymbolItem with Debug::{to_repr}

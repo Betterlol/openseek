@@ -25,6 +25,9 @@ priv struct ServeEngine {
   // Fingerprint of the config this process was spawned with; a prompt whose
   // config differs cannot reuse it.
   spec_key : String
+  engine_name : String
+  model : String
+  max_steps : Int
   // Owned exclusively by this engine's writer task. No request ever touches
   // it, which is what makes a partial JSONL frame impossible and stdin's
   // close a single-owner event.
@@ -60,6 +63,14 @@ priv struct ServeEngine {
   // gone, so a start joins its close barrier instead of racing it.
   mut condemned : Bool
   steer_runs : SteerRunTracker
+  queued_runs : Array[QueuedRun]
+}
+
+///|
+priv struct QueuedRun {
+  id : String
+  run_id : String
+  content : String
 }
 
 ///|
@@ -1542,6 +1553,9 @@ async fn[G] start_serve_engine(
     session_key: config.session,
     session_root: config.session_root,
     spec_key: engine_fingerprint(config),
+    engine_name: config.engine,
+    model: config.model,
+    max_steps: config.max_steps,
     writer,
     // Unbounded because submission must never block: a request that could be
     // parked here would be cancellable after it has already gone public,
@@ -1556,6 +1570,7 @@ async fn[G] start_serve_engine(
     pending_failure: None,
     condemned: false,
     steer_runs: SteerRunTracker(),
+    queued_runs: [],
   }
   startup_engine = Some(engine)
   // Spawned before the handle is reachable from any request, so stdin has an
@@ -1816,6 +1831,13 @@ async fn ServeEngine::consume(
             if engine.phase is Running(..) &&
               run_id is Some(id) &&
               close_run_from_stream(sink, id, event) {
+              let next_queue = if !turn_died(event) &&
+                engine.phase is Running(compact_queued=false, ..) &&
+                !engine.queued_runs.is_empty() {
+                Some(engine.queued_runs[0])
+              } else {
+                None
+              }
               engine.phase = engine.phase.after_run_close()
               engine.steer_runs.record_terminal(id)
               // A command still queued for the turn that just ended would be
@@ -1828,6 +1850,29 @@ async fn ServeEngine::consume(
               engine.settle_turn_commands(
                 "the engine finished its turn before this command was written",
               )
+              if next_queue is Some(next) &&
+                engine.submit(
+                  @protocol.prompt(next.content, submission_id=next.id),
+                  failure_reason="failed to promote queued prompt",
+                ) {
+                ignore(engine.queued_runs.remove(0))
+                engine.phase = Running(run_id=next.run_id, compact_queued=false)
+                engine.steer_runs.begin_run()
+                emit(
+                  sink,
+                  Started({
+                    run_id: next.run_id,
+                    submission_id: Some(next.id),
+                    engine: Some(engine.engine_name),
+                    model: Some(engine.model),
+                    max_steps: Some(engine.max_steps),
+                    session: engine.session_key,
+                    session_root: engine.session_root.map(root => {
+                      root.resource_path()
+                    }),
+                  }),
+                )
+              }
             }
           }
           None => ()
@@ -2067,6 +2112,9 @@ fn test_serve_engine(
     session_key: session,
     session_root,
     spec_key: "test",
+    engine_name: "openseek",
+    model: "test",
+    max_steps: 10,
     writer,
     commands: Queue(kind=Unbounded),
     process,
@@ -2077,6 +2125,7 @@ fn test_serve_engine(
     pending_failure: None,
     condemned,
     steer_runs: SteerRunTracker(),
+    queued_runs: [],
   }
 }
 

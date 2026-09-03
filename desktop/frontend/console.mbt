@@ -535,6 +535,7 @@ test "a revoked page device is retired without connecting a survivor" {
       has_deepseek_key: true,
       has_glm_key: false,
       has_custom_key: false,
+      followup_behavior: "steer",
     }),
     legacy_cleanup_pending: true,
     installed_skills: [

@@ -32,6 +32,13 @@ fn Model::composer_input(self : Model) -> @composer.Input {
         conv.run is Open(stage~, ..) &&
         !(stage is Cancelling),
       can_stop=can_stop(conv),
+      submit=if conv.queue_edit_id is Some(_) {
+        @composer.SaveQueue
+      } else if self.followup_behavior is FollowupQueue {
+        @composer.Queue
+      } else {
+        @composer.Steer
+      },
     )
   } else {
     @composer.Send(available=root_ready && conv.compaction is NotCompacting)
@@ -102,12 +109,42 @@ fn Model::composer_input(self : Model) -> @composer.Input {
   if conv.archived_pending_input {
     context.push(@composer.ArchivedInputNotice(text=ArchivedPendingInputNotice))
   }
-  if !conv.pending_steers.is_empty() {
+  let steering = conv.pending_steers.filter(input => {
+    input.behavior is FollowupSteer
+  })
+  if !steering.is_empty() {
     context.push(
       @composer.PendingSteerPanel(
-        items=conv.pending_steers.map(steer => user_display_text(steer.content)),
+        items=steering.map(steer => user_display_text(steer.content)),
       ),
     )
+  }
+  let queued_items : Array[@composer.QueuedInput] = []
+  let interactive = conv.run is Open(stage~, ..) && !(stage is Cancelling)
+  for item in conv.queued_inputs {
+    if steering.iter().any(input => input.submission_id == item.id) {
+      continue
+    }
+    let queueing = conv.pending_steers
+      .iter()
+      .any(input => {
+        input.behavior is FollowupQueue && input.submission_id == item.id
+      })
+    queued_items.push({
+      id: item.id,
+      content: user_display_text(item.content),
+      state: if queueing {
+        @composer.Queueing
+      } else {
+        @composer.Queued(
+          editing=conv.queue_edit_id == Some(item.id),
+          interactive~,
+        )
+      },
+    })
+  }
+  if !queued_items.is_empty() {
+    context.push(@composer.QueuedInputPanel(items=queued_items))
   }
   match conv.compaction {
     Requested | Compacting =>
@@ -172,8 +209,14 @@ fn Model::composer_input(self : Model) -> @composer.Input {
       status,
       placeholder: if conv.goal_edit is Some(_) {
         "Describe the standing goal for this conversation — Enter sets it, Esc cancels."
+      } else if conv.queue_edit_id is Some(_) {
+        "Edit the queued message — Enter saves it."
       } else if conv.is_running() {
-        "Steer the running task — your message joins it at the next step."
+        if self.followup_behavior is FollowupQueue {
+          "Queue a follow-up for the next turn."
+        } else {
+          "Steer the running task — your message joins it at the next step."
+        }
       } else {
         "Ask SeekMoon to inspect, edit, or explain this workspace."
       },
