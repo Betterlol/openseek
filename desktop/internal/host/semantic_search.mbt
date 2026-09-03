@@ -24,7 +24,7 @@ const MaxSemanticSearchErrorMessageUnits : Int = 1000
 const SemanticSearchProgressBatch : Int = 50
 
 ///|
-const MoongrepErroJsonParseEnabled : Bool = false
+const MoongrepErrorJsonParseEnabled : Bool = true
 
 ///|
 /// The mooncakes coordinate pinned for the interim `moonx` provider. moongrep
@@ -481,7 +481,18 @@ fn parse_moongrep_error(line : String) -> (String, String)? {
     Some(String(value)) if !value.is_empty() => " \{value}"
     _ => ""
   }
-  Some((message, reason))
+  let code = project_moongrep_error_code(message)
+  Some((code, reason))
+}
+
+///|
+fn project_moongrep_error_code(message : String) -> String {
+  let lower = message.to_lower()
+  if lower == "invalid anonymous pattern" {
+    "invalid_pattern"
+  } else {
+    "search_failed"
+  }
 }
 
 ///|
@@ -738,7 +749,7 @@ async fn run_semantic_search(
     }
     let stderr = stderr_task.wait() catch { _ => "" }
     let mut json_error : (String, String)? = None
-    if MoongrepErroJsonParseEnabled {
+    if MoongrepErrorJsonParseEnabled {
       for line in stderr.split("\n") {
         if parse_moongrep_error(line.to_owned()) is Some(parsed_error) {
           json_error = Some(parsed_error)
