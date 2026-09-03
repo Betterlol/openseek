@@ -19,9 +19,6 @@ fn pattern_repair_provider_args(
   } else {
     []
   }
-  // Keep the future validation command here. The current moongrep release only
-  // parses ordinary MoonBit expressions in `dump --expr`, so executing it would
-  // reject valid patterns containing moongrep metavariables such as `$()`.
   args.append(["dump", "--expr", pattern, "--exit-code"])
   args
 }
