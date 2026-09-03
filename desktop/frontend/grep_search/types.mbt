@@ -120,11 +120,6 @@ pub fn State::selected_semantic_hits(
 }
 
 ///|
-pub fn State::selected_semantic_prompt(self : State) -> String {
-  selected_semantic_prompt(self.page.semantic.hits, self.page.selected)
-}
-
-///|
 pub(all) struct Input {
   owner : @interop.ConversationKey
   root : @common.Uri?

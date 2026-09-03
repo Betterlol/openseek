@@ -678,6 +678,7 @@ html.is-resizing * {
   flex: 1 1 auto;
 }
 .search-selection-toolbar button {
+  margin-left: auto;
   padding: 3px 7px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-xs);
@@ -692,12 +693,17 @@ html.is-resizing * {
 }
 .search-semantic-hit {
   display: grid;
-  grid-template-columns: 24px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) 24px;
+  align-items: start;
+  gap: 6px;
   padding: 6px 10px 6px 10px;
   cursor: pointer;
   border-radius: var(--radius-xs);
 }
 .search-semantic-select {
+  grid-column: 2;
+  grid-row: 1;
+  justify-self: end;
   align-self: start;
   width: 20px;
   height: 20px;

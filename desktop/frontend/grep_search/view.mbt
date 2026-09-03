@@ -559,11 +559,10 @@ fn search_body(
   page : Page,
   emit : @cmd.Emit[Msg],
   open_match : (String, @common.Range) -> @cmd.Cmd,
-  send_selection : @cmd.Cmd,
 ) -> @html.Html {
   match page.mode {
     Text => text_search_body(page, emit, open_match)
-    Semantic => semantic_search_body(page, emit, open_match, send_selection)
+    Semantic => semantic_search_body(page, emit, open_match)
   }
 }
 
@@ -668,6 +667,11 @@ fn semantic_hit_view(
     },
     attrs=@html.Attrs::build().data_set("semantic-hit-key", key),
     [
+      @html.div(
+        attrs=@html.Attrs::build().on_click(_ => open_match(hit.path, target)),
+        class="search-semantic-context",
+        hit.source_context.map(line => semantic_context_line_view(line)),
+      ),
       @html.button(
         class="search-semantic-select",
         attrs=@html.Attrs::build()
@@ -679,11 +683,6 @@ fn semantic_hit_view(
         } else {
           "☐"
         },
-      ),
-      @html.div(
-        attrs=@html.Attrs::build().on_click(_ => open_match(hit.path, target)),
-        class="search-semantic-context",
-        hit.source_context.map(line => semantic_context_line_view(line)),
       ),
     ],
   )
@@ -833,7 +832,6 @@ fn semantic_search_body(
   page : Page,
   emit : @cmd.Emit[Msg],
   open_match : (String, @common.Range) -> @cmd.Cmd,
-  send_selection : @cmd.Cmd,
 ) -> @html.Html {
   let children : Array[@html.Html] = []
   let busy = page.phase is Debouncing || page.phase is Loading
@@ -864,7 +862,6 @@ fn semantic_search_body(
     children.push(
       @html.div(class="search-selection-toolbar", [
         @html.span("\{selected_count} selected"),
-        @html.button(on_click=send_selection, "Send to Agent"),
         @html.button(on_click=emit(ClearSelection), "Clear selection"),
       ]),
     )
@@ -919,7 +916,6 @@ fn page_view(
   page : Page,
   emit : @cmd.Emit[Msg],
   open_match : (String, @common.Range) -> @cmd.Cmd,
-  send_selection : @cmd.Cmd,
 ) -> @html.Html {
   let details = if page.details_open {
     let details : Array[@html.Html] = [
@@ -1036,7 +1032,7 @@ fn page_view(
         "Collapse All",
       ),
     ]),
-    search_body(page, emit, open_match, send_selection),
+    search_body(page, emit, open_match),
   ])
 }
 
@@ -1048,10 +1044,9 @@ pub fn State::explorer_view(
   input : Input,
   emit : @cmd.Emit[Msg],
   open_match : (String, @common.Range) -> @cmd.Cmd,
-  send_selection : @cmd.Cmd,
 ) -> @html.Html {
   match input.root {
-    Some(_) => page_view(self.page, emit, open_match, send_selection)
+    Some(_) => page_view(self.page, emit, open_match)
     None =>
       @html.div(class="workspace-search search-no-workspace", [
         @html.div(class="search-empty-title", "No checkout available"),

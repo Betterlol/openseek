@@ -18,25 +18,6 @@ fn selected_semantic_hits(
 }
 
 ///|
-fn selected_semantic_prompt(
-  hits : Array[@protocol.SemanticSearchHit],
-  selected : Map[String, Bool],
-) -> String {
-  let lines : Array[String] = [
-    "Please inspect these selected semantic search matches:", "",
-  ]
-  for hit in selected_semantic_hits(hits, selected) {
-    lines.push("- Pattern: \{hit.rule_id}")
-    lines.push("  File: \{hit.path}")
-    lines.push(
-      "  Range: \{hit.start_line}:\{hit.start_column}-\{hit.end_line}:\{hit.end_column}",
-    )
-    lines.push("  Match: \{hit.matched_source}")
-  }
-  lines.join("\n")
-}
-
-///|
 /// Presentation identity is kept separate from the hit identity so a future
 /// File -> Pattern projection can reuse selection state and only change the
 /// grouping pass.
