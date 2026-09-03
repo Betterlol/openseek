@@ -351,8 +351,17 @@ pub fn State::handle(self : State, msg : Msg, input : Input) -> State {
     }
     CollapseAll => {
       let collapsed : Map[String, Bool] = Map([])
-      for path in page.active_paths() {
-        collapsed[path] = true
+      if page.mode is Semantic {
+        for pattern in semantic_grouped_hits(page.semantic.hits) {
+          collapsed[semantic_pattern_key(pattern.pattern)] = true
+          for file in semantic_file_groups(pattern) {
+            collapsed[semantic_file_key(pattern.pattern, file.path)] = true
+          }
+        }
+      } else {
+        for path in page.active_paths() {
+          collapsed[path] = true
+        }
       }
       { ..self, page: { ..page, collapsed, }, }
     }
@@ -372,6 +381,16 @@ pub fn State::handle(self : State, msg : Msg, input : Input) -> State {
         collapsed.remove(path)
       } else {
         collapsed[path] = true
+      }
+      { ..self, page: { ..page, collapsed, }, }
+    }
+    TogglePattern(pattern) => {
+      let key = semantic_pattern_key(pattern)
+      let collapsed = page.collapsed.copy()
+      if collapsed.get(key).unwrap_or(false) {
+        collapsed.remove(key)
+      } else {
+        collapsed[key] = true
       }
       { ..self, page: { ..page, collapsed, }, }
     }

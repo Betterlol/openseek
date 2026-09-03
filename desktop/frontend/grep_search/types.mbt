@@ -164,6 +164,7 @@ pub(all) enum Msg {
   CollapseAll
   ShowMore
   ToggleFile(String)
+  TogglePattern(String)
   RequestStarted(
     owner~ : @interop.ConversationKey,
     root~ : String,

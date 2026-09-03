@@ -620,6 +620,38 @@ html.is-resizing * {
   gap: 3px;
 }
 /* Semantic hits: one structural match per block, semgrep-style. */
+.search-semantic-pattern-group {
+  min-width: 0;
+}
+.search-semantic-pattern-header {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  padding: 6px 10px 6px 8px;
+  border: 0;
+  background: var(--color-bg-subtle);
+  color: var(--color-text-primary);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  text-align: left;
+  cursor: pointer;
+}
+.search-semantic-pattern-header:hover {
+  background: var(--color-bg-hover);
+}
+.search-semantic-pattern {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-family-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.search-semantic-pattern-results {
+  min-width: 0;
+}
 .search-semantic-hit {
   padding: 6px 10px 6px 34px;
   cursor: pointer;
