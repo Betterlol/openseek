@@ -23,7 +23,6 @@ pub struct EvalResult {
 
 ///|
 priv struct SessionMetrics {
-  finished : Bool
   finish_message : String
   steps : Int
   tool_results : Int
@@ -31,32 +30,55 @@ priv struct SessionMetrics {
   shell_uses : Int
   shell_failures : Int
   runtime_notices : Int
-  terminal_status : String
-  terminal_message : String
+  /// The last terminal event the session reached, already scored, or `None`
+  /// when it never reached one.
+  terminal : TerminalOutcome?
+}
+
+///|
+/// How one terminal event scores: the label reported to tooling, its message,
+/// and whether it counts as task success.
+priv struct TerminalOutcome {
+  status : String
+  message : String
+  success : Bool
+}
+
+///|
+fn terminal_outcome(terminal : @agent_session.TurnTerminal) -> TerminalOutcome {
+  match terminal {
+    Finished(message) =>
+      // A context-ceiling yield is durably Finished (replay/chaining) but NOT
+      // task success: the work was checkpointed mid-flight.
+      if message.has_prefix(@agent_session.ContextYieldAnswerPrefix) {
+        { status: "context_yield", message, success: false, }
+      } else {
+        { status: "finished", message, success: true, }
+      }
+    Aborted(message) => { status: "aborted", message, success: false, }
+    Interrupted(message) => { status: "interrupted", message, success: false, }
+    Failed(message) => { status: "failed", message, success: false, }
+  }
 }
 
 ///|
 /// Analyze one already-loaded session.
 pub fn analyze_session(session : @agent_session.Session) -> EvalResult {
   let metrics = summarize_session(session)
-  let reason = if metrics.finished {
-    "ok"
-  } else if metrics.terminal_status != "" {
-    "agent terminal " +
-    metrics.terminal_status +
-    ": " +
-    metrics.terminal_message
-  } else {
-    "finish marker missing"
+  let reason = match metrics.terminal {
+    Some({ success: true, .. }) => "ok"
+    Some({ status, message, .. }) => "agent terminal \{status}: \{message}"
+    None => "finish marker missing"
   }
   let warnings = if metrics.shell_uses > 0 {
     "shell output observed \{metrics.shell_uses} time(s)"
   } else {
     ""
   }
+  let finished = metrics.terminal is Some({ success: true, .. })
   {
     session_id: session.id().value(),
-    success: metrics.finished,
+    success: finished,
     reason,
     warnings,
     steps: metrics.steps,
@@ -65,10 +87,10 @@ pub fn analyze_session(session : @agent_session.Session) -> EvalResult {
     shell_uses: metrics.shell_uses,
     shell_failures: metrics.shell_failures,
     runtime_notices: metrics.runtime_notices,
-    finished: metrics.finished,
+    finished,
     finish_message: metrics.finish_message,
-    terminal_status: metrics.terminal_status,
-    terminal_message: metrics.terminal_message,
+    terminal_status: metrics.terminal.map_or("", outcome => outcome.status),
+    terminal_message: metrics.terminal.map_or("", outcome => outcome.message),
   }
 }
 
@@ -98,19 +120,19 @@ pub fn transcript_text(session : @agent_session.Session) -> String {
 
 ///|
 fn summarize_session(session : @agent_session.Session) -> SessionMetrics {
-  let mut finished = false
-  let mut finish_message = ""
   let steps = session.events().iter().count_if(event => event.is_agent_step())
+  // The answer of the last *successful* finish, kept even when a later
+  // terminal event supersedes it.
+  let mut finish_message = ""
+  let mut terminal : TerminalOutcome? = None
   let mut tool_results = 0
   let mut tool_errors = 0
   let mut shell_uses = 0
   let mut shell_failures = 0
   let mut runtime_notices = 0
-  let mut terminal_status = ""
-  let mut terminal_message = ""
   for event in session.events() {
     match event.item() {
-      Assistant(_) => ()
+      Assistant(_) | Summary(_) | User(_) => ()
       Tool(result) => {
         tool_results += 1
         if result.tool_name() == "shell" {
@@ -127,40 +149,16 @@ fn summarize_session(session : @agent_session.Session) -> SessionMetrics {
         }
       }
       Runtime(_) => runtime_notices += 1
-      Terminal(Finished(message)) =>
-        if message.has_prefix(@agent_session.ContextYieldAnswerPrefix) {
-          // A context-ceiling yield is durably Finished (replay/chaining)
-          // but NOT task success: the work was checkpointed mid-flight. The
-          // synthetic terminal is not a model step either.
-          finished = false
-          terminal_status = "context_yield"
-          terminal_message = message
-        } else {
-          finished = true
-          finish_message = message
-          terminal_status = "finished"
-          terminal_message = message
+      Terminal(event_terminal) => {
+        let outcome = terminal_outcome(event_terminal)
+        if outcome.success {
+          finish_message = outcome.message
         }
-      Terminal(Aborted(message)) => {
-        finished = false
-        terminal_status = "aborted"
-        terminal_message = message
+        terminal = Some(outcome)
       }
-      Terminal(Interrupted(message)) => {
-        finished = false
-        terminal_status = "interrupted"
-        terminal_message = message
-      }
-      Terminal(Failed(message)) => {
-        finished = false
-        terminal_status = "failed"
-        terminal_message = message
-      }
-      Summary(_) | User(_) => ()
     }
   }
   {
-    finished,
     finish_message,
     steps,
     tool_results,
@@ -168,8 +166,7 @@ fn summarize_session(session : @agent_session.Session) -> SessionMetrics {
     shell_uses,
     shell_failures,
     runtime_notices,
-    terminal_status,
-    terminal_message,
+    terminal,
   }
 }
 
