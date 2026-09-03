@@ -955,24 +955,24 @@ fn summary_card_view(
 }
 
 ///|
+/// The transcript section around its already rendered stream children (see
+/// `stream_blocks`): the component memoizes those per block, so this view
+/// only assembles them.
 fn transcript_view(
   input : Input,
   pinned~ : Bool,
   overview~ : @transcript_overview.State,
   overview_emit~ : @cmd.Emit[@transcript_overview.Msg],
-  on_open : (String) -> @cmd.Cmd,
-  on_jump : (@mention_context.Target) -> @cmd.Cmd,
-  on_open_session : (String) -> @cmd.Cmd,
+  stream~ : Map[String, @html.Html],
   on_jump_latest~ : @cmd.Cmd,
 ) -> @html.Html {
-  let renderer : TranscriptRenderer = {
+  let children = section_children(
     input,
-    on_open,
-    on_jump,
-    on_open_session,
-  }
-  let children = renderer.section_children(
-    pinned, overview, overview_emit, on_jump_latest,
+    stream~,
+    pinned~,
+    overview~,
+    overview_emit~,
+    on_jump_latest~,
   )
   // These identity attributes make conversation and root changes observable
   // even when the rendered children stay identical. The component subscription

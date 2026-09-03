@@ -255,15 +255,22 @@ pub fn component(
     update=(state, input, msg, emit) => state.update(input, msg, emit),
     subscriptions=(_, _, emit) => transcript_subscription(emit),
   )
-  state.view2(input, (state, input) => {
+  // Every stream child renders in its own branch, keyed by the block within
+  // its stream. A streaming delta then recomputes only the live block's Html;
+  // each settled row keeps the Html it already has, so the cost of a delta no
+  // longer grows with the length of the transcript.
+  let blocks = input.map(stream_blocks)
+  let rendered = blocks.assoc_by(
+    (_, block) => block.map(block => (block.key.wire(), block.render(actions))),
+    by=block => block.branch_key(),
+  )
+  state.view3(input, rendered, (state, input, rendered) => {
     transcript_view(
       input,
       pinned=state.pinned,
       overview=state.overview,
       overview_emit=emit.map(msg => Overview(msg)),
-      path => (actions.open)(path),
-      target => (actions.jump)(target),
-      session => (actions.open_session)(session),
+      stream=keyed_stream(rendered),
       on_jump_latest=emit(JumpToLatest),
     )
   })
