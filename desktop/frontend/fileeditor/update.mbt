@@ -401,7 +401,7 @@ pub fn open_document(
   had_active~ : Bool,
 ) -> (@cmd.Cmd, State) {
   guard ctx.placement_ready() else { return (@cmd.none, state) }
-  let state = { ..state.clear_review_active_hunk(), highlighted: None, }
+  let state = { ..state.invalidate_review_hunk_surface(), highlighted: None, }
   // Opening the path from Files, Quick Open, navigation, or a mention leaves
   // review mode. If the same Viewer model stays attached, the show below
   // clears its resource-keyed quick-diff baseline without replacing content.
@@ -538,8 +538,19 @@ pub fn open_changed_document(
   guard ctx.placement_ready() && change.selectable() else {
     return (@cmd.none, state)
   }
-  let state = { ..state.clear_review_active_hunk(), highlighted: None, }
   let path = change.path
+  let reusing_exact_review = state.docs
+    .get(path)
+    .map(doc => doc.review is Some({ selected, .. }) && selected == change)
+    .unwrap_or(false)
+  let state = {
+    ..(if reusing_exact_review {
+      state.clear_review_active_hunk()
+    } else {
+      state.invalidate_review_hunk_surface()
+    }),
+    highlighted: None,
+  }
   // Selecting a Changes row is activation, not a manual reload. Reuse the
   // exact cached review (including one whose paired reads are still pending)
   // so repeated clicks cannot replace its generation, clear its DiffEditor
@@ -1057,7 +1068,7 @@ pub fn activate(
   guard ctx.placement_ready() && state.docs.get(path) is Some(doc) else {
     return (@cmd.none, state)
   }
-  let state = { ..state.clear_review_active_hunk(), highlighted: None, }
+  let state = { ..state.invalidate_review_hunk_surface(), highlighted: None, }
   let (show, doc, review_generation) = show_activated_tab(
     dispatch,
     ctx,
@@ -2326,7 +2337,7 @@ fn select_review_view_mode(
   }
   (
     command,
-    { ..state, docs, review_view_mode: view_mode, }.clear_review_active_hunk(),
+    { ..state, docs, review_view_mode: view_mode, }.invalidate_review_hunk_surface(),
   )
 }
 
@@ -2474,7 +2485,7 @@ pub fn update(
     ReviewDiffModeSelected(mode) => {
       guard moon_diff_available(state, ctx) else { return (@cmd.none, state) }
       let selected = {
-        ..state.clear_review_active_hunk(),
+        ..state.invalidate_review_hunk_surface(),
         review_diff_mode: mode,
       }
       if ctx.active_file is Some(path) &&
@@ -2500,7 +2511,7 @@ pub fn update(
       (
         @cmd.none,
         {
-          ..state.clear_review_active_hunk(),
+          ..state.invalidate_review_hunk_surface(),
           review_diff_ignore_comments: ignore_comments,
         },
       )
@@ -2514,7 +2525,7 @@ pub fn update(
       (
         @cmd.none,
         {
-          ..state.clear_review_active_hunk(),
+          ..state.invalidate_review_hunk_surface(),
           review_diff_ignore_tests: ignore_tests,
         },
       )
@@ -2536,7 +2547,7 @@ pub fn update(
       }
       (
         @cmd.none,
-        { ..state.clear_review_active_hunk(), semantic_review_collapsed, },
+        { ..state.invalidate_review_hunk_surface(), semantic_review_collapsed, },
       )
     }
     ReviewDiffNavigationAvailabilityChanged(available) =>
@@ -2610,6 +2621,7 @@ pub fn update(
     ReviewActiveHunkChanged(
       change~,
       review_generation~,
+      surface_generation~,
       hunk~,
       file_changes~,
       position~
@@ -2619,6 +2631,7 @@ pub fn update(
         state.accept_active_review_hunk(
           change,
           review_generation,
+          surface_generation,
           hunk,
           file_changes,
           position,
