@@ -13,6 +13,14 @@ const InitialVisibleSearchLines : Int = 500
 const VisibleSearchLineStep : Int = 500
 
 ///|
+/// Keep one search mention bounded so adding a large selection cannot create an
+/// unexpectedly huge Composer prompt. The Search result ceiling remains 20,000.
+const MaxSemanticReferenceMatches : Int = 500
+
+///|
+const MaxSemanticReferenceSourceUnits : Int = 100000
+
+///|
 enum Phase {
   Idle
   Debouncing
@@ -134,6 +142,7 @@ fn Page::selected_semantic_reference(
 ) -> @mention_context.SemanticSearchReference? {
   let matches = selected_semantic_hits(self.semantic.hits, self.selected)
   guard !matches.is_empty() else { return None }
+  guard self.semantic_reference_available() else { return None }
   let patterns = self.semantic.patterns.filter(pattern => {
     !pattern.trim().is_empty()
   })
@@ -153,6 +162,21 @@ fn Page::selected_semantic_reference(
       matched_source: hit.matched_source,
     }),
   })
+}
+
+///|
+fn Page::semantic_reference_available(self : Page) -> Bool {
+  let matches = selected_semantic_hits(self.semantic.hits, self.selected)
+  matches.length() <= MaxSemanticReferenceMatches &&
+  matches
+  .map(hit => hit.matched_source.length())
+  .fold(init=0, (total, size) => total + size) <=
+  MaxSemanticReferenceSourceUnits
+}
+
+///|
+pub fn State::semantic_reference_available(self : State) -> Bool {
+  self.page.semantic_reference_available()
 }
 
 ///|

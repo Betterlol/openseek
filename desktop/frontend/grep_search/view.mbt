@@ -868,11 +868,16 @@ fn semantic_search_body(
       @html.div(class="search-selection-toolbar", [
         @html.span("\{selected_count} selected"),
         @html.button(
+          disabled=!page.semantic_reference_available(),
           on_click=match page.selected_semantic_reference(root) {
             Some(reference) => add_reference(reference)
             None => @cmd.none
           },
-          "Add to prompt",
+          if page.semantic_reference_available() {
+            "Add to prompt"
+          } else {
+            "Selection too large"
+          },
         ),
         @html.button(on_click=emit(ClearSelection), "Clear selection"),
       ]),

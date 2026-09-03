@@ -203,6 +203,42 @@ test "semantic selection stays independent from its presentation groups" {
 
 ///|
 #cfg(not(target="js"))
+test "semantic reference restoration keeps the selected snapshot" {
+  let owner : @interop.ConversationKey = {
+    channel: @interop.ChannelId::Local,
+    session: "semantic-restore",
+  }
+  let root = @common.Uri::parse("file:///work")
+  let input : Input = { owner, root: Some(root), }
+  let reference : @mention_context.SemanticSearchReference = {
+    id: "reference",
+    root: root.path,
+    patterns: ["inspect($(x:arg))"],
+    include_glob: "src/**",
+    exclude_glob: "",
+    matches: [
+      {
+        pattern: "inspect($(x:arg))",
+        file: "src/main.mbt",
+        start_line: 4,
+        start_column: 1,
+        end_line: 4,
+        end_column: 10,
+        matched_source: "inspect(x)",
+      },
+    ],
+  }
+  let restored = State::empty().handle(
+    RestoreSemanticReference(reference),
+    input,
+  )
+  assert_eq(restored.selected_semantic_hits().length(), 1)
+  assert_eq(restored.selected_semantic_hits()[0].path, "src/main.mbt")
+  assert_true(render_search(restored, input).contains("Add to prompt"))
+}
+
+///|
+#cfg(not(target="js"))
 test "Search view groups files and marks matching UTF-16 slices" {
   let owner : @interop.ConversationKey = {
     channel: @interop.ChannelId::Local,
