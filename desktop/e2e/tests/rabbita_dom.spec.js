@@ -964,15 +964,32 @@ test('composer sends a turn and stops the accepted run', async ({ page }) => {
   expect(app.pageErrors).toEqual([]);
 });
 
-test('new chat, archive, and restore update the conversation sidebar', async ({ page }) => {
+test('new chat materializes on send, and archive and restore update the sidebar', async ({ page }) => {
   const app = new DesktopBrowserHarness(page);
   await app.install();
   await app.goto();
 
-  await page.locator('.workspace-row', { hasText: 'workspace' }).hover();
-  await page.getByTitle('New conversation in this project').click();
-  await expect(page.locator('.conversation-row', { hasText: 'New chat' })).toBeVisible();
+  const project = page.locator('.workspace-row', { hasText: 'workspace' });
+  await project.hover();
+  const newConversation = project.getByTitle('New conversation in this project');
+  const addProject = page.locator('.sidebar-header')
+    .getByRole('button', { name: 'Add a project' });
+  const iconPaths = button => button.locator('svg path').evaluateAll(paths =>
+    paths.map(path => path.getAttribute('d')),
+  );
+  expect(await iconPaths(newConversation)).not.toEqual(await iconPaths(addProject));
+
+  await newConversation.click();
+  await expect(project).toHaveClass(/\bactive\b/);
+  await expect(page.locator('.conversation-row', { hasText: 'New chat' })).toHaveCount(0);
+  await expect(page.locator('.empty-title')).toHaveText('What should we build in workspace?');
   await expect(page.locator('#task')).toHaveValue('');
+
+  const firstPrompt = 'Explain the sidebar state';
+  await page.locator('#task').fill(firstPrompt);
+  await page.getByTitle('Send', { exact: true }).click();
+  await expect(page.locator('.conversation-row.active')).toHaveCount(1);
+  await expect(page.locator('.conversation-row', { hasText: 'New chat' })).toHaveCount(0);
 
   await page.getByText('Rabbita browser fixture', { exact: true }).first().click();
   const liveRow = page.locator('.conversation-row[title="session-1"]');
@@ -999,19 +1016,23 @@ test('new chat, archive, and restore update the conversation sidebar', async ({ 
   expect(app.pageErrors).toEqual([]);
 });
 
-test('archiving a selected chat reuses an existing New chat draft', async ({ page }) => {
+test('archiving a selected chat restores the existing project draft', async ({ page }) => {
   const app = new DesktopBrowserHarness(page);
   await app.install();
   await app.goto();
 
-  await page.locator('.workspace-row', { hasText: 'workspace' }).hover();
+  const workspace = page.locator('.workspace-row', { hasText: 'workspace' });
+  await workspace.hover();
   await page.getByTitle('New conversation in this project').click();
   const newChat = page.locator('.conversation-row', { hasText: 'New chat' });
-  await expect(newChat).toHaveCount(1);
+  await expect(newChat).toHaveCount(0);
+  await expect(workspace).toHaveClass(/\bactive\b/);
   await page.locator('#task').fill('Keep this draft');
 
   const stored = page.locator('.conversation-row[title="session-1"]');
   await stored.click();
+  await expect(newChat).toHaveCount(1);
+  await expect(newChat).not.toHaveClass(/\bactive\b/);
   await expect(page.getByText('Browser result', { exact: true })).toBeVisible();
   await page.locator('#task').fill('Discard this archived draft');
   await stored.click({ button: 'right', position: { x: 18, y: 18 } });
@@ -1020,8 +1041,8 @@ test('archiving a selected chat reuses an existing New chat draft', async ({ pag
   await expect.poll(() => app.requests.some(request =>
     request.method === 'session.archive' &&
     request.params?.session === 'session-1')).toBe(true);
-  await expect(newChat).toHaveCount(1);
-  await expect(newChat).toHaveClass(/active/);
+  await expect(newChat).toHaveCount(0);
+  await expect(workspace).toHaveClass(/\bactive\b/);
   await expect(page.locator('#task')).toHaveValue('Keep this draft');
   expect(app.pageErrors).toEqual([]);
 });
@@ -1042,6 +1063,9 @@ test('shared WebView action menu supports context position, keyboard, and rename
   let menu = page.getByRole('menu', { name: 'Workspace actions' });
   await expect(menu).toBeFocused();
   await expect(menu.getByRole('menuitem').first()).not.toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(menu).toHaveCount(0);
+  await expect(firstWorkspaceMenu).toBeFocused();
   await secondWorkspace.hover();
   await secondWorkspaceMenu.click();
   await expect(firstWorkspaceMenu).toHaveAttribute('aria-expanded', 'false');
@@ -1208,7 +1232,9 @@ test('removing a pending selection exits its loading state', async ({ page }) =>
   await expect(page.getByRole('menu')).toHaveCount(0);
   await expect(page.getByText('Loading conversation…', { exact: true })).toHaveCount(0);
   await expect(page.locator('#task')).toBeVisible();
-  await expect(page.locator('.conversation-row', { hasText: 'New chat' })).toBeVisible();
+  await expect(page.locator('.conversation-row', { hasText: 'New chat' })).toHaveCount(0);
+  await expect(page.locator('.workspace-row', { hasText: 'workspace' })).toHaveClass(/\bactive\b/);
+  await expect(page.locator('.empty-title')).toHaveText('What should we build in workspace?');
   expect(app.pageErrors).toEqual([]);
 });
 

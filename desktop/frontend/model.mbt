@@ -3331,9 +3331,8 @@ fn Model::conversation_for_composer_action(
 
 ///|
 /// Whether the conversation on screen is a fresh "New chat" — nothing sent
-/// yet and no stored record. While this holds, the conversation owns a
-/// "New chat" sidebar row in its workspace's group, taking a real title at
-/// the first send.
+/// yet and no stored record. While this holds, its project owns the sidebar
+/// selection; the conversation itself appears there only after the first send.
 fn Model::composing_new_chat(self : Model) -> Bool {
   guard self.active_conversation() is Some(conv) else { return false }
   self.conversation_is_new_chat(conv)
@@ -3599,8 +3598,8 @@ fn Conversation::draft_sendable(self : Conversation) -> Bool {
 ///|
 /// Whether the conversation has actually gotten under way — a run, durable
 /// transcript, local notice, or exact submission ownership. A fresh "New
-/// chat" (even with a typed draft) has not; the one on screen still owns a
-/// "New chat" sidebar row, but stale husks stay out of the list.
+/// chat" (even with a typed draft) has not; the one on screen is represented
+/// by its project, while stale husks stay out of the list.
 /// The highest durable sequence this conversation knows of, including
 /// commits buffered above the watermark while a reload is in flight.
 ///

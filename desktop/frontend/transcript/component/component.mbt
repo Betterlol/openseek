@@ -48,6 +48,10 @@ struct Input {
   source : Source
   focused : @interop.ChannelId
   active_session : String
+  // The registered project that owns this conversation, kept separate from
+  // `root`: a managed worktree resolves files from its checkout while the
+  // empty-state question should still name the project the user selected.
+  project_label : String?
   // The concrete project or worktree root sent alongside relative Markdown
   // image paths so the owning host, rather than the frontend, resolves them.
   root : @common.Uri?
@@ -69,6 +73,7 @@ pub fn Input::Input(
   source~ : Source,
   focused~ : @interop.ChannelId,
   active_session~ : String,
+  project_label? : String,
   root~ : @common.Uri?,
   submission_generation~ : Int,
   items~ : Array[VisibleRow],
@@ -81,6 +86,7 @@ pub fn Input::Input(
     source,
     focused,
     active_session,
+    project_label,
     root,
     submission_generation,
     items,

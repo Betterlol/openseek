@@ -4,6 +4,12 @@ fn stream_keys(input : Input) -> Array[String] {
 }
 
 ///|
+test "empty transcript title names its project when available" {
+  assert_eq(empty_title(Some("openseek")), "What should we build in openseek?")
+  assert_eq(empty_title(None), "What should we build?")
+}
+
+///|
 test "transcript stream children use stable typed keys in display order" {
   let call : @transcript.ToolCall = {
     call_id: "c1",

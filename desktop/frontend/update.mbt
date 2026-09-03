@@ -13037,15 +13037,13 @@ test "Codex threads share the Projects section's project rows" {
   guard sections[0].entries[0] is @section.Project(project) else {
     fail("expected the fixture project's row")
   }
-  // Rows interleave by recency across both sources: the fixture's unsent
-  // "New chat" husk leads as this session's composing row, then stamped
-  // history newest-first regardless of which agent owns each row.
+  // The fixture's unsent OpenSeek chat is represented by its project rather
+  // than a child row. Durable history still interleaves newest-first across
+  // both agents.
   let order = project.conversations.map(row => row.id.conversation())
-  assert_eq(order, [
-    "desktop-test", "desktop-newer", "codex-thread-1", "desktop-older",
-  ])
-  assert_true(project.conversations[2].id.source() is @conversation.CodexLive)
-  assert_true(project.conversations[2].nested)
+  assert_eq(order, ["desktop-newer", "codex-thread-1", "desktop-older"])
+  assert_true(project.conversations[1].id.source() is @conversation.CodexLive)
+  assert_true(project.conversations[1].nested)
   // With the Codex page on screen, its active task claims the activation.
   assert_eq(sections[0].activation, Some("codex-thread-1"))
 }

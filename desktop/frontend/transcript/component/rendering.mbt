@@ -32,6 +32,17 @@ fn TranscriptRenderKey::empty() -> TranscriptRenderKey {
 }
 
 ///|
+/// Give an unstarted conversation enough location context to distinguish two
+/// otherwise identical new-chat pages. A scratch or onboarding transcript has
+/// no registered project and keeps the generic question.
+fn empty_title(project_label : String?) -> String {
+  match project_label {
+    Some(project) => "What should we build in \{project}?"
+    None => "What should we build?"
+  }
+}
+
+///|
 /// One renderer-private key for a direct child of `#transcript`.
 priv struct TranscriptSectionKey {
   value : String
@@ -100,7 +111,7 @@ priv struct Block {
 ///|
 priv enum BlockContent {
   /// Nothing to show: no durable items and nothing streaming.
-  Empty(Source)
+  Empty(Source, String?)
   /// One transcript item. `step_label` is the ordinal an OpenSeek provider
   /// response carries ("#3"); `anchor` is a user turn's overview anchor;
   /// `subrun_parent` is the session a sub-run tool card links its child
@@ -144,7 +155,7 @@ fn stream_blocks(input : Input) -> @vector.Vector[Block] {
     return @vector.singleton({
       stream,
       key: TranscriptRenderKey::empty(),
-      content: Empty(input.source),
+      content: Empty(input.source, input.project_label),
     })
   }
   let assistant_name = input.source.assistant_name()
@@ -218,7 +229,7 @@ fn Block::branch_key(self : Block) -> String {
 fn Block::render(self : Block, actions : Actions) -> @html.Html {
   let on_open = path => (actions.open)(path)
   match self.content {
-    Empty(source) => empty_view(source)
+    Empty(source, project_label) => empty_view(source, project_label)
     Item(item~, anchor~, step_label~, assistant_name~, subrun_parent~) =>
       transcript_item_view(
         item,
@@ -247,7 +258,7 @@ fn Block::render(self : Block, actions : Actions) -> @html.Html {
 }
 
 ///|
-fn empty_view(source : Source) -> @html.Html {
+fn empty_view(source : Source, project_label : String?) -> @html.Html {
   @html.div(class="empty", [
     @html.div(class="empty-badge", [
       @icons.icon(
@@ -257,7 +268,7 @@ fn empty_view(source : Source) -> @html.Html {
         },
       ),
     ]),
-    @html.div(class="empty-title", "What should we build?"),
+    @html.div(class="empty-title", empty_title(project_label)),
     @html.div(
       class="empty-sub",
       match source {

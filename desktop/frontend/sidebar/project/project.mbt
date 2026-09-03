@@ -267,7 +267,7 @@ pub fn component(
             event.stop_propagation()
             (actions.new_conversation)(input.id)
           }),
-          @icons.icon(@icons.icon_add),
+          @icons.icon(@icons.icon_new_chat),
         ),
       )
     }

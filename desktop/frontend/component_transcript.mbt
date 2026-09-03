@@ -9,10 +9,14 @@ fn Model::transcript_input(self : Model) -> @transcript_component.Input {
   match self.screen {
     Codex => {
       let placement = self.codex.active_placement(self.focused)
+      let project_label = placement
+        .bind(value => value.project_root())
+        .map(project => @resource.label(project))
       @transcript_component.Input(
         source=@transcript_component.Codex,
         focused=self.focused,
         active_session=self.codex.active_id().unwrap_or("none"),
+        project_label?,
         root=placement.bind(value => value.checkout_root()),
         submission_generation=0,
         items=@transcript_component.VisibleRow::history(
@@ -41,6 +45,7 @@ fn Model::transcript_input(self : Model) -> @transcript_component.Input {
             source=@transcript_component.OpenSeek,
             focused=self.focused,
             active_session=self.active_session,
+            project_label=@resource.label(conversation.project()),
             root=self
               .conversation_placement(conversation)
               .bind(value => value.checkout_root()),

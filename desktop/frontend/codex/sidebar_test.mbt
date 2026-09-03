@@ -26,6 +26,33 @@ test "Codex threads nest under their registered project row" {
 }
 
 ///|
+test "a selected Codex draft activates its project without a child row" {
+  let dispatch : @cmd.Emit[@codex.Msg] = @cmd.Emit(_ => @cmd.none)
+  let (_, state) = @codex.update(
+    dispatch,
+    @codex.Msg::start_draft("draft-1", "/work/openseek"),
+    @codex.State::State(),
+    @interop.ChannelId::Local,
+    _ => @cmd.none,
+  )
+  let selected : @codex.SidebarContext = {
+    channel: @interop.ChannelId::Local,
+    selected: true,
+    registered_projects: ["/work/openseek"],
+  }
+  assert_eq(
+    state.project_activation(selected, "/work/openseek"),
+    Some("draft-1"),
+  )
+  assert_true(state.project_draft(selected, "/work/openseek") is None)
+
+  // Leaving the Codex page does not strand typed work: the off-screen draft
+  // becomes a recovery row until the user returns or sends it.
+  let off_screen = { ..selected, selected: false, }
+  assert_true(state.project_draft(off_screen, "/work/openseek") is Some(_))
+}
+
+///|
 test "unregistered Codex roots remain direct conversation inputs" {
   let state = @codex.State::from_thread_snapshot({
     "thread": {
