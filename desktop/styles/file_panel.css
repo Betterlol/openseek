@@ -631,26 +631,39 @@ html.is-resizing * {
   min-width: 0;
   padding: 6px 10px 6px 8px;
   border: 0;
-  background: var(--color-bg-subtle);
-  color: var(--color-text-primary);
+  background: transparent;
+  color: var(--color-text-secondary);
   font: inherit;
   font-size: var(--font-size-sm);
   text-align: left;
   cursor: pointer;
 }
 .search-semantic-pattern-header:hover {
-  background: var(--color-bg-hover);
+  background: var(--color-bg-subtle);
 }
 .search-semantic-pattern {
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
+  padding: 1px 6px;
+  border-radius: var(--radius-xs);
+  background: var(--color-accent-soft);
+  color: var(--color-accent-strong);
   font-family: var(--font-family-mono);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .search-semantic-pattern-results {
   min-width: 0;
+  margin-left: 12px;
+  border-left: 1px solid var(--color-border);
+}
+.search-semantic-pattern-results > .search-file-group {
+  margin-left: 8px;
+}
+.search-semantic-pattern-results .search-file-results {
+  margin-left: 16px;
+  border-left: 1px solid var(--color-border);
 }
 .search-semantic-hit {
   padding: 6px 10px 6px 34px;
