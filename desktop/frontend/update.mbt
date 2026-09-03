@@ -2694,6 +2694,19 @@ fn update_msg(
     // place; an already-open file is activated.
     FileEditor(@fileeditor.SearchMatchSelected(path~, range~)) =>
       open_editor_at(dispatch, model, path, Some(range))
+    FileEditor(@fileeditor.SearchSelectionReferenced(reference)) => {
+      guard model.active_conversation() is Some(conv) else {
+        return (@cmd.none, model)
+      }
+      let mentions = @composer.Draft::{
+          task: conv.task,
+          mentions: conv.mentions,
+        }.with_mention({
+          ref_: @mention_context.SemanticSearch(reference),
+          range: None,
+        }).mentions
+      (@cmd.none, model.replace_conversation({ ..conv, mentions, }))
+    }
     // Intercepted like the comment above: which dock tab a tree click opens
     // is the strip's business. The dock opens (or re-activates) the tab,
     // then the file subsystem loads and shows the document against the

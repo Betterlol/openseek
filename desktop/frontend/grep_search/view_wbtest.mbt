@@ -4,7 +4,9 @@
 fn render_search(state : State, input : Input) -> String {
   let emit : @cmd.Emit[Msg] = @cmd.Emit(_ => @cmd.none)
   @vdom.server_side_render(() => {
-    state.explorer_view(input, emit, (_, _) => @cmd.none).to_virtual_dom()
+    state
+    .explorer_view(input, emit, (_, _) => @cmd.none, _ => @cmd.none)
+    .to_virtual_dom()
   })
 }
 

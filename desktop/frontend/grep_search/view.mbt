@@ -559,10 +559,13 @@ fn search_body(
   page : Page,
   emit : @cmd.Emit[Msg],
   open_match : (String, @common.Range) -> @cmd.Cmd,
+  add_reference : (@mention_context.SemanticSearchReference) -> @cmd.Cmd,
+  root : String,
 ) -> @html.Html {
   match page.mode {
     Text => text_search_body(page, emit, open_match)
-    Semantic => semantic_search_body(page, emit, open_match)
+    Semantic =>
+      semantic_search_body(page, emit, open_match, add_reference, root)
   }
 }
 
@@ -832,6 +835,8 @@ fn semantic_search_body(
   page : Page,
   emit : @cmd.Emit[Msg],
   open_match : (String, @common.Range) -> @cmd.Cmd,
+  add_reference : (@mention_context.SemanticSearchReference) -> @cmd.Cmd,
+  root : String,
 ) -> @html.Html {
   let children : Array[@html.Html] = []
   let busy = page.phase is Debouncing || page.phase is Loading
@@ -862,6 +867,13 @@ fn semantic_search_body(
     children.push(
       @html.div(class="search-selection-toolbar", [
         @html.span("\{selected_count} selected"),
+        @html.button(
+          on_click=match page.selected_semantic_reference(root) {
+            Some(reference) => add_reference(reference)
+            None => @cmd.none
+          },
+          "Add to prompt",
+        ),
         @html.button(on_click=emit(ClearSelection), "Clear selection"),
       ]),
     )
@@ -916,6 +928,8 @@ fn page_view(
   page : Page,
   emit : @cmd.Emit[Msg],
   open_match : (String, @common.Range) -> @cmd.Cmd,
+  add_reference : (@mention_context.SemanticSearchReference) -> @cmd.Cmd,
+  root : String,
 ) -> @html.Html {
   let details = if page.details_open {
     let details : Array[@html.Html] = [
@@ -1032,7 +1046,7 @@ fn page_view(
         "Collapse All",
       ),
     ]),
-    search_body(page, emit, open_match),
+    search_body(page, emit, open_match, add_reference, root),
   ])
 }
 
@@ -1044,9 +1058,11 @@ pub fn State::explorer_view(
   input : Input,
   emit : @cmd.Emit[Msg],
   open_match : (String, @common.Range) -> @cmd.Cmd,
+  add_reference : (@mention_context.SemanticSearchReference) -> @cmd.Cmd,
 ) -> @html.Html {
   match input.root {
-    Some(_) => page_view(self.page, emit, open_match)
+    Some(root) =>
+      page_view(self.page, emit, open_match, add_reference, root.path)
     None =>
       @html.div(class="workspace-search search-no-workspace", [
         @html.div(class="search-empty-title", "No checkout available"),

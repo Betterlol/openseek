@@ -120,6 +120,42 @@ pub fn State::selected_semantic_hits(
 }
 
 ///|
+pub fn State::selected_semantic_reference(
+  self : State,
+  root : String,
+) -> @mention_context.SemanticSearchReference? {
+  self.page.selected_semantic_reference(root)
+}
+
+///|
+fn Page::selected_semantic_reference(
+  self : Page,
+  root : String,
+) -> @mention_context.SemanticSearchReference? {
+  let matches = selected_semantic_hits(self.semantic.hits, self.selected)
+  guard !matches.is_empty() else { return None }
+  let patterns = self.semantic.patterns.filter(pattern => {
+    !pattern.trim().is_empty()
+  })
+  Some({
+    id: "semantic-search:\{root}:\{self.generation}:\{matches.length()}",
+    root,
+    patterns,
+    include_glob: self.include_glob,
+    exclude_glob: self.exclude_glob,
+    matches: matches.map(hit => {
+      pattern: hit.rule_id,
+      file: hit.path,
+      start_line: hit.start_line,
+      start_column: hit.start_column,
+      end_line: hit.end_line,
+      end_column: hit.end_column,
+      matched_source: hit.matched_source,
+    }),
+  })
+}
+
+///|
 pub(all) struct Input {
   owner : @interop.ConversationKey
   root : @common.Uri?
