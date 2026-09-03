@@ -712,6 +712,101 @@ html:is(
   align-items: center;
   gap: 3px;
 }
+/* Semantic hits: one structural match per block, semgrep-style. */
+.search-semantic-pattern-group {
+  min-width: 0;
+}
+.search-semantic-pattern-header {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  padding: 6px 10px 6px 8px;
+  border: 0;
+  background: var(--color-bg-subtle);
+  color: var(--color-text-primary);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  text-align: left;
+  cursor: pointer;
+}
+.search-semantic-pattern-header:hover {
+  background: var(--color-bg-hover);
+}
+.search-semantic-pattern {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-family-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.search-semantic-pattern-results {
+  min-width: 0;
+}
+.search-semantic-hit {
+  padding: 6px 10px 6px 34px;
+  cursor: pointer;
+  border-radius: var(--radius-xs);
+}
+.search-semantic-hit:hover {
+  background: var(--color-bg-hover, var(--color-bg-surface));
+}
+.search-semantic-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.search-semantic-rule {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: var(--radius-xs);
+  background: var(--color-accent-soft);
+  color: var(--color-accent-strong);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+}
+.search-semantic-desc {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+}
+.search-semantic-context {
+  display: grid;
+  overflow: hidden;
+}
+.search-context-line {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  min-width: 0;
+  color: var(--color-text-secondary);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+}
+.search-context-line.matched {
+  color: var(--color-text-primary);
+}
+.search-context-line.matched .search-context-text {
+  background: var(--color-accent-soft);
+  border-radius: 2px;
+}
+.search-context-gutter {
+  text-align: right;
+  padding-right: 8px;
+  user-select: none;
+  color: var(--color-text-quiet);
+}
+.search-context-text {
+  min-width: 0;
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .search-details-toggle {
   font-weight: 700;
   letter-spacing: 1px;

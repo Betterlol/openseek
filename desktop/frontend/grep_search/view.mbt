@@ -594,8 +594,14 @@ fn search_body(
   }
   // A diagnostic and retained results are independent: both engines can
   // return useful matches before reporting a scan failure.
-  for group in visible_file_groups(items, page.visible_lines) {
-    children.push(file_group_view(page, group, emit, open_match))
+  if page.mode is Semantic {
+    for group in visible_semantic_pattern_groups(page) {
+      children.push(semantic_pattern_group_view(page, group, emit, open_match))
+    }
+  } else {
+    for group in visible_file_groups(items, page.visible_lines) {
+      children.push(file_group_view(page, group, emit, open_match))
+    }
   }
   let shown = page.visible_lines.min(items.length())
   if shown < items.length() {
@@ -611,6 +617,220 @@ fn search_body(
     )
   }
   @html.div(class="search-results", children)
+}
+
+///|
+priv struct SemanticFileGroup {
+  path : String
+  hits : Array[@protocol.SemanticSearchHit]
+  count : Int
+}
+
+///|
+priv struct SemanticPatternGroup {
+  pattern : String
+  hits : Array[@protocol.SemanticSearchHit]
+  count : Int
+}
+
+///|
+fn semantic_pattern_key(pattern : String) -> String {
+  "semantic-pattern:\{pattern}"
+}
+
+///|
+fn semantic_file_key(pattern : String, path : String) -> String {
+  "semantic-file:\{pattern}:\{path}"
+}
+
+///|
+fn semantic_grouped_hits(
+  hits : Array[@protocol.SemanticSearchHit],
+) -> Array[SemanticPatternGroup] {
+  let groups : Array[SemanticPatternGroup] = []
+  let indexes : Map[String, Int] = Map([])
+  for hit in hits {
+    match indexes.get(hit.rule_id) {
+      Some(index) => {
+        let group = groups[index]
+        let rows = group.hits
+        rows.push(hit)
+        groups[index] = { ..group, hits: rows, count: group.count + 1, }
+      }
+      None => {
+        indexes[hit.rule_id] = groups.length()
+        groups.push({ pattern: hit.rule_id, hits: [hit], count: 1, })
+      }
+    }
+  }
+  groups
+}
+
+///|
+fn semantic_file_groups(
+  pattern : SemanticPatternGroup,
+) -> Array[SemanticFileGroup] {
+  let groups : Array[SemanticFileGroup] = []
+  let indexes : Map[String, Int] = Map([])
+  for hit in pattern.hits {
+    match indexes.get(hit.path) {
+      Some(index) => {
+        let group = groups[index]
+        let rows = group.hits
+        rows.push(hit)
+        groups[index] = { ..group, hits: rows, count: group.count + 1, }
+      }
+      None => {
+        indexes[hit.path] = groups.length()
+        groups.push({ path: hit.path, hits: [hit], count: 1, })
+      }
+    }
+  }
+  groups
+}
+
+///|
+fn visible_semantic_pattern_groups(page : Page) -> Array[SemanticPatternGroup] {
+  let visible : Array[SemanticPatternGroup] = []
+  let mut remaining = page.visible_lines.max(0)
+  for group in semantic_grouped_hits(page.semantic.hits) {
+    guard remaining > 0 else { break }
+    let rows : Array[@protocol.SemanticSearchHit] = []
+    for hit in group.hits {
+      guard rows.length() < remaining else { break }
+      rows.push(hit)
+    }
+    visible.push({ ..group, hits: rows, })
+    remaining -= rows.length()
+  }
+  visible
+}
+
+///|
+/// One moongrep context line: gutter line number plus the source text, with the
+/// matched lines highlighted, in the style of semgrep's pattern-match output.
+fn semantic_context_line_view(
+  line : @protocol.SemanticContextLine,
+) -> @html.Html {
+  @html.div(
+    class=if line.is_match {
+      "search-context-line matched"
+    } else {
+      "search-context-line"
+    },
+    [
+      @html.span(class="search-context-gutter", "\{line.line}"),
+      @html.span(class="search-context-text", line.text),
+    ],
+  )
+}
+
+///|
+fn semantic_hit_view(
+  hit : @protocol.SemanticSearchHit,
+  open_match : (String, @common.Range) -> @cmd.Cmd,
+) -> @html.Html {
+  let target = @common.Range(
+    hit.start_line,
+    hit.start_column,
+    hit.end_line,
+    hit.end_column,
+  )
+  @html.div(
+    class="search-semantic-hit",
+    attrs=@html.Attrs::build().on_click(_ => open_match(hit.path, target)),
+    [
+      @html.div(
+        class="search-semantic-context",
+        hit.source_context.map(line => semantic_context_line_view(line)),
+      ),
+    ],
+  )
+}
+
+///|
+fn semantic_file_group_view(
+  page : Page,
+  pattern : String,
+  group : SemanticFileGroup,
+  emit : @cmd.Emit[Msg],
+  open_match : (String, @common.Range) -> @cmd.Cmd,
+) -> @html.Html {
+  let collapsed = page.collapsed
+    .get(semantic_file_key(pattern, group.path))
+    .unwrap_or(false)
+  let (name, parent) = file_label(group.path)
+  let rows = if collapsed {
+    ([] : Array[@html.Html])
+  } else {
+    group.hits.map(hit => semantic_hit_view(hit, open_match))
+  }
+  @html.div(class="search-file-group", [
+    @html.button(
+      class="search-file-header",
+      title=group.path,
+      attrs=@html.Attrs::build()
+        .aria_expanded((!collapsed).to_string())
+        .on_click(_ => emit(ToggleFile(semantic_file_key(pattern, group.path)))),
+      [
+        @html.span(
+          class="search-file-chevron",
+          attrs=@html.Attrs::build().aria_hidden("true"),
+          if collapsed {
+            "›"
+          } else {
+            "⌄"
+          },
+        ),
+        @html.span(class="search-file-name", name),
+        @html.span(class="search-file-parent", parent),
+        @html.span(class="search-file-count", "\{group.count}"),
+      ],
+    ),
+    @html.div(class="search-file-results", rows),
+  ])
+}
+
+///|
+fn semantic_pattern_group_view(
+  page : Page,
+  group : SemanticPatternGroup,
+  emit : @cmd.Emit[Msg],
+  open_match : (String, @common.Range) -> @cmd.Cmd,
+) -> @html.Html {
+  let collapsed = page.collapsed
+    .get(semantic_pattern_key(group.pattern))
+    .unwrap_or(false)
+  let files = if collapsed {
+    []
+  } else {
+    semantic_file_groups(group).map(file => {
+      semantic_file_group_view(page, group.pattern, file, emit, open_match)
+    })
+  }
+  @html.div(class="search-semantic-pattern-group", [
+    @html.button(
+      class="search-semantic-pattern-header",
+      title=group.pattern,
+      attrs=@html.Attrs::build()
+        .aria_expanded((!collapsed).to_string())
+        .on_click(_ => emit(TogglePattern(group.pattern))),
+      [
+        @html.span(
+          class="search-file-chevron",
+          attrs=@html.Attrs::build().aria_hidden("true"),
+          if collapsed {
+            "›"
+          } else {
+            "⌄"
+          },
+        ),
+        @html.span(class="search-semantic-pattern", group.pattern),
+        @html.span(class="search-file-count", "\{group.count}"),
+      ],
+    ),
+    @html.div(class="search-semantic-pattern-results", files),
+  ])
 }
 
 ///|
