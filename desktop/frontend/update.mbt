@@ -2383,6 +2383,37 @@ fn update_msg(
           guard model.conversation_for_composer_action(identity) is Some(conv) else {
             return (@cmd.none, model)
           }
+          if mention.ref_ is @mention_context.SemanticSearch(reference) {
+            let scoped = {
+              ..model,
+              focused: conv.device,
+              active_session: conv.session_id,
+            }
+            let (mode_cmd, mode_model) = update_msg(
+              dispatch,
+              FileEditor(
+                @fileeditor.ExplorerModeSelected(@fileeditor.ExplorerSearch),
+              ),
+              scoped,
+            )
+            let (restore_cmd, restored) = update_msg(
+              dispatch,
+              FileEditor(
+                @fileeditor.Search(
+                  @grep_search.RestoreSemanticReference(reference),
+                ),
+              ),
+              mode_model,
+            )
+            return (
+              @cmd.batch([mode_cmd, restore_cmd]),
+              {
+                ..restored,
+                focused: model.focused,
+                active_session: model.active_session,
+              },
+            )
+          }
           guard @mention_context.target(mention.ref_) is Some(target) else {
             return (@cmd.none, model)
           }

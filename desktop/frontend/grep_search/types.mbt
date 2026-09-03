@@ -214,6 +214,7 @@ pub(all) enum Msg {
   ToggleSemanticHit(String)
   ToggleSemanticPattern(String)
   ToggleSemanticFile(String, String)
+  RestoreSemanticReference(@mention_context.SemanticSearchReference)
   RequestStarted(
     owner~ : @interop.ConversationKey,
     root~ : String,
