@@ -247,19 +247,28 @@ async fn edit_file(
       match find_quote_normalized_match(region.body, input.old_string) {
         Some(start) => (start, true)
         None => {
-          let hints = StringBuilder()
+          let file_hints = StringBuilder()
           if has_crlf(content) {
-            hints.write_string(
-              "\n— the file uses CRLF line endings; old_string uses LF — ensure old_string matches the actual line endings, or re-read the file",
+            file_hints.write_string(
+              "— the file uses CRLF line endings; old_string uses LF — re-read the file and copy the exact text",
             )
           }
           if has_curly_quotes(content) {
-            hints.write_string(
-              "\n— the file contains curly/smart quotes; models can only output straight quotes — re-read the file and copy the exact text from the file",
+            if file_hints.to_string().length() > 0 {
+              file_hints.write_char('\n')
+            }
+            file_hints.write_string(
+              "— the file contains curly/smart quotes; models can only output straight quotes — re-read the file and copy the exact text from the file",
             )
           }
           return err(
-            "old_string not found\{range_detail(input)}\{old_string_context(content, input.old_string, input.start_line, input.end_line)}\{hints.to_string()}",
+            old_string_context(
+              content,
+              input.old_string,
+              input.start_line,
+              input.end_line,
+              file_hints=file_hints.to_string(),
+            ),
           )
         }
       }
@@ -968,14 +977,23 @@ fn range_detail(input : @decode.EditInput) -> String {
 }
 
 ///|
-/// Build a diagnostic context block when `old_string` is not found: shows
-/// surrounding lines from the file and the first character difference.
+/// Build a structured diagnostic when `old_string` is not found: file-level
+/// hints first, then the file context in a code block, then the first
+/// character difference with a specific mismatch hint.
 fn old_string_context(
   content : String,
   old_string : String,
   start_line : Int,
   end_line : Int?,
+  file_hints? : String = "",
 ) -> String {
+  let result = StringBuilder()
+  // File-level hints first, before the context
+  if file_hints.length() > 0 {
+    result.write_string(file_hints)
+    result.write_string("\n\n")
+  }
+  // Surrounding lines in a code block
   let context_before = 2
   let context_after = 2
   let search_end = end_line.unwrap_or(start_line)
@@ -983,7 +1001,10 @@ fn old_string_context(
   let last_line = (search_end + context_after).min(
     total_line_count(content) + context_after,
   )
-  let lines : Array[String] = ["\n\nfile context:"]
+  result.write_string(
+    "─── file context ───────────────────────────────\n",
+  )
+  result.write_string("```\n")
   for line_no in first_line..<=last_line {
     let ls = @line_offset.line_start_offset(content, line_no)
     let le = @line_offset.line_end_offset(content, line_no)
@@ -998,9 +1019,10 @@ fn old_string_context(
     } else {
       "  "
     }
-    lines.push("\{gutter} \{line_no} | \{line_text}")
+    result.write_string("\{gutter} \{line_no} | \{line_text}\n")
   }
-  // Compare old_string with the actual content at the anchor offset
+  result.write_string("```\n")
+  // First character difference
   let anchor_offset = @line_offset.line_start_offset(content, start_line)
   let compare_len = old_string.length().min(content.length() - anchor_offset)
   if compare_len > 0 {
@@ -1012,41 +1034,48 @@ fn old_string_context(
     match diff_info {
       Some((pos, expected_char, actual_char)) => {
         let diff_pos = pos + 1
-        lines.push(
-          "\nfirst difference at character \{diff_pos}: expected `\{expected_char}`, got `\{actual_char}`",
+        result.write_string(
+          "─── first difference ───────────────────────────\n",
+        )
+        result.write_string(
+          "at character \{diff_pos}: expected `\{expected_char}`, got `\{actual_char}`",
         )
         // Specific diagnostics for common mismatch patterns
         if expected_char == "\n" && actual_char == "\r" {
-          lines.push(
-            " — CRLF vs LF line-ending mismatch: the file uses `\\r\\n` (CRLF) but old_string uses `\\n` (LF); re-read the file to get the exact text",
+          result.write_string(
+            "\n— CRLF vs LF line-ending mismatch: the file uses `\\r\\n` (CRLF) but old_string uses `\\n` (LF); re-read the file to get the exact text",
           )
         } else if actual_char == "\r" &&
           pos + 1 < actual.length() &&
           actual[pos + 1] == '\n' {
-          lines.push(
-            " — CRLF vs LF line-ending mismatch near this position; re-read the file to get the exact text",
+          result.write_string(
+            "\n— CRLF vs LF line-ending mismatch near this position; re-read the file to get the exact text",
           )
         } else if expected_char == "'" &&
           (actual_char == "\u{2018}" || actual_char == "\u{2019}") {
-          lines.push(
-            " — curly vs straight single-quote mismatch: the file uses curly quotes (`'`/`'`), but models can only output straight quotes (`'`); re-read the file to get the exact text",
+          result.write_string(
+            "\n— curly vs straight single-quote mismatch: the file uses curly quotes (`'`/`'`), but models can only output straight quotes (`'`); re-read the file to get the exact text",
           )
         } else if expected_char == "\"" &&
           (actual_char == "\u{201C}" || actual_char == "\u{201D}") {
-          lines.push(
-            " — curly vs straight double-quote mismatch: the file uses curly quotes (`\"`/`\"`), but models can only output straight quotes (`\"`); re-read the file to get the exact text",
+          result.write_string(
+            "\n— curly vs straight double-quote mismatch: the file uses curly quotes (`\"`/`\"`), but models can only output straight quotes (`\"`); re-read the file to get the exact text",
           )
         }
+        result.write_char('\n')
       }
       None => ()
     }
   } else {
-    lines.push("\n(old_string extends past the end of the file)")
+    result.write_string(
+      "─── first difference ───────────────────────────\n",
+    )
+    result.write_string("old_string extends past the end of the file\n")
   }
-  lines.push(
-    "\nhint: check for CRLF vs LF line endings, tab vs space, full-width vs half-width characters, or a stray read-tool display separator (`|`) in old_string",
+  result.write_string(
+    "─── hint ───────────────────────────────────────\ncheck for CRLF vs LF line endings, tab vs space, full-width vs half-width characters, or a stray read-tool display separator (`|`) in old_string\n",
   )
-  lines.join("")
+  result.to_string()
 }
 
 ///|
@@ -1236,8 +1265,8 @@ test "old_string_context clamps last_line to end of file" {
   let content = "a\nb\nc\n"
   let ctx = old_string_context(content, "x", 1, Some(999999))
   // Should not loop 1M times; last_line clamped to 5 (3 file lines + 2 context_after)
-  assert_true(ctx.contains("file context:"))
-  assert_true(ctx.contains("hint:"))
+  assert_true(ctx.contains("─── file context"))
+  assert_true(ctx.contains("─── hint"))
   // All 3 file lines should appear; no error from past-EOF iteration
   assert_true(ctx.contains("1 | a"))
   assert_true(ctx.contains("2 | b"))
