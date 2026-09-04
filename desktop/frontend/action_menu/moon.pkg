@@ -1,4 +1,5 @@
 import {
+  "moonbitlang/core/math",
   "moonbit-community/rabbita",
   "moonbit-community/rabbita/clipboard",
   "moonbit-community/rabbita/cmd",
