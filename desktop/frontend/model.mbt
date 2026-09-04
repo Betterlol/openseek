@@ -1302,6 +1302,7 @@ priv enum SelectMenu {
   FontSizeMenu
   NotificationCornerMenu
   TreeLayoutMenu
+  ProjectMenu
 } derive(Eq)
 
 ///|
@@ -1529,9 +1530,13 @@ priv struct Model {
   // each conversation's unsent draft; textarea edits never touch this field or
   // any other part of the root Model.
   composer_context_generation : Int
-  // Transient presentation for the visible custom select. It closes on
-  // context changes, selection, and click-away dismissal.
+  // Transient presentation for the visible select or project menu. It closes
+  // on context changes, selection, and click-away dismissal.
   select_menu : SelectMenu?
+  // Search text inside the default page's registered-project menu. This stays
+  // beside `select_menu` so the shell can hide native Browser views beneath
+  // the complete top-layer surface.
+  project_menu_query : String
   // Every newly observed archive appends its exact owner. The composer consumes
   // this page-lifetime log in order, so a background session cannot regain an
   // old component-local draft when the same session id is later unarchived.
@@ -1746,6 +1751,8 @@ priv enum Msg {
   // close the menu and continue to its original target.
   ToggleSelectMenu(SelectMenu)
   CloseSelectMenu
+  ProjectMenuQueryChanged(String)
+  ProjectMenuProjectChosen(@common.Uri)
   // A pick in the unified model chip, as a `ModelChoice` wire value. Within
   // the visible conversation's own agent it selects that conversation's
   // model; on a composing conversation a cross-agent pick hands the fresh
@@ -2619,6 +2626,7 @@ fn initial_model() -> Model {
     installed_skills: [],
     composer_context_generation: 0,
     select_menu: None,
+    project_menu_query: "",
     composer_entry_retirements: [],
     quick_open: @quick_open.State::empty(),
     git_request_generation: 0,
@@ -3336,6 +3344,20 @@ fn Model::conversation_for_composer_action(
 fn Model::composing_new_chat(self : Model) -> Bool {
   guard self.active_conversation() is Some(conv) else { return false }
   self.conversation_is_new_chat(conv)
+}
+
+///|
+/// The title switcher exists only while the visible OpenSeek draft still
+/// belongs to a registered project. Keeping this predicate at the root lets
+/// rendering, event admission, and post-update menu cleanup share one rule.
+fn Model::can_choose_new_chat_project(self : Model) -> Bool {
+  guard self.screen is Chat &&
+    self.composing_new_chat() &&
+    self.active_conversation() is Some(conv) &&
+    self.focused_device() is Some(dev) else {
+    return false
+  }
+  dev.projects.contains(conv.project())
 }
 
 ///|

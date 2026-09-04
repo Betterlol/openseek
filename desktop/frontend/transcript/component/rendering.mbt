@@ -43,6 +43,296 @@ fn empty_title(project_label : String?) -> String {
 }
 
 ///|
+const EmptyProjectControlId : String = "empty-project-control"
+
+///|
+const EmptyProjectTriggerId : String = "empty-project-trigger"
+
+///|
+const EmptyProjectMenuId : String = "empty-project-menu"
+
+///|
+const EmptyProjectSearchId : String = "empty-project-search"
+
+///|
+/// Parent-owned presentation state and effects for the empty page's project
+/// switcher. Keeping the open flag in the shell lets native views yield while
+/// the popover is visible; the transcript owns only its DOM and interactions.
+priv struct EmptyProjectControl {
+  open : Bool
+  query : String
+  toggle : @cmd.Cmd
+  dismiss : @cmd.Cmd
+  query_changed : @cmd.Emit[String]
+  choose : @cmd.Emit[@common.Uri]
+  new_project : @cmd.Cmd
+}
+
+///|
+fn ProjectChoice::matches(self : ProjectChoice, query : String) -> Bool {
+  let query = query.trim().to_owned().to_lower()
+  query.is_empty() ||
+  self.label.to_lower().contains(query) ||
+  self.root.path.to_lower().contains(query)
+}
+
+///|
+/// A focus move within the top-layer popover is still inside its logical
+/// control. Only a move outside (including the document losing focus) closes
+/// it. The root subscription handles pointer click-away through the same
+/// control boundary.
+fn EmptyProjectControl::dismiss_on_blur(
+  self : EmptyProjectControl,
+  event : @dom.FocusEvent,
+) -> @cmd.Cmd {
+  if !self.open {
+    return @cmd.none
+  }
+  if event.related_target() is Some(target) &&
+    target.to_node() is Some(next) &&
+    @dom.document().get_element_by_id(EmptyProjectControlId).to_option()
+    is Some(root) &&
+    root.contains(next) {
+    @cmd.none
+  } else {
+    self.dismiss
+  }
+}
+
+///|
+fn EmptyProjectControl::keydown(
+  self : EmptyProjectControl,
+  event : @dom.KeyboardEvent,
+) -> @cmd.Cmd {
+  if event.key() == "Escape" && self.open {
+    event.prevent_default()
+    @cmd.batch([self.dismiss, focus_empty_project_trigger_after_render()])
+  } else {
+    @cmd.none
+  }
+}
+
+///|
+fn EmptyProjectControl::render(
+  self : EmptyProjectControl,
+  current : @common.Uri,
+  label : String,
+  projects : Array[ProjectChoice],
+) -> @html.Html {
+  let children : Array[@html.Html] = [
+    @html.button(
+      class=if self.open {
+        "empty-project-trigger open"
+      } else {
+        "empty-project-trigger"
+      },
+      type_="button",
+      title="Choose a project",
+      on_click=self.toggle,
+      attrs=@html.Attrs::build()
+        .id(EmptyProjectTriggerId)
+        .aria_label("Choose project, current project \{label}")
+        .aria_haspopup("dialog")
+        .aria_controls(EmptyProjectMenuId)
+        .aria_expanded(self.open.to_string())
+        .on_blur(event => self.dismiss_on_blur(event))
+        .on_keydown(event => self.keydown(event)),
+      label,
+    ),
+  ]
+  if self.open {
+    let visible : Array[ProjectChoice] = []
+    for project in projects {
+      if project.matches(self.query) {
+        visible.push(project)
+      }
+    }
+    let rows : Array[@html.Html] = []
+    for project in visible {
+      let selected = project.root == current
+      rows.push(
+        @html.button(
+          class=if selected {
+            "empty-project-option selected"
+          } else {
+            "empty-project-option"
+          },
+          type_="button",
+          title=project.root.path,
+          on_click=if selected {
+            @cmd.batch([
+              self.dismiss,
+              focus_empty_project_trigger_after_render(),
+            ])
+          } else {
+            @cmd.batch([
+              (self.choose)(project.root),
+              focus_empty_project_trigger_after_render(),
+            ])
+          },
+          attrs=@html.Attrs::build()
+            .aria_label(
+              if selected {
+                "\{project.label}, current project — \{project.root.path}"
+              } else {
+                "\{project.label} — \{project.root.path}"
+              },
+            )
+            .aria_current(if selected { "true" } else { "false" })
+            .on_blur(event => self.dismiss_on_blur(event))
+            .on_keydown(event => self.keydown(event)),
+          [
+            @html.span(
+              class="empty-project-option-icon",
+              @icons.icon(@icons.icon_folder),
+            ),
+            @html.span(class="empty-project-option-label", project.label),
+            @html.span(
+              class="empty-project-option-check",
+              attrs=@html.Attrs::build().aria_hidden("true"),
+              if selected {
+                "✓"
+              } else {
+                ""
+              },
+            ),
+          ],
+        ),
+      )
+    }
+    if rows.is_empty() {
+      rows.push(
+        @html.div(
+          class="empty-project-no-results",
+          attrs=@html.Attrs::build().role("status"),
+          "No projects found",
+        ),
+      )
+    }
+    children.push(
+      @html.div(
+        class="empty-project-menu",
+        attrs=@html.Attrs::build()
+          .id(EmptyProjectMenuId)
+          .role("dialog")
+          .aria_label("Choose a project")
+          .popover("manual"),
+        [
+          @html.div(
+            class="empty-project-search",
+            attrs=@html.Attrs::build().data_set("focus-owner", ""),
+            [
+              @html.span(
+                class="empty-project-search-icon",
+                @icons.icon(@icons.icon_search),
+              ),
+              @html.input(
+                input_type=@html.InputType::Text,
+                value=self.query,
+                autofocus=true,
+                placeholder="Search projects",
+                on_input=self.query_changed,
+                attrs=@html.Attrs::build()
+                  .id(EmptyProjectSearchId)
+                  .aria_label("Search projects")
+                  .data_set("focus-target", "")
+                  .on_blur(event => self.dismiss_on_blur(event))
+                  .on_keydown(event => self.keydown(event)),
+              ),
+            ],
+          ),
+          @html.div(
+            class="empty-project-options",
+            attrs=@html.Attrs::build().role("group").aria_label("Projects"),
+            rows,
+          ),
+          @html.button(
+            class="empty-project-new",
+            type_="button",
+            on_click=@cmd.batch([self.dismiss, self.new_project]),
+            attrs=@html.Attrs::build()
+              .on_blur(event => self.dismiss_on_blur(event))
+              .on_keydown(event => self.keydown(event)),
+            [@icons.icon(@icons.icon_add), @html.span("New project")],
+          ),
+        ],
+      ),
+    )
+  }
+  @html.div(
+    class="empty-project-control",
+    attrs=@html.Attrs::build().id(EmptyProjectControlId),
+    children,
+  )
+}
+
+///|
+fn empty_transcript_view(
+  input : EmptyContent,
+  project_menu : EmptyProjectControl,
+) -> @html.Html {
+  let children : Array[@html.Html] = [
+    @html.div(class="empty-badge", [
+      @icons.icon(
+        match input.source {
+          OpenSeek => @icons.icon_logo
+          Codex => @icons.icon_sparkle
+        },
+      ),
+    ]),
+  ]
+  let title = match (input.project_label, input.current_project) {
+    (Some(label), Some(project)) if input.can_choose_project &&
+      !input.projects.is_empty() =>
+      @html.div(class="empty-title", [
+        @html.span("What should we build in "),
+        @html.div(class="empty-title-project", [
+          project_menu.render(project, label, input.projects),
+          @html.span("?"),
+        ]),
+      ])
+    _ => @html.div(class="empty-title", empty_title(input.project_label))
+  }
+  children.push(title)
+  // OpenSeek's explanatory sentence duplicated what the composer and product
+  // already make clear. Codex retains its source-specific account/sandbox
+  // context because that distinguishes the alternate backend.
+  if input.source is Codex {
+    children.push(
+      @html.div(
+        class="empty-sub",
+        "Codex inspects, edits, and runs this workspace with its own account, sandbox, and approvals.",
+      ),
+    )
+  }
+  @html.div(class="empty", children)
+}
+
+///|
+/// Bind the parent-owned effects only while rendering. The empty block itself
+/// remains pure and comparable, so changing the picker state updates this one
+/// stable branch without remounting its input.
+fn EmptyContent::render(self : EmptyContent, actions : Actions) -> @html.Html {
+  let project_menu : EmptyProjectControl = {
+    open: self.project_menu_open,
+    query: self.project_query,
+    toggle: if self.project_menu_open {
+      actions.toggle_project_menu
+    } else {
+      @cmd.batch([
+        actions.toggle_project_menu,
+        show_empty_project_menu_after_render(),
+      ])
+    },
+    dismiss: actions.dismiss_project_menu,
+    query_changed: actions.project_query_changed,
+    choose: actions.choose_project,
+    new_project: actions.new_project,
+  }
+  empty_transcript_view(self, project_menu)
+}
+
+///|
 /// One renderer-private key for a direct child of `#transcript`.
 priv struct TranscriptSectionKey {
   value : String
@@ -109,9 +399,36 @@ priv struct Block {
 } derive(Eq)
 
 ///|
+/// The empty block's pure rendering inputs. Keeping these values in the block
+/// lets `assoc_by` update only this branch when the menu opens or its query
+/// changes, while the stable branch key preserves its DOM and input focus.
+priv struct EmptyContent {
+  source : Source
+  project_label : String?
+  current_project : @common.Uri?
+  projects : Array[ProjectChoice]
+  can_choose_project : Bool
+  project_menu_open : Bool
+  project_query : String
+} derive(Eq)
+
+///|
+fn Input::empty_content(self : Input) -> EmptyContent {
+  {
+    source: self.source,
+    project_label: self.project_label,
+    current_project: self.current_project,
+    projects: self.projects,
+    can_choose_project: self.can_choose_project,
+    project_menu_open: self.project_menu_open,
+    project_query: self.project_query,
+  }
+}
+
+///|
 priv enum BlockContent {
   /// Nothing to show: no durable items and nothing streaming.
-  Empty(Source, String?)
+  Empty(EmptyContent)
   /// One transcript item. `step_label` is the ordinal an OpenSeek provider
   /// response carries ("#3"); `anchor` is a user turn's overview anchor;
   /// `subrun_parent` is the session a sub-run tool card links its child
@@ -155,7 +472,7 @@ fn stream_blocks(input : Input) -> @vector.Vector[Block] {
     return @vector.singleton({
       stream,
       key: TranscriptRenderKey::empty(),
-      content: Empty(input.source, input.project_label),
+      content: Empty(input.empty_content()),
     })
   }
   let assistant_name = input.source.assistant_name()
@@ -229,7 +546,7 @@ fn Block::branch_key(self : Block) -> String {
 fn Block::render(self : Block, actions : Actions) -> @html.Html {
   let on_open = path => (actions.open)(path)
   match self.content {
-    Empty(source, project_label) => empty_view(source, project_label)
+    Empty(empty) => empty.render(actions)
     Item(item~, anchor~, step_label~, assistant_name~, subrun_parent~) =>
       transcript_item_view(
         item,
@@ -255,30 +572,6 @@ fn Block::render(self : Block, actions : Actions) -> @html.Html {
         reasoning_complete~,
       )
   }
-}
-
-///|
-fn empty_view(source : Source, project_label : String?) -> @html.Html {
-  @html.div(class="empty", [
-    @html.div(class="empty-badge", [
-      @icons.icon(
-        match source {
-          OpenSeek => @icons.icon_logo
-          Codex => @icons.icon_sparkle
-        },
-      ),
-    ]),
-    @html.div(class="empty-title", empty_title(project_label)),
-    @html.div(
-      class="empty-sub",
-      match source {
-        OpenSeek =>
-          "SeekMoon plans the work, edits files across your workspace, runs your tests, and hands back a reviewable result."
-        Codex =>
-          "Codex inspects, edits, and runs this workspace with its own account, sandbox, and approvals."
-      },
-    ),
-  ])
 }
 
 ///|

@@ -41,6 +41,18 @@ pub fn VisibleRow::history(
 }
 
 ///|
+/// One registered project offered by the empty transcript's project switcher.
+/// The resource keeps its device identity while `label` is the compact final
+/// path component shown in the title and menu.
+pub(all) struct ProjectChoice {
+  root : @common.Uri
+  label : String
+} derive(Eq)
+
+///|
+pub extend ProjectChoice with Eq::{equal, not_equal}
+
+///|
 /// The conversation data rendered by the component. The application computes
 /// durable chronology and active-run ownership; this package owns only the
 /// transcript subtree and its scroll behavior.
@@ -52,6 +64,16 @@ struct Input {
   // `root`: a managed worktree resolves files from its checkout while the
   // empty-state question should still name the project the user selected.
   project_label : String?
+  // The registered project behind `project_label`. Kept separate from `root`,
+  // which may be a managed worktree checkout instead of the main project.
+  current_project : @common.Uri?
+  // Every registered project on the focused device, in sidebar order.
+  projects : Array[ProjectChoice]
+  // Only an unsent, unpersisted OpenSeek draft may change its project here.
+  can_choose_project : Bool
+  // Root-owned menu state participates in the shell's native-view occlusion.
+  project_menu_open : Bool
+  project_query : String
   // The concrete project or worktree root sent alongside relative Markdown
   // image paths so the owning host, rather than the frontend, resolves them.
   root : @common.Uri?
@@ -74,6 +96,11 @@ pub fn Input::Input(
   focused~ : @interop.ChannelId,
   active_session~ : String,
   project_label? : String,
+  current_project~ : @common.Uri?,
+  projects~ : Array[ProjectChoice],
+  can_choose_project~ : Bool,
+  project_menu_open~ : Bool,
+  project_query~ : String,
   root~ : @common.Uri?,
   submission_generation~ : Int,
   items~ : Array[VisibleRow],
@@ -87,6 +114,11 @@ pub fn Input::Input(
     focused,
     active_session,
     project_label,
+    current_project,
+    projects,
+    can_choose_project,
+    project_menu_open,
+    project_query,
     root,
     submission_generation,
     items,
@@ -106,6 +138,13 @@ pub(all) struct Actions {
   /// Open another session's transcript. Used by a sub-run tool card to reach
   /// the child transcript it names.
   open_session : @cmd.Emit[String]
+  /// Start a fresh draft in another registered project.
+  choose_project : @cmd.Emit[@common.Uri]
+  /// Open the shell-owned folder picker to register another project.
+  new_project : @cmd.Cmd
+  toggle_project_menu : @cmd.Cmd
+  dismiss_project_menu : @cmd.Cmd
+  project_query_changed : @cmd.Emit[String]
 }
 
 ///|
@@ -280,6 +319,46 @@ pub fn component(
       on_jump_latest=emit(JumpToLatest),
     )
   })
+}
+
+///|
+/// Manual popovers need an explicit top-layer transition after Rabbita has
+/// committed their node. Focus the search field in the same command so typing
+/// can begin immediately and blur provides click-away dismissal.
+fn show_empty_project_menu_after_render() -> @cmd.Cmd {
+  @cmd.custom_cmd(
+    _ => {
+      if @dom.document().get_element_by_id(EmptyProjectMenuId).to_option()
+        is Some(element) &&
+        element.to_html_element() is Some(menu) {
+        menu.show_popover()
+      }
+      if @dom.document().get_element_by_id(EmptyProjectSearchId).to_option()
+        is Some(search) {
+        let _ : @js.Value = @js.Value::cast_from(search).apply_with_string(
+          "focus",
+          ([] : Array[@js.Value]),
+        )
+      }
+    },
+    kind=@cmd.after_render,
+  )
+}
+
+///|
+fn focus_empty_project_trigger_after_render() -> @cmd.Cmd {
+  @cmd.custom_cmd(
+    _ => {
+      if @dom.document().get_element_by_id(EmptyProjectTriggerId).to_option()
+        is Some(trigger) {
+        let _ : @js.Value = @js.Value::cast_from(trigger).apply_with_string(
+          "focus",
+          ([] : Array[@js.Value]),
+        )
+      }
+    },
+    kind=@cmd.after_render,
+  )
 }
 
 ///|
@@ -653,6 +732,11 @@ test "local pinned transitions are pure" {
     source=OpenSeek,
     focused=Local,
     active_session="desktop-test",
+    current_project=None,
+    projects=[],
+    can_choose_project=false,
+    project_menu_open=false,
+    project_query="",
     root=None,
     submission_generation=0,
     items=[],
@@ -714,6 +798,11 @@ test "an overview click unpins and highlights inside the component" {
     source=OpenSeek,
     focused=Local,
     active_session="desktop-test",
+    current_project=None,
+    projects=[],
+    can_choose_project=false,
+    project_menu_open=false,
+    project_query="",
     root=None,
     submission_generation=0,
     items=[],
@@ -743,6 +832,11 @@ test "a conversation switch clears component-owned overview state" {
     source=OpenSeek,
     focused=Local,
     active_session="desktop-test",
+    current_project=None,
+    projects=[],
+    can_choose_project=false,
+    project_menu_open=false,
+    project_query="",
     root=None,
     submission_generation=0,
     items=[],

@@ -5,7 +5,21 @@
 /// The component stays mounted while onboarding is on screen — the root view
 /// simply does not place it — so a model with no conversation projects an
 /// empty transcript rather than inventing one to read.
+fn Model::transcript_projects(
+  self : Model,
+) -> Array[@transcript_component.ProjectChoice] {
+  let choices : Array[@transcript_component.ProjectChoice] = []
+  if self.focused_device() is Some(dev) {
+    for root in dev.projects {
+      choices.push({ root, label: @resource.label(root), })
+    }
+  }
+  choices
+}
+
+///|
 fn Model::transcript_input(self : Model) -> @transcript_component.Input {
+  let projects = self.transcript_projects()
   match self.screen {
     Codex => {
       let placement = self.codex.active_placement(self.focused)
@@ -17,6 +31,11 @@ fn Model::transcript_input(self : Model) -> @transcript_component.Input {
         focused=self.focused,
         active_session=self.codex.active_id().unwrap_or("none"),
         project_label?,
+        current_project=placement.bind(value => value.project_root()),
+        projects~,
+        can_choose_project=false,
+        project_menu_open=false,
+        project_query="",
         root=placement.bind(value => value.checkout_root()),
         submission_generation=0,
         items=@transcript_component.VisibleRow::history(
@@ -33,6 +52,11 @@ fn Model::transcript_input(self : Model) -> @transcript_component.Input {
             source=@transcript_component.OpenSeek,
             focused=self.focused,
             active_session=self.active_session,
+            current_project=None,
+            projects~,
+            can_choose_project=false,
+            project_menu_open=false,
+            project_query="",
             root=None,
             submission_generation=self.submission_sequence,
             items=[],
@@ -41,11 +65,18 @@ fn Model::transcript_input(self : Model) -> @transcript_component.Input {
           )
         Some(conversation) => {
           let (streaming_reasoning, reasoning_complete) = conversation.reasoning_for_render()
+          let can_choose_project = self.can_choose_new_chat_project()
           @transcript_component.Input(
             source=@transcript_component.OpenSeek,
             focused=self.focused,
             active_session=self.active_session,
             project_label=@resource.label(conversation.project()),
+            current_project=Some(conversation.project()),
+            projects~,
+            can_choose_project~,
+            project_menu_open=can_choose_project &&
+              self.select_menu == Some(ProjectMenu),
+            project_query=self.project_menu_query,
             root=self
               .conversation_placement(conversation)
               .bind(value => value.checkout_root()),

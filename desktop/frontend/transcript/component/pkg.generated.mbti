@@ -21,12 +21,24 @@ pub(all) struct Actions {
   open : @cmd.Emit[String]
   jump : @cmd.Emit[@mention_context.Target]
   open_session : @cmd.Emit[String]
+  choose_project : @cmd.Emit[@common.Uri]
+  new_project : @cmd.Cmd
+  toggle_project_menu : @cmd.Cmd
+  dismiss_project_menu : @cmd.Cmd
+  project_query_changed : @cmd.Emit[String]
 }
 
 type Input derive(Eq)
-pub fn Input::Input(source~ : Source, focused~ : @interop.ChannelId, active_session~ : String, project_label? : String, root~ : @common.Uri?, submission_generation~ : Int, items~ : Array[VisibleRow], streaming_response~ : String?, streaming_reasoning? : String, reasoning_complete? : Bool, streaming_identity~ : String) -> Self
+pub fn Input::Input(source~ : Source, focused~ : @interop.ChannelId, active_session~ : String, project_label? : String, current_project~ : @common.Uri?, projects~ : Array[ProjectChoice], can_choose_project~ : Bool, project_menu_open~ : Bool, project_query~ : String, root~ : @common.Uri?, submission_generation~ : Int, items~ : Array[VisibleRow], streaming_response~ : String?, streaming_reasoning? : String, reasoning_complete? : Bool, streaming_identity~ : String) -> Self
 pub fn Input::equal(Self, Self) -> Bool
 pub fn Input::not_equal(Self, Self) -> Bool
+
+pub(all) struct ProjectChoice {
+  root : @common.Uri
+  label : String
+} derive(Eq)
+pub fn ProjectChoice::equal(Self, Self) -> Bool
+pub fn ProjectChoice::not_equal(Self, Self) -> Bool
 
 pub(all) enum Source {
   OpenSeek

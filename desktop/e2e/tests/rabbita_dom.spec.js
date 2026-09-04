@@ -1016,6 +1016,128 @@ test('new chat materializes on send, and archive and restore update the sidebar'
   expect(app.pageErrors).toEqual([]);
 });
 
+test('new-chat project title filters and switches registered projects', async ({ page }) => {
+  const app = new DesktopBrowserHarness(page);
+  app.workspaces.push('/other');
+  await app.install();
+  await app.goto();
+
+  const workspace = page.locator('.workspace-row[title="/workspace"]');
+  const other = page.locator('.workspace-row[title="/other"]');
+  await workspace.hover();
+  await workspace.getByTitle('New conversation in this project').click();
+
+  const title = page.locator('.empty-title');
+  const transcript = page.locator('#transcript');
+  await expect(title).toHaveText('What should we build in workspace?');
+  await expect(page.getByText(/SeekMoon plans the work/)).toHaveCount(0);
+  const originalSession = await transcript.getAttribute('data-transcript-session');
+
+  const trigger = page.getByRole('button', {
+    name: 'Choose project, current project workspace',
+  });
+  await trigger.click();
+  const picker = page.getByRole('dialog', { name: 'Choose a project' });
+  const search = picker.getByRole('textbox', { name: 'Search projects' });
+  const options = picker.getByRole('group', { name: 'Projects' });
+  await expect(picker).toBeVisible();
+  await expect(search).toBeFocused();
+  const triggerBounds = await trigger.boundingBox();
+  const pickerBounds = await picker.boundingBox();
+  const viewport = page.viewportSize();
+  expect(triggerBounds).not.toBeNull();
+  expect(pickerBounds).not.toBeNull();
+  expect(viewport).not.toBeNull();
+  expect(pickerBounds.y).toBeGreaterThanOrEqual(
+    triggerBounds.y + triggerBounds.height,
+  );
+  expect(pickerBounds.x).toBeGreaterThanOrEqual(0);
+  expect(pickerBounds.x + pickerBounds.width).toBeLessThanOrEqual(viewport.width);
+  expect(pickerBounds.y + pickerBounds.height).toBeLessThanOrEqual(viewport.height);
+  await expect(options.getByRole('button')).toHaveCount(2);
+  await expect(
+    options.getByRole('button', { name: /^workspace, current project/ }),
+  ).toHaveAttribute('aria-current', 'true');
+  await expect(
+    options.getByRole('button', { name: /^other —/ }),
+  ).toHaveAttribute('aria-current', 'false');
+  await expect(picker.getByText("Don't work in a project")).toHaveCount(0);
+  await expect(picker.getByRole('button', { name: 'New project' })).toBeVisible();
+
+  await search.press('Escape');
+  await expect(picker).toBeHidden();
+  await expect(trigger).toBeFocused();
+  await trigger.click();
+  await expect(search).toBeFocused();
+
+  await search.fill('oth');
+  await expect(options.getByRole('button', { name: /^workspace/ })).toHaveCount(0);
+  await expect(options.getByRole('button', { name: /^other —/ })).toBeVisible();
+  await search.fill('');
+
+  // The selected row only closes the picker; it must not rotate the draft.
+  await options.getByRole('button', { name: /^workspace, current project/ }).click();
+  await expect(picker).toBeHidden();
+  await expect(transcript).toHaveAttribute('data-transcript-session', originalSession);
+  await expect(trigger).toBeFocused();
+
+  await trigger.click();
+  await picker.getByRole('button', { name: /^other —/ }).click();
+  await expect(other).toHaveClass(/\bactive\b/);
+  await expect(title).toHaveText('What should we build in other?');
+  await expect(transcript).not.toHaveAttribute('data-transcript-session', originalSession);
+
+  await page.getByRole('button', {
+    name: 'Choose project, current project other',
+  }).click();
+  await picker.getByRole('button', { name: 'New project' }).click();
+  const addProject = page.getByRole('dialog', { name: 'Add a project' });
+  await expect(addProject).toBeVisible();
+  await expect(picker).toBeHidden();
+  await addProject.getByRole('button', { name: 'Close project picker' }).click();
+  await expect(addProject).toBeHidden();
+  expect(app.pageErrors).toEqual([]);
+});
+
+test('new-chat project picker stays clear of its title in a short window', async ({ page }) => {
+  const app = new DesktopBrowserHarness(page);
+  for (let index = 0; index < 30; index += 1) {
+    app.workspaces.push(`/project-${index}`);
+  }
+  await app.install();
+  await page.setViewportSize({ width: 1000, height: 500 });
+  await app.goto();
+
+  const workspace = page.locator('.workspace-row[title="/workspace"]');
+  await workspace.hover();
+  await workspace.getByTitle('New conversation in this project').click();
+  const trigger = page.getByRole('button', {
+    name: 'Choose project, current project workspace',
+  });
+  await trigger.click();
+  const picker = page.getByRole('dialog', { name: 'Choose a project' });
+  await expect(picker).toBeVisible();
+
+  const titleBounds = await page.locator('.empty-title').boundingBox();
+  const pickerBounds = await picker.boundingBox();
+  expect(titleBounds).not.toBeNull();
+  expect(pickerBounds).not.toBeNull();
+  expect(
+    pickerBounds.y >= titleBounds.y + titleBounds.height ||
+      pickerBounds.y + pickerBounds.height <= titleBounds.y,
+  ).toBe(true);
+  expect(pickerBounds.y).toBeGreaterThanOrEqual(0);
+  expect(pickerBounds.y + pickerBounds.height).toBeLessThanOrEqual(500);
+  const listSize = await picker.locator('.empty-project-options').evaluate((list) => ({
+    client: list.clientHeight,
+    overflowY: getComputedStyle(list).overflowY,
+    scroll: list.scrollHeight,
+  }));
+  expect(listSize.scroll).toBeGreaterThan(listSize.client);
+  expect(listSize.overflowY).toBe('auto');
+  expect(app.pageErrors).toEqual([]);
+});
+
 test('archiving a selected chat restores the existing project draft', async ({ page }) => {
   const app = new DesktopBrowserHarness(page);
   await app.install();

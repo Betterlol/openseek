@@ -428,14 +428,24 @@ pub fn boot() -> Unit {
             ),
           )
         }
-        if model.select_menu is Some(_) {
-          subs.push(
-            @dismiss.on_outside_click(
-              "custom-select-dismiss",
-              trigger=".custom-select-button",
-              emit.map((_ : Unit) => CloseSelectMenu),
-            ),
-          )
+        match model.select_menu {
+          Some(ProjectMenu) =>
+            subs.push(
+              @dismiss.on_outside_click(
+                "empty-project-menu-dismiss",
+                trigger=".empty-project-control",
+                emit.map((_ : Unit) => CloseSelectMenu),
+              ),
+            )
+          Some(_) =>
+            subs.push(
+              @dismiss.on_outside_click(
+                "custom-select-dismiss",
+                trigger=".custom-select-button",
+                emit.map((_ : Unit) => CloseSelectMenu),
+              ),
+            )
+          None => ()
         }
         if model.right_panel_menu_open {
           subs.push(
@@ -546,6 +556,11 @@ pub fn boot() -> Unit {
         )
       }),
       open_session: emit.map(session => OpenSessionHere(session)),
+      choose_project: emit.map(project => ProjectMenuProjectChosen(project)),
+      new_project: emit(AddProjectRequested),
+      toggle_project_menu: emit(ToggleSelectMenu(ProjectMenu)),
+      dismiss_project_menu: emit(CloseSelectMenu),
+      project_query_changed: emit.map(query => ProjectMenuQueryChanged(query)),
     })
     let composer_input = state.map(model => model.composer_input())
     let composer_html = @composer.component(
