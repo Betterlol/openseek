@@ -3,8 +3,12 @@
 /// command tree under `run`/`serve`/`review`/`subrun`/`mcp`/`sessions`. The
 /// interactive terminal UI is a separate binary, `openseek_tui`. argparse owns
 /// parsing, `--help`, and error reporting (including rejecting unknown or missing
-/// subcommands); we only dispatch on the parsed result. Engine stdout-JSONL
-/// logging is installed per subcommand in the run/serve handlers.
+/// subcommands); we only dispatch on the parsed result. The engine's
+/// stdout-JSONL event sink is opened and drained per subcommand in the
+/// run/serve/subrun handlers (`with_jsonl_stdout`), and stays closed — dropping
+/// events — everywhere else. There is no logger in this binary: nothing linked
+/// into it logs, so stdout carries only the event stream or the command's own
+/// output.
 async fn main {
   dispatch() catch {
     error => {
@@ -71,15 +75,20 @@ fn sessions_leaf_matches(
 }
 
 ///|
-/// Run `body` with the stdout JSONL drain installed: it owns all stdout writes,
-/// and — spawned without `no_wait` — the group only completes once the queue
-/// (closed by the `defer`, on success and error alike) is fully written, so the
-/// terminal event is never lost to an early process exit.
+/// Run `body` with the protocol event sink open and its stdout drain running:
+/// the drain owns all stdout writes, and — spawned without `no_wait` — the
+/// group only completes once the sink (closed by the `defer`, on success and
+/// error alike) is fully written, so the terminal event is never lost to an
+/// early process exit. The sink is opened synchronously before the spawn,
+/// because `spawn_bg` does not promise the drain runs before `body` starts
+/// emitting. Outside this helper the sink is closed and every event is
+/// dropped, which is what a command whose stdout is a report or human text
+/// wants — nothing else has to remember to close it.
 async fn with_jsonl_stdout(body : async () -> Unit) -> Unit {
-  let stdout_log = configure_logging()
+  @emit.open()
   @async.with_task_group(group => {
-    group.spawn_bg() <| () => { stdout_log.drain() }
-    defer stdout_log.close()
+    group.spawn_bg() <| () => { @emit.drain_stdout() }
+    defer @emit.close()
     body()
   })
 }
@@ -172,9 +181,9 @@ async fn run_task_command(matches : @argparse.Matches) -> Unit {
         )
       }
       Some(id) => {
-        // Name the recording up front so a user scanning the event stream —
-        // or its OPENSEEK_LOG_FILE mirror — knows where to find this run
-        // later (`sessions show`, the viz server, or resuming by id).
+        // Name the recording up front so a user scanning the event stream knows
+        // where to find this run later (`sessions show`, the viz server, or
+        // resuming by id).
         @emit.emit(
           SessionStarted(
             session=id.value(),
@@ -352,17 +361,17 @@ async fn run_serve_command(matches : @argparse.Matches) -> Unit {
 
 ///|
 /// `openseek review [--base <ref>]` — a read-only, ephemeral code review of
-/// `base…HEAD`; stdout carries exactly one JSON ReviewReport, so progress logging
-/// is discarded rather than drained.
+/// `base…HEAD`; stdout carries exactly one JSON ReviewReport, so it never opens
+/// the event sink and every event the agent run reports is dropped.
 async fn run_review_command(matches : @argparse.Matches) -> Unit {
   // No `--approval` check here: review does not declare the option, so argparse
   // refuses it outright. Review builds its runtime with no approval channel, so
   // `escalated` is not offered to its model either — a read-only audit has
   // nothing to escalate.
-  @xlog.global().set_handler(DiscardLog::{ })
+  //
   // Review runs a fixed built-in tool set; say so rather than silently ignoring
   // an accepted option. Straight to stderr: review's stdout carries exactly one
-  // JSON ReviewReport, and the discarded log would swallow a warning.
+  // JSON ReviewReport, and the event sink is closed.
   if mcp_config_path(matches) != "" {
     @stdio.stderr.write(
       "warning: --mcp-config is ignored in review mode (fixed built-in tool set)\n",
@@ -376,7 +385,8 @@ async fn run_review_command(matches : @argparse.Matches) -> Unit {
 
 ///|
 /// `openseek sessions <list|show|compact>` — durable-session management. Prints
-/// directly to stdout, so it does not install the JSONL drain.
+/// for humans directly on stdout, so it never opens the event sink; an event a
+/// compaction reports is dropped.
 async fn run_sessions_command(matches : @argparse.Matches) -> Unit {
   match matches.subcommand {
     Some(("list", m)) => sessions_list(m)

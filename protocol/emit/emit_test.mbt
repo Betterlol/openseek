@@ -1,47 +1,41 @@
 ///|
-/// Collects the JSON of every line the global logger writes.
-struct MemoryLogHandler {
-  entries : Array[Json]
-}
+/// The event's line as it reaches stdout, read back off the sink `emit` wrote
+/// it to — the real path, so the bytes are the contract. There is no log
+/// envelope: events no longer go through `@xlog`, so no `timestamp`, `source`,
+/// or `category` on the line.
+fn wire(event : @protocol.Event) -> String raise {
+  @emit.open()
+  // A line an earlier emit in this process left behind is not this event's.
+  while @emit.poll_line() is Some(_) {
 
-///|
-impl @xlog.Handler for MemoryLogHandler with fn handle(
-  self : MemoryLogHandler,
-  entry : @xlog.Entry,
-) -> Unit {
-  self.entries.push(entry.to_json())
-}
-
-///|
-/// Emit `event` down the real `@xlog` path and return the line it produced,
-/// with the envelope keys named in `drop` removed. `emit` writes through the
-/// process-wide logger, so the handler is swapped for the call and restored
-/// afterwards.
-fn line(event : @protocol.Event, drop~ : Array[String]) -> Json {
-  let entries : Array[Json] = []
-  let logger = @xlog.global()
-  defer {
-    logger.set_handler(@xlog.Stdout())
-    logger.set_config(Config())
   }
-  logger.set_handler(MemoryLogHandler::{ entries, })
-  logger.set_level(Info)
   @emit.emit(event)
-  guard entries.length() == 1 && entries[0] is Object(fields) else {
-    return Json::null()
-  }
-  for key in drop {
-    fields.remove(key) |> ignore
-  }
-  Json(fields)
+  guard @emit.poll_line() is Some(line) else { fail("emit wrote no line") }
+  line
 }
 
 ///|
-/// The event's line as it reaches stdout, minus the envelope's `timestamp` (a
-/// wall clock) and `source` (a line number, covered by its own test below).
-/// Serialized, because the bytes are the contract.
-fn wire(event : @protocol.Event) -> String {
-  line(event, drop=["timestamp", "source"]).stringify()
+/// The sink drops events until it is opened and again once it is closed, so a
+/// process that never drains — a report-printing command, a test binary —
+/// cannot accumulate lines nobody reads.
+test "emits are dropped unless the sink is open" {
+  @emit.close()
+  @emit.emit(AgentStep(step=1))
+  @emit.open()
+  assert_eq(@emit.poll_line(), None)
+  @emit.emit(AgentStep(step=2))
+  guard @emit.poll_line() is Some(line) else { fail("expected a line") }
+  inspect(
+    line,
+    content=(
+      #|{"event":"agent_step","step":2}
+    ),
+  )
+  @emit.close()
+  @emit.emit(AgentStep(step=3))
+  assert_eq(@emit.poll_line(), None)
+  @emit.open()
+  assert_eq(@emit.poll_line(), None)
 }
 
 ///|
@@ -61,14 +55,10 @@ fn usage_sample() -> @protocol.Usage {
 /// One sample per `Event` variant. `derive(Eq)` plus the round-trip test below
 /// makes this list the encoder/decoder contract.
 ///
-/// Two gaps this list does not close, both worth knowing before adding a
-/// variant. Exhaustiveness covers `to_json` and `parse` — `emit` itself matches
-/// nothing, it delegates — but nothing forces a new variant to be added *here*,
-/// so one added without a sample is silently untested. And `level`'s `_ => Info`
-/// catch-all means nothing forces it a severity either: a new event that should
-/// warn ships at `Info` with no error. One variant still cannot hold two levels,
-/// which is what this package set out to stop; being made to choose one is a
-/// weaker promise than the comment here used to imply.
+/// One gap this list does not close, worth knowing before adding a variant.
+/// Exhaustiveness covers `to_json` and `parse` — `emit` itself matches nothing,
+/// it delegates — but nothing forces a new variant to be added *here*, so one
+/// added without a sample is silently untested.
 fn all_events() -> Array[@protocol.Event] {
   [
     AgentSetupFailed(error="boom"),
@@ -178,33 +168,9 @@ fn all_events() -> Array[@protocol.Event] {
 /// this failing, which is the property the package exists to provide.
 test "every event round-trips through emit and parse" {
   for event in all_events() {
-    let encoded = line(event, drop=["timestamp", "source"])
+    let encoded = @json.parse(wire(event))
     assert_eq(@protocol.parse(encoded), Some(event))
   }
-}
-
-///|
-/// Each variant owns its level, so the same event can never be reported at two
-/// severities the way `compaction_failed` was before this package.
-test "levels are a property of the event" {
-  inspect(
-    wire(AgentStep(step=1)),
-    content=(
-      #|{"level":"INFO","event":"agent_step","step":1}
-    ),
-  )
-  inspect(
-    wire(AgentAborted(reason="interrupted")),
-    content=(
-      #|{"level":"WARN","event":"agent_aborted","reason":"interrupted"}
-    ),
-  )
-  inspect(
-    wire(CompactionFailed(error="cancelled")),
-    content=(
-      #|{"level":"ERROR","event":"compaction_failed","error":"cancelled"}
-    ),
-  )
 }
 
 ///|
@@ -224,7 +190,7 @@ test "optional payload fields are written as null, never omitted" {
       ),
     ),
     content=(
-      #|{"level":"INFO","event":"tool_result","tool_call_id":"call_2","tool_name":"shell","is_error":true,"content":"exit 1","brief":null}
+      #|{"event":"tool_result","tool_call_id":"call_2","tool_name":"shell","is_error":true,"content":"exit 1","brief":null}
     ),
   )
   // A present value is the bare string. MoonBit's own `Some(v)` encoding is the
@@ -240,19 +206,19 @@ test "optional payload fields are written as null, never omitted" {
       ),
     ),
     content=(
-      #|{"level":"INFO","event":"tool_result","tool_call_id":"call_1","tool_name":"read","is_error":false,"content":"file body","brief":"read moon.mod"}
+      #|{"event":"tool_result","tool_call_id":"call_1","tool_name":"read","is_error":false,"content":"file body","brief":"read moon.mod"}
     ),
   )
   inspect(
     wire(McpConnectFailed(server="fs", error=None)),
     content=(
-      #|{"level":"WARN","event":"mcp_connect_failed","server":"fs","error":null}
+      #|{"event":"mcp_connect_failed","server":"fs","error":null}
     ),
   )
   inspect(
     wire(GoalUpdated(goal=None)),
     content=(
-      #|{"level":"INFO","event":"goal_updated","goal":null}
+      #|{"event":"goal_updated","goal":null}
     ),
   )
 }
@@ -266,7 +232,7 @@ test "usage carries the protocol struct verbatim" {
   inspect(
     wire(Usage(usage=usage_sample())),
     content=(
-      #|{"level":"INFO","event":"usage","usage":{"prompt_tokens":11,"completion_tokens":22,"total_tokens":33,"prompt_cache_hit_tokens":4,"prompt_cache_miss_tokens":7}}
+      #|{"event":"usage","usage":{"prompt_tokens":11,"completion_tokens":22,"total_tokens":33,"prompt_cache_hit_tokens":4,"prompt_cache_miss_tokens":7}}
     ),
   )
 }
@@ -287,20 +253,24 @@ test "session_started still writes workspace_root as a bare string" {
       ),
     ),
     content=(
-      #|{"level":"INFO","event":"session_started","session":"cli-1","session_root":".openseek","workspace_root":"/w"}
+      #|{"event":"session_started","session":"cli-1","session_root":".openseek","workspace_root":"/w"}
     ),
   )
 }
 
 ///|
-/// `emit` forwards its autofilled `loc`, so a line's `source` still points at
-/// the reporting code. Without the forward every event would blame `emit.mbt`.
-test "source points at the caller, not at emit" {
-  guard line(AgentStep(step=1), drop=["timestamp"]) is Object(fields) else {
-    fail("expected an object")
+/// The wire line carries no log envelope: events do not pass through `@xlog`,
+/// so the keys its handler added (`timestamp`, `level`, `source`, `category`)
+/// are gone from every line. No reader ever consulted `level`; a client that
+/// wants a severity derives it from the variant it decoded.
+test "the wire line has no log envelope" {
+  for event in all_events() {
+    guard @json.parse(wire(event)) is Object(fields) else {
+      fail("expected an object")
+    }
+    assert_false(fields.contains("timestamp"))
+    assert_false(fields.contains("level"))
+    assert_false(fields.contains("source"))
+    assert_false(fields.contains("category"))
   }
-  guard fields.get("source") is Some(String(source)) else {
-    fail("expected a source field")
-  }
-  assert_true(source.contains("emit_test.mbt"))
 }
