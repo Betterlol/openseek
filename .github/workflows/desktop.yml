@@ -13,6 +13,8 @@ on:
       - "protocol/**"
       - "agent_tool/edit_diff/**"
       - "agent_tool/read/**"
+      - "jsonrpc/**"
+      - "viz_export/**"
       - "moon.mod"
       - "moon.work"
       - ".github/workflows/desktop.yml"
@@ -23,6 +25,8 @@ on:
       - "protocol/**"
       - "agent_tool/edit_diff/**"
       - "agent_tool/read/**"
+      - "jsonrpc/**"
+      - "viz_export/**"
       - "moon.mod"
       - "moon.work"
       - ".github/workflows/desktop.yml"
@@ -34,12 +38,10 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # This is the browser-console product-flow gate. Root CI retains the complete
-  # native/JS MoonBit integration checks for Desktop and its local dependencies.
   desktop-e2e:
     name: desktop e2e
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:
@@ -59,10 +61,9 @@ jobs:
           cache-dependency-path: desktop/e2e/package-lock.json
 
       - name: Update MoonBit dependencies
+        working-directory: desktop
         run: moon update
 
-      # The browser packager is a native MoonBit command, so Proton's module
-      # prebuild still needs the runtime selected by desktop/moon.mod.
       - name: Resolve pinned Proton version
         id: proton
         run: |
@@ -78,14 +79,15 @@ jobs:
             ~/.proton/helpers
           key: proton-runtime-${{ runner.os }}-${{ runner.arch }}-${{ steps.proton.outputs.version }}
 
-      # Chromium's installer supplies runtime libraries, while Proton's
-      # prebuild also requires the pkg-config metadata from development packages.
-      - name: Install Proton Linux dependencies
+      # Building the browser target still runs Proton's module prebuild, which
+      # queries Linux native link metadata before MoonBit compiles the JS code.
+      - name: Install Proton build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install --yes libgtk-3-dev libx11-dev
 
       - name: Assemble Proton CEF runtime
+        working-directory: desktop
         run: >-
           moonx "moonbit-community/proton_cli@${{ steps.proton.outputs.version }}"
           cef setup
@@ -100,7 +102,9 @@ jobs:
 
       - name: Build Desktop browser application
         working-directory: desktop
-        run: moon run package/browser --target native
+        # The Moon entrypoint remains a compatibility CLI. CI can call the same
+        # build program directly because the job already prepared Proton.
+        run: node package/build.mjs browser
 
       - name: Run Desktop E2E tests
         working-directory: desktop/e2e
