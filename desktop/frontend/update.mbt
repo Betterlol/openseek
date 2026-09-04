@@ -1902,6 +1902,7 @@ fn update_msg(
       theme~,
       font~,
       font_size~,
+      fps_overlay_enabled~,
       model=stored,
       conversation_models=remembered,
       agent~,
@@ -1961,6 +1962,7 @@ fn update_msg(
         theme,
         app_font,
         app_font_size,
+        fps_overlay_enabled,
         default_model,
         default_agent,
         conversation_models: parse_conversation_models(remembered),
@@ -4387,6 +4389,8 @@ fn update_msg(
         Light | Dark => (@cmd.none, model)
       }
     }
+    FpsOverlayChanged(enabled) =>
+      (save_fps_overlay(enabled), { ..model, fps_overlay_enabled: enabled, })
     ThemeChanged(value) => {
       let theme = Theme::parse(value, model.theme)
       let model = { ..model, select_menu: None, }
@@ -12782,6 +12786,7 @@ test "loaded UI preferences parse their wire names" {
       theme="dark",
       font="menlo",
       font_size="15",
+      fps_overlay_enabled=true,
       model="deepseek-v4-flash",
       conversation_models="[{\"key\":\"local/desktop-test\",\"model\":\"deepseek-v4-pro\"}]",
       agent="codex",
@@ -12811,6 +12816,7 @@ test "loaded UI preferences parse their wire names" {
       theme="broken",
       font="broken",
       font_size="broken",
+      fps_overlay_enabled=false,
       model="",
       conversation_models="not json",
       agent="broken",
@@ -13483,6 +13489,7 @@ test "the GLM provider aligns only a fresh chat to its model family" {
       theme="",
       font="",
       font_size="",
+      fps_overlay_enabled=false,
       model="deepseek-v4-pro",
       conversation_models="",
       agent="",

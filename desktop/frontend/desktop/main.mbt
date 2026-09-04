@@ -6,5 +6,4 @@
 ///|
 fn main {
   @frontend.boot()
-  mount_fps_overlay()
 }

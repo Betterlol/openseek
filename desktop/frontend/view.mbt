@@ -1267,6 +1267,29 @@ fn settings_page(dispatch : @cmd.Emit[Msg], model : Model) -> @html.Html {
   // sections could only break things for whoever is at the machine.
   if model.is_desktop {
     groups.push(
+      @settings.group(@icons.icon_settings_gear, "Diagnostics", [
+        @settings.row(
+          "FPS overlay",
+          [
+            @html.button(
+              class="button secondary",
+              attrs=@html.Attrs::build()
+                .role("switch")
+                .aria_label("FPS overlay")
+                .aria_checked(model.fps_overlay_enabled.to_string()),
+              on_click=dispatch(FpsOverlayChanged(!model.fps_overlay_enabled)),
+              if model.fps_overlay_enabled {
+                "On"
+              } else {
+                "Off"
+              },
+            ),
+          ],
+          desc="Show FPS and frame intervals at the top of the window. Off by default.",
+        ),
+      ]),
+    )
+    groups.push(
       @settings.group(
         icon_link_external,
         "Remote access",

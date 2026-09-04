@@ -2,9 +2,21 @@
 // not rerender the application. These are rAF intervals, not GPU timings.
 
 ///|
-fn mount_fps_overlay() -> Unit {
+priv suberror FpsOverlaySubscription {
+  FpsOverlaySubscription
+}
+
+///|
+fn fps_overlay_subscription() -> @sub.Sub {
+  @sub.custom_sub("fps-overlay", Global, FpsOverlaySubscription, (_, _) => {
+    mount_fps_overlay()
+  })
+}
+
+///|
+fn mount_fps_overlay() -> @sub.RunningSub? {
   let document = @dom.document()
-  guard document.get_body() is Some(body) else { return }
+  guard document.get_body() is Some(body) else { return None }
   let overlay = document.create_element("output")
   overlay.set_attribute("id", "fps-overlay")
   overlay.set_attribute("aria-live", "off")
@@ -17,7 +29,9 @@ fn mount_fps_overlay() -> Unit {
   let times : Array[Double] = []
   let mut last_display = @dom.window().get_performance().now()
   // Background tabs pause rAF; do not count that pause as a slow frame.
-  document.add_event_listener("visibilitychange", _ => times.clear())
+  let visibility_listener : @dom.Listener = _ => times.clear()
+  document.add_event_listener("visibilitychange", visibility_listener)
+  let mut request_id : Double? = None
   fn frame(timestamp : Double) -> Unit {
     guard overlay.get_is_connected() else { return }
     times.push(timestamp)
@@ -42,9 +56,19 @@ fn mount_fps_overlay() -> Unit {
       }
       last_display = timestamp
     }
-    @dom.window().request_animation_frame(frame) |> ignore
+    request_id = Some(@dom.window().request_animation_frame(frame))
   }
-  @dom.window().request_animation_frame(frame) |> ignore
+  request_id = Some(@dom.window().request_animation_frame(frame))
+  Some({
+    unload: _ => {
+      if request_id is Some(id) {
+        @dom.window().cancel_animation_frame(id)
+      }
+      document.remove_event_listener("visibilitychange", visibility_listener)
+      body.remove_child(overlay.as_node())
+    },
+    update_tagger: _ => (),
+  })
 }
 
 ///|
