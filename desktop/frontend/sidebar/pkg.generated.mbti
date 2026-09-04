@@ -28,6 +28,7 @@ pub fn Account::not_equal(Self, Self) -> Bool
 pub fn Account::to_repr(Self) -> @debug.Repr
 
 pub(all) struct Actions {
+  toggle : @cmd.Cmd
   update : @cmd.Cmd
   open_skills : @cmd.Cmd
   open_settings : @cmd.Cmd

@@ -49,17 +49,11 @@
      content column always has the full width. */
   .app {
     --sidebar-column-width: 0px;
-    --sidebar-boundary-width: 0px;
     --sidebar-toggle-size: 44px;
-    --topbar-inline-padding: 12px;
     grid-template-columns: minmax(0, 1fr);
   }
   .app.sidebar-collapsed {
     grid-template-columns: minmax(0, 1fr);
-  }
-  .app:not(.sidebar-collapsed) {
-    --sidebar-boundary-width: var(--sidebar-drawer-width);
-    --sidebar-toggle-inline-inset: 0px;
   }
   .app > aside {
     position: fixed;
@@ -167,20 +161,15 @@
   .editor-tabsbar {
     height: 52px;
   }
+  /* The fallback on pages without a topbar keeps the pre-drawer phone inset. */
+  .page-sidebar-toggle {
+    inset-block-start: 4px;
+    inset-inline-start: 8px;
+  }
+  .topbar-toggle,
   .panel-toggle {
     min-width: 44px;
     min-height: 44px;
-  }
-  /* The drawer overlays the main column, so its layout control leaves normal
-     flow and sits on the drawer boundary above the dimmed backdrop. */
-  .app:not(.sidebar-collapsed) .sidebar-boundary-toggle {
-    position: fixed;
-    inset-block-start: calc(
-      (var(--topbar-height) - var(--sidebar-toggle-size)) / 2
-    );
-    inset-inline-start: var(--sidebar-toggle-inline-start);
-    z-index: var(--z-sidebar-drawer-control);
-    margin-inline-start: 0;
   }
   /* A narrow Windows desktop window still shares its first row with native
      caption buttons. Keep that row compact instead of applying phone touch
@@ -196,6 +185,7 @@
   .app.native-windows-titlebar .editor-tabsbar {
     height: var(--native-titlebar-height);
   }
+  .app.native-windows-titlebar .topbar-toggle,
   .app.native-windows-titlebar .panel-toggle {
     min-width: 32px;
     min-height: 32px;

@@ -1349,22 +1349,19 @@ fn topbar_view(
   conv : Conversation,
 ) -> @html.Html {
   let items : Array[@html.Html] = []
-  // The layout action sits at the boundary it controls: beside the sidebar
-  // while open, and at the window edge while collapsed.
-  let sidebar_toggle_label = if model.sidebar_open {
-    "Hide sidebar"
-  } else {
-    "Show sidebar"
+  // The visible sidebar owns its close action. Once collapsed, the topbar
+  // supplies the reopen action at the window's leading edge.
+  if !model.sidebar_open {
+    items.push(
+      @html.button(
+        class="topbar-toggle",
+        title="Show sidebar",
+        on_click=dispatch(ToggleSidebar),
+        attrs=@html.Attrs::build().aria_label("Show sidebar"),
+        icon(icon_layout_sidebar_left),
+      ),
+    )
   }
-  items.push(
-    @html.button(
-      class="topbar-toggle sidebar-boundary-toggle",
-      title=sidebar_toggle_label,
-      on_click=dispatch(ToggleSidebar),
-      attrs=@html.Attrs::build().aria_label(sidebar_toggle_label),
-      icon(icon_layout_sidebar_left),
-    ),
-  )
   items.push(
     @html.span(
       class="topbar-title",
@@ -1475,28 +1472,27 @@ fn onboarding_view(dispatch : @cmd.Emit[Msg], model : Model) -> @html.Html {
 }
 
 ///|
-/// Skills and Settings have no topbar, so they float the layout control at the
-/// same sidebar boundary used by conversation topbars.
+/// Skills and Settings have no topbar, so while the sidebar is collapsed they
+/// float the reopen action at the window's leading edge.
 fn page_with_toggle(
   dispatch : @cmd.Emit[Msg],
   model : Model,
   page : @html.Html,
 ) -> Array[@html.Html] {
-  let sidebar_toggle_label = if model.sidebar_open {
-    "Hide sidebar"
+  if model.sidebar_open {
+    [page]
   } else {
-    "Show sidebar"
+    [
+      @html.button(
+        class="topbar-toggle page-sidebar-toggle",
+        title="Show sidebar",
+        on_click=dispatch(ToggleSidebar),
+        attrs=@html.Attrs::build().aria_label("Show sidebar"),
+        icon(icon_layout_sidebar_left),
+      ),
+      page,
+    ]
   }
-  [
-    @html.button(
-      class="topbar-toggle page-sidebar-toggle sidebar-boundary-toggle",
-      title=sidebar_toggle_label,
-      on_click=dispatch(ToggleSidebar),
-      attrs=@html.Attrs::build().aria_label(sidebar_toggle_label),
-      icon(icon_layout_sidebar_left),
-    ),
-    page,
-  ]
 }
 
 ///|

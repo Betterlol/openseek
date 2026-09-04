@@ -361,6 +361,7 @@ fn SidebarDispatcher::actions(self : SidebarDispatcher) -> @sidebar.Actions {
     conversation,
   }
   {
+    toggle: self.emit(ToggleSidebar),
     update: self.emit(UpdateClicked),
     open_skills: self.emit(OpenSkills),
     open_settings: self.emit(OpenSetup),
