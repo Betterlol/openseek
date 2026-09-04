@@ -1372,19 +1372,22 @@ fn topbar_view(
   conv : Conversation,
 ) -> @html.Html {
   let items : Array[@html.Html] = []
-  // The visible sidebar owns its close action. Once collapsed, the topbar
-  // supplies the reopen action at the window's leading edge.
-  if !model.sidebar_open {
-    items.push(
-      @html.button(
-        class="topbar-toggle",
-        title="Show sidebar",
-        on_click=dispatch(ToggleSidebar),
-        attrs=@html.Attrs::build().aria_label("Show sidebar"),
-        icon(icon_layout_sidebar_left),
-      ),
-    )
+  // The layout action sits at the boundary it controls: beside the sidebar
+  // while open, and at the window edge while collapsed.
+  let sidebar_toggle_label = if model.sidebar_open {
+    "Hide sidebar"
+  } else {
+    "Show sidebar"
   }
+  items.push(
+    @html.button(
+      class="topbar-toggle sidebar-boundary-toggle",
+      title=sidebar_toggle_label,
+      on_click=dispatch(ToggleSidebar),
+      attrs=@html.Attrs::build().aria_label(sidebar_toggle_label),
+      icon(icon_layout_sidebar_left),
+    ),
+  )
   items.push(
     @html.span(
       class="topbar-title",
@@ -1495,27 +1498,28 @@ fn onboarding_view(dispatch : @cmd.Emit[Msg], model : Model) -> @html.Html {
 }
 
 ///|
-/// Skills and Settings have no topbar, so while the sidebar is collapsed they
-/// float the reopen action at the window's leading edge.
+/// Skills and Settings have no topbar, so they float the layout control at the
+/// same sidebar boundary used by conversation topbars.
 fn page_with_toggle(
   dispatch : @cmd.Emit[Msg],
   model : Model,
   page : @html.Html,
 ) -> Array[@html.Html] {
-  if model.sidebar_open {
-    [page]
+  let sidebar_toggle_label = if model.sidebar_open {
+    "Hide sidebar"
   } else {
-    [
-      @html.button(
-        class="topbar-toggle page-sidebar-toggle",
-        title="Show sidebar",
-        on_click=dispatch(ToggleSidebar),
-        attrs=@html.Attrs::build().aria_label("Show sidebar"),
-        icon(icon_layout_sidebar_left),
-      ),
-      page,
-    ]
+    "Show sidebar"
   }
+  [
+    @html.button(
+      class="topbar-toggle page-sidebar-toggle sidebar-boundary-toggle",
+      title=sidebar_toggle_label,
+      on_click=dispatch(ToggleSidebar),
+      attrs=@html.Attrs::build().aria_label(sidebar_toggle_label),
+      icon(icon_layout_sidebar_left),
+    ),
+    page,
+  ]
 }
 
 ///|
@@ -1643,25 +1647,12 @@ fn console_gate_view(
 }
 
 ///|
-/// Root shell classes keep platform chrome geometry explicit in CSS. Browser
-/// pages and Linux retain ordinary header geometry; native Apple and Windows
-/// windows expose the distinct control reserves their overlays require.
-fn app_shell_class(
-  sidebar_open : Bool,
-  is_desktop : Bool,
-  platform : String,
-  is_windows? : Bool = @common.platform_is_win32(),
-) -> String {
+/// Native chrome geometry is owned by the window subscription, independently
+/// of the application view's sidebar state.
+fn app_shell_class(sidebar_open : Bool) -> String {
   let classes : Array[String] = ["app"]
   if !sidebar_open {
     classes.push("sidebar-collapsed")
-  }
-  if is_desktop && browser_platform_is_apple(platform) {
-    classes.push("native-titlebar-overlay")
-    classes.push("native-apple-titlebar")
-  } else if is_desktop && is_windows {
-    classes.push("native-titlebar-overlay")
-    classes.push("native-windows-titlebar")
   }
   classes.join(" ")
 }
@@ -1774,7 +1765,6 @@ fn view(
   let window_titlebar_drag_strip = window_titlebar_drag_strip_visible(
     window_titlebar_page,
     model.is_desktop,
-    app_shortcut_browser_platform(),
   )
   let content = match model.screen {
     // The one fork that decides what the conversation column is. A chat needs
@@ -1930,14 +1920,7 @@ fn view(
   if model.is_desktop && model.bridge_state() is BridgeLost(message) {
     children.push(bridge_lost_overlay(message))
   }
-  @html.div(
-    class=app_shell_class(
-      model.sidebar_open,
-      model.is_desktop,
-      app_shortcut_browser_platform(),
-    ),
-    children,
-  )
+  @html.div(class=app_shell_class(model.sidebar_open), children)
 }
 
 ///|

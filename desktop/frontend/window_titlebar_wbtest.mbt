@@ -35,41 +35,8 @@ test "the explicit blank-page drag strip is titlebar chrome" {
 }
 
 ///|
-test "window titlebar gesture follows Proton overlay platforms" {
-  assert_true(
-    window_titlebar_platform_supports_overlay("MacIntel", is_windows=false),
-  )
-  assert_true(
-    window_titlebar_platform_supports_overlay("Windows", is_windows=true),
-  )
-  assert_true(
-    window_titlebar_platform_supports_overlay("Win32", is_windows=true),
-  )
-  assert_false(
-    window_titlebar_platform_supports_overlay("Linux x86_64", is_windows=false),
-  )
-}
-
-///|
-test "blank-page drag strip exists only in a native overlay window" {
-  assert_true(
-    window_titlebar_drag_strip_visible(true, true, "Windows", is_windows=true),
-  )
-  assert_true(
-    window_titlebar_drag_strip_visible(true, true, "MacIntel", is_windows=false),
-  )
-  assert_false(
-    window_titlebar_drag_strip_visible(false, true, "Windows", is_windows=true),
-  )
-  assert_false(
-    window_titlebar_drag_strip_visible(true, false, "Windows", is_windows=true),
-  )
-  assert_false(
-    window_titlebar_drag_strip_visible(
-      true,
-      true,
-      "Linux x86_64",
-      is_windows=false,
-    ),
-  )
+test "blank native pages provide a drag target whose visibility follows geometry" {
+  assert_true(window_titlebar_drag_strip_visible(true, true))
+  assert_false(window_titlebar_drag_strip_visible(false, true))
+  assert_false(window_titlebar_drag_strip_visible(true, false))
 }

@@ -1016,37 +1016,34 @@ test('new chat materializes on send, and archive and restore update the sidebar'
   expect(app.pageErrors).toEqual([]);
 });
 
-test('sidebar toggle returns to its header while the sidebar is open', async ({ page }) => {
+test('sidebar toggle follows the sidebar boundary in the main header', async ({ page }) => {
   const app = new DesktopBrowserHarness(page);
   await app.install();
   await app.goto();
 
   const sidebar = page.locator('aside');
-  const headerToggle = page.locator('.sidebar-header')
-    .getByRole('button', { name: 'Hide sidebar' });
   const topbar = page.locator('.topbar');
+  const closeToggle = topbar.getByRole('button', { name: 'Hide sidebar' });
 
-  await expect(headerToggle).toBeVisible();
-  await expect(
-    topbar.getByRole('button', { name: 'Hide sidebar' }),
-  ).toHaveCount(0);
+  await expect(closeToggle).toBeVisible();
+  await expect(page.locator('.sidebar-header')).not.toBeVisible();
   const [sidebarBounds, toggleBounds] = await Promise.all([
     sidebar.boundingBox(),
-    headerToggle.boundingBox(),
+    closeToggle.boundingBox(),
   ]);
   expect(sidebarBounds).not.toBeNull();
   expect(toggleBounds).not.toBeNull();
-  expect(toggleBounds.x).toBeGreaterThanOrEqual(sidebarBounds.x);
-  expect(toggleBounds.x + toggleBounds.width)
-    .toBeLessThanOrEqual(sidebarBounds.x + sidebarBounds.width);
+  expect(toggleBounds.x).toBeGreaterThanOrEqual(sidebarBounds.x + sidebarBounds.width);
+  expect(toggleBounds.x - sidebarBounds.x - sidebarBounds.width).toBeLessThan(32);
 
-  await headerToggle.click();
+  await closeToggle.click();
   const reopenToggle = topbar.getByRole('button', { name: 'Show sidebar' });
   await expect(reopenToggle).toBeVisible();
-  await expect(headerToggle).not.toBeVisible();
+  await expect(sidebar).not.toBeVisible();
+  await expect.poll(async () => (await reopenToggle.boundingBox()).x).toBeLessThan(32);
 
   await reopenToggle.click();
-  await expect(headerToggle).toBeVisible();
+  await expect(closeToggle).toBeVisible();
   await expect(reopenToggle).toHaveCount(0);
   expect(app.pageErrors).toEqual([]);
 });

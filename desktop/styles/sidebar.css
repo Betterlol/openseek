@@ -9,7 +9,7 @@ aside {
      The header keeps its own, wider inset for the icon buttons. */
   --sidebar-inset: 12px;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr) auto;
   gap: 14px;
   min-width: 0;
   min-height: 0;
@@ -43,16 +43,18 @@ html.is-resizing .sidebar-resize-handle {
   background: var(--color-accent-soft);
 }
 
-/* The sidebar's own header owns its close action while the sidebar is visible.
-   Its height matches the main topbar so collapsing swaps the control between
-   columns without changing its vertical position. */
+/* Reserve a strip only while native controls actually occupy the left edge.
+   Fullscreen and right-side controls leave the hierarchy at the top. */
 .sidebar-header {
-  display: flex;
-  align-items: center;
-  height: 46px;
-  padding-block: 0;
-  padding-inline: var(--topbar-inline-padding);
+  display: none;
+  height: var(--topbar-height);
   border-bottom: 1px solid var(--color-separator);
+}
+html.native-titlebar-leading-controls .app .sidebar-header {
+  display: block;
+}
+html.native-titlebar-leading-controls .app aside {
+  grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
 .sidebar-main {
@@ -74,7 +76,7 @@ html.is-resizing .sidebar-resize-handle {
   padding-right: max(0px, var(--sidebar-inset) - var(--scrollbar-lane));
   scrollbar-gutter: stable;
 }
-.app.native-apple-titlebar .sidebar-main {
+html.native-titlebar-leading-controls .app .sidebar-main {
   /* The titlebar strip already contributes the sidebar's leading rhythm. */
   padding-top: 0;
 }

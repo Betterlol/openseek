@@ -361,7 +361,6 @@ fn SidebarDispatcher::actions(self : SidebarDispatcher) -> @sidebar.Actions {
     conversation,
   }
   {
-    toggle: self.emit(ToggleSidebar),
     update: self.emit(UpdateClicked),
     open_skills: self.emit(OpenSkills),
     open_settings: self.emit(OpenSetup),
@@ -463,15 +462,11 @@ pub fn boot() -> Unit {
               emit.map(focused => WindowFocusChanged(focused)),
             ),
           )
-          // Only overlay titlebars turn the page's top chrome into native
-          // window chrome; Linux keeps its separate system titlebar.
-          if window_titlebar_overlay_supported() {
-            subs.push(
-              window_titlebar_subscription(
-                emit.map((_ : Unit) => AppToggleMaximizedRequested),
-              ),
-            )
-          }
+          subs.push(
+            window_titlebar_subscription(
+              emit.map((_ : Unit) => AppToggleMaximizedRequested),
+            ),
+          )
           // Rabbita captures its own `@html.a` nodes. The embedded Viewer owns
           // foreign DOM below `.viewer-host`, so its anchors need the adjacent
           // document subscription to reach the same root URL policy.

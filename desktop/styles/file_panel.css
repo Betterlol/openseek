@@ -63,7 +63,7 @@ button.panel-toggle:not(:disabled):hover {
   align-items: center;
   gap: 10px;
   flex: 0 0 auto;
-  height: 46px;
+  height: var(--topbar-height);
   padding: 0 18px 0 12px;
   border-bottom: 1px solid var(--color-separator);
   background: var(--color-bg-surface);

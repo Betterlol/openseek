@@ -26,6 +26,7 @@ async function installDesktop(page) {
       for (const callback of listeners.get(name) || []) callback({ payload });
     };
     window.__MoonBit__ = {
+      getTitlebarArea: async () => null,
       app: events,
       events,
       openseek: new Proxy({}, {

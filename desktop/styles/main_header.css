@@ -2,8 +2,6 @@
 
 /* ---------- main column ---------- */
 main {
-  --topbar-height: 46px;
-
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   /* Constrain the single column too: without this it defaults to `auto`
@@ -54,13 +52,13 @@ main {
   color: var(--color-text-primary);
 }
 
-/* Pages without a topbar float the reopen action at the window's leading edge. */
+/* Pages without a topbar float the same control at the live sidebar boundary. */
 .page-sidebar-toggle {
   position: fixed;
   inset-block-start: calc(
     (var(--topbar-height) - var(--sidebar-toggle-size)) / 2
   );
-  inset-inline-start: var(--sidebar-toggle-inline-inset);
+  inset-inline-start: var(--sidebar-toggle-inline-start);
   z-index: var(--z-titlebar-control);
   margin-inline-start: 0;
 }
