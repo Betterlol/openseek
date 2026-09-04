@@ -455,6 +455,9 @@ pub fn boot() -> Unit {
           )
         }
         if model.is_desktop {
+          if model.fps_overlay_enabled {
+            subs.push(fps_overlay_subscription())
+          }
           subs.push(
             window_focus_subscription(
               emit.map(focused => WindowFocusChanged(focused)),

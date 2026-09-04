@@ -25,6 +25,7 @@ fn load_saved_settings(dispatch : @cmd.Emit[Msg]) -> @cmd.Cmd {
           theme=load_setting(ThemeStorageKey),
           font=load_setting(AppFontStorageKey),
           font_size=load_setting(AppFontSizeStorageKey),
+          fps_overlay_enabled=load_setting(FpsOverlayStorageKey) == "true",
           model=load_setting(ModelStorageKey),
           conversation_models=load_setting(ConversationModelsStorageKey),
           agent=load_setting(AgentStorageKey),
@@ -46,6 +47,11 @@ fn save_notification_corner(corner : NotificationCorner) -> @cmd.Cmd {
 ///|
 fn save_tree_layout(layout : @fileeditor.TreeLayout) -> @cmd.Cmd {
   @cmd.custom_cmd(_ => save_setting(TreeLayoutStorageKey, layout.wire()))
+}
+
+///|
+fn save_fps_overlay(enabled : Bool) -> @cmd.Cmd {
+  @cmd.custom_cmd(_ => save_setting(FpsOverlayStorageKey, enabled.to_string()))
 }
 
 ///|

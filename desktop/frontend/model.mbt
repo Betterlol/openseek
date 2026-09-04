@@ -235,6 +235,9 @@ const TreeLayoutStorageKey : String = "openseek.tree_layout"
 const ThemeStorageKey : String = "openseek.theme"
 
 ///|
+const FpsOverlayStorageKey : String = "openseek.fps_overlay"
+
+///|
 /// The page-local monospace family shared by code content, the editor, and the
 /// terminal. The value is a fixed choice rather than arbitrary CSS so stored
 /// input can never become a style injection surface.
@@ -1454,6 +1457,7 @@ priv struct Model {
   app_font : AppFont
   // The Settings type scale shared by app chrome, editor text, and terminals.
   app_font_size : AppFontSize
+  fps_overlay_enabled : Bool
   // Whether the viewport is phone-narrow (at most `NarrowBreakpoint` wide).
   // Seeded from the window at startup and kept fresh by the resize
   // subscription; the value must agree with index.html's one mobile media
@@ -1700,6 +1704,7 @@ priv enum Msg {
     theme~ : String,
     font~ : String,
     font_size~ : String,
+    fps_overlay_enabled~ : Bool,
     model~ : String,
     conversation_models~ : String,
     agent~ : String,
@@ -1845,6 +1850,7 @@ priv enum Msg {
   ToggleSidebar
   // A Settings selection fixes the page to Light or Dark and persists it.
   ThemeChanged(String)
+  FpsOverlayChanged(Bool)
   // A Settings selection changes code/editor/terminal monospace text and persists it.
   FontChanged(String)
   // A Settings selection changes the shared app/editor/terminal type scale.
@@ -2603,6 +2609,7 @@ fn initial_model() -> Model {
     theme: System,
     app_font: SystemMono,
     app_font_size: AppFontSize(14),
+    fps_overlay_enabled: false,
     narrow,
     sidebar_open: !narrow,
     right_panel_open: false,
