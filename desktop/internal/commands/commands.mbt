@@ -6,6 +6,10 @@
 pub const ExtensionId = "openseek-desktop"
 
 ///|
+/// Application menu event, not a bridge endpoint.
+pub const CloseFocusedMenuCommand = "app.close_focused"
+
+///|
 pub let extension_contract : @proton_contract.ExtensionContract = @proton_contract.extension(
   id=ExtensionId,
   js_namespace="openseek",
@@ -689,6 +693,19 @@ pub let app_open_devtools : Command[
   @protocol.EmptyPayload,
   @protocol.EmptyReply,
 ] = Command("app.open_devtools")
+
+///|
+/// Close this desktop window through its ordinary native close lifecycle.
+pub let app_close_window : Command[@protocol.EmptyPayload, @protocol.EmptyReply] = Command(
+  "app.close_window",
+)
+
+///|
+/// The focused native Browser tab, with its id absent when focus is elsewhere.
+pub let app_focused_browser : Command[
+  @protocol.EmptyPayload,
+  @protocol.AppFocusedBrowserReply,
+] = Command("app.focused_browser")
 
 ///|
 /// Match this native desktop window's caption controls to the effective app

@@ -62,6 +62,17 @@ pub fn AgentStreamEvent::to_repr(Self) -> @debug.Repr
 pub impl ToJson for AgentStreamEvent
 pub impl @json.FromJson for AgentStreamEvent
 
+pub(all) struct AppFocusedBrowserReply {
+  id : Int?
+} derive(Eq, @debug.Debug)
+pub fn AppFocusedBrowserReply::equal(Self, Self) -> Bool
+pub fn AppFocusedBrowserReply::from_json(Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
+pub fn AppFocusedBrowserReply::not_equal(Self, Self) -> Bool
+pub fn AppFocusedBrowserReply::to_json(Self) -> Json
+pub fn AppFocusedBrowserReply::to_repr(Self) -> @debug.Repr
+pub impl ToJson for AppFocusedBrowserReply
+pub impl @json.FromJson for AppFocusedBrowserReply
+
 pub(all) struct AppInfoReply {
   version : String
 } derive(Eq, ToJson, @debug.Debug, @json.FromJson)

@@ -172,7 +172,19 @@ async fn main {
             "Open Developer Tools",
           ),
         ]),
-        @proton.Menu::role(Window),
+        if @platform.apple_os_mac {
+          @proton.Menu::role(Window, items=[
+            @proton.MenuItem::role(Minimize),
+            @proton.MenuItem::role(Zoom),
+            @proton.MenuItem::command(
+              @commands.CloseFocusedMenuCommand,
+              "Close",
+              key="w",
+            ),
+          ])
+        } else {
+          @proton.Menu::role(Window)
+        },
       ]),
     )
   }

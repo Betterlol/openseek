@@ -40,6 +40,7 @@ pub(all) enum Msg {
   ToggleTerminal
   SessionExited(channel~ : @interop.ChannelId, id~ : String, code~ : Int)
   NewTerminal
+  CloseActiveTerminal
   TabSelected(key~ : String)
   TabClosed(key~ : String)
   EmulatorReady(key~ : String, cols~ : Int, rows~ : Int)

@@ -228,6 +228,8 @@ pub(all) enum Msg {
   SessionExited(channel~ : @interop.ChannelId, id~ : String, code~ : Int)
   /// Open one more terminal in the active conversation's workspace.
   NewTerminal
+  /// Close the focused workspace's active terminal, as its close button does.
+  CloseActiveTerminal
   TabSelected(key~ : String)
   /// Close a tab: its shell is torn down, its emulator disposed.
   TabClosed(key~ : String)

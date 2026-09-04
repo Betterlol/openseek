@@ -813,7 +813,9 @@ fn open_explorer(
     next.file_panel,
     file_ctx(next),
   )
-  (cmd, { ..next, file_panel, })
+  // Opening the picker hides the focused launcher. Hand focus to the panel
+  // first; inventory-specific commands can then focus their own input.
+  (@cmd.batch([focus_dock_after_render(), cmd]), { ..next, file_panel, })
 }
 
 ///|
@@ -5044,6 +5046,28 @@ fn update_msg(
         ),
         model,
       )
+    AppCloseWindowRequested => {
+      guard model.is_desktop else { return (@cmd.none, model) }
+      (
+        browser_op(
+          dispatch,
+          @commands.app_close_window,
+          @protocol.NoPayload,
+          quiet=false,
+        ),
+        model,
+      )
+    }
+    CloseActiveDockTab => {
+      guard model.is_desktop else { return (@cmd.none, model) }
+      match model.dock.active {
+        Some(tab) => {
+          let (cmd, model) = update_msg(dispatch, Dock(TabClosed(tab)), model)
+          (@cmd.batch([cmd, focus_dock_after_render()]), model)
+        }
+        None => (@cmd.none, model)
+      }
+    }
     BrowserPaneMeasured(rect~) => {
       // A rectangle for a view that already left the screen (or a zero
       // rectangle from the observer watching a hidden pane) is stale.

@@ -153,6 +153,12 @@ fn update(
       } else {
         (@cmd.none, state)
       }
+    CloseActiveTerminal =>
+      match state.active_tab(ctx) {
+        Some(tab) if state.open =>
+          update(dispatch, TabClosed(key=tab.key), state, ctx)
+        _ => (@cmd.none, state)
+      }
     TabSelected(key~) => {
       guard state.tab_by_key(key) is Some(tab) else {
         return (@cmd.none, state)
