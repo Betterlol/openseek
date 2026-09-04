@@ -5044,33 +5044,26 @@ fn update_msg(
         ),
         model,
       )
-    AppCloseFocused(region) => {
+    AppCloseWindowRequested => {
       guard model.is_desktop else { return (@cmd.none, model) }
-      match region {
-        Window =>
-          (
-            browser_op(
-              dispatch,
-              @commands.app_close_window,
-              @protocol.NoPayload,
-              quiet=false,
-            ),
-            model,
-          )
-        Dock =>
-          match model.dock.active {
-            Some(tab) => {
-              let (cmd, model) = update_msg(
-                dispatch,
-                Dock(TabClosed(tab)),
-                model,
-              )
-              (@cmd.batch([cmd, focus_dock_after_close()]), model)
-            }
-            None => (@cmd.none, model)
-          }
-        Terminal =>
-          update_msg(dispatch, Terminal(@terminal.CloseActiveTerminal), model)
+      (
+        browser_op(
+          dispatch,
+          @commands.app_close_window,
+          @protocol.NoPayload,
+          quiet=false,
+        ),
+        model,
+      )
+    }
+    CloseActiveDockTab => {
+      guard model.is_desktop else { return (@cmd.none, model) }
+      match model.dock.active {
+        Some(tab) => {
+          let (cmd, model) = update_msg(dispatch, Dock(TabClosed(tab)), model)
+          (@cmd.batch([cmd, focus_dock_after_close()]), model)
+        }
+        None => (@cmd.none, model)
       }
     }
     BrowserPaneMeasured(rect~) => {

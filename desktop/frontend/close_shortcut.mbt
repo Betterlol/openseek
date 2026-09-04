@@ -3,14 +3,7 @@
 // entry point without competing keydown handlers.
 
 ///|
-priv enum CloseRegion {
-  Window
-  Dock
-  Terminal
-}
-
-///|
-fn focused_close_region() -> CloseRegion? {
+fn focused_close_message() -> Msg? {
   guard @dom.document().get_active_element() is Some(element) else {
     return None
   }
@@ -19,19 +12,19 @@ fn focused_close_region() -> CloseRegion? {
     is Some(_) {
     None
   } else if element.closest(".terminal-panel") is Some(_) {
-    Some(Terminal)
+    Some(Terminal(@terminal.CloseActiveTerminal))
   } else if element.closest(".editor") is Some(_) {
-    Some(Dock)
+    Some(CloseActiveDockTab)
   } else {
-    Some(Window)
+    Some(AppCloseWindowRequested)
   }
 }
 
 ///|
 fn close_focused(dispatch : @cmd.Emit[Msg]) -> @cmd.Cmd {
   if @interop.page_has_focus() {
-    return match focused_close_region() {
-      Some(region) => dispatch(AppCloseFocused(region))
+    return match focused_close_message() {
+      Some(message) => dispatch(message)
       None => @cmd.none
     }
   }
