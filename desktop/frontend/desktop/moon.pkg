@@ -1,5 +1,7 @@
 import {
   "openseek_desktop/frontend",
+  "moonbit-community/rabbita/dom",
+  "moonbit-community/rabbita/js",
 }
 
 supported_targets = "js"
