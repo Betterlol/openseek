@@ -49,6 +49,49 @@ async function closeFocused(page) {
   }));
 }
 
+test('Launcher tabs receive focus and Close never closes the window', async ({ page }) => {
+  const app = await installDesktop(page);
+  app.gitChanges = [];
+  const tabs = page.locator('.editor-tab');
+  for (const name of ['Review', 'Files', 'Search']) {
+    await page.getByRole('button', { name: 'Show panel', exact: true }).click();
+    await page.getByRole('button', { name: new RegExp(`^${name} `) }).click();
+    await expect(tabs).toHaveCount(1);
+    if (name === 'Review') {
+      await expect(page.getByText('No changed files.', { exact: true })).toBeVisible();
+    }
+    if (name === 'Search') {
+      await expect(page.locator('#workspace-search-input')).toBeFocused();
+    }
+    await closeFocused(page);
+    await expect(tabs).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Show panel', exact: true })).toBeVisible();
+  }
+  expect(app.requests.filter(request => request.method === 'app.close_window')).toEqual([]);
+  expect(app.pageErrors).toEqual([]);
+});
+
+test('Selecting a dock tab moves focus out of the composer', async ({ page }) => {
+  const app = await installDesktop(page);
+  await page.getByRole('button', { name: 'Show panel', exact: true }).click();
+  await page.getByRole('button', { name: /^Review / }).click();
+  const review = page.locator('.editor-tab', { hasText: 'Review Changes' });
+  await page.getByTitle('New tab', { exact: true }).click();
+  await page.getByRole('button', { name: /^Browse / }).click();
+  await page.locator('#task').click();
+  await review.click();
+  await expect(page.locator('.content.panel-open > .editor')).toBeFocused();
+  await page.locator('#task').click();
+  await review.click();
+  await expect(page.locator('.content.panel-open > .editor')).toBeFocused();
+  await closeFocused(page);
+  await expect(review).toHaveCount(0);
+  await expect(page.locator('.editor-tab')).toHaveCount(1);
+  await closeFocused(page);
+  await expect(page.locator('.editor-tab')).toHaveCount(0);
+  expect(app.requests.filter(request => request.method === 'app.close_window')).toEqual([]);
+});
+
 test('Close follows terminal focus and keeps the remaining terminal usable', async ({ page }) => {
   const app = await installDesktop(page);
   const requests = method => app.requests.filter(request => request.method === method);

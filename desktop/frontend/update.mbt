@@ -813,7 +813,9 @@ fn open_explorer(
     next.file_panel,
     file_ctx(next),
   )
-  (cmd, { ..next, file_panel, })
+  // Opening the picker hides the focused launcher. Hand focus to the panel
+  // first; inventory-specific commands can then focus their own input.
+  (@cmd.batch([focus_dock_after_render(), cmd]), { ..next, file_panel, })
 }
 
 ///|
@@ -5061,7 +5063,7 @@ fn update_msg(
       match model.dock.active {
         Some(tab) => {
           let (cmd, model) = update_msg(dispatch, Dock(TabClosed(tab)), model)
-          (@cmd.batch([cmd, focus_dock_after_close()]), model)
+          (@cmd.batch([cmd, focus_dock_after_render()]), model)
         }
         None => (@cmd.none, model)
       }

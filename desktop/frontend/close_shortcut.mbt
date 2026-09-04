@@ -49,7 +49,7 @@ fn close_focused(dispatch : @cmd.Emit[Msg]) -> @cmd.Cmd {
         scheduler.add(
           @cmd.batch([
             dispatch(Dock(TabClosed(@dock.Browser(id~)))),
-            focus_dock_after_close(),
+            focus_dock_after_render(),
           ]),
         )
       }
@@ -58,8 +58,8 @@ fn close_focused(dispatch : @cmd.Emit[Msg]) -> @cmd.Cmd {
 }
 
 ///|
-/// A removed tab button must not turn the next Command+W into a window close.
-fn focus_dock_after_close() -> @cmd.Cmd {
+/// Keep focus in the dock when its launcher or a closed tab loses focus.
+fn focus_dock_after_render() -> @cmd.Cmd {
   @cmd.custom_cmd(
     _ => {
       if @dom.document()
