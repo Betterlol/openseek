@@ -418,6 +418,7 @@ html.is-resizing .sidebar-resize-handle {
   background: var(--color-bg-subtle);
 }
 .workspace-row.active {
+  background: var(--color-bg-subtle);
   color: var(--color-text-primary);
   font-weight: 500;
 }

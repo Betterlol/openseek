@@ -165,6 +165,56 @@ test "a project new chat rotates into that project" {
 }
 
 ///|
+test "the new-chat project menu changes only to a registered project" {
+  let dispatch = test_dispatch()
+  let current = @interop.ChannelId::Local.test_project()
+  let other = @interop.ChannelId::Local.test_resource("/home/u/other")
+  let base = test_model().with_dev(dev => {
+    ..dev,
+    projects: [current, other],
+    active_project: Some(current),
+  })
+  let (_, opened) = update(dispatch, ToggleSelectMenu(ProjectMenu), base)
+  assert_true(opened.select_menu == Some(ProjectMenu))
+  let (_, filtered) = update(dispatch, ProjectMenuQueryChanged("oth"), opened)
+  assert_eq(filtered.project_menu_query, "oth")
+
+  // Picking the already-current row dismisses and clears the filter without
+  // changing the draft's project. Browser coverage observes the effect queue
+  // as well, proving that this branch does not rotate the session.
+  let (_, same) = update(dispatch, ProjectMenuProjectChosen(current), filtered)
+  assert_true(same.select_menu is None)
+  assert_eq(same.project_menu_query, "")
+  assert_eq(same.active_session, base.active_session)
+  assert_eq(same.dev().active_project, Some(current))
+
+  let (_, reopened) = update(dispatch, ToggleSelectMenu(ProjectMenu), same)
+  let (_, chosen) = update(dispatch, ProjectMenuProjectChosen(other), reopened)
+  assert_true(chosen.select_menu is None)
+  assert_eq(chosen.dev().active_project, Some(other))
+
+  // A row removed after the menu opened cannot be selected from the stale DOM.
+  let (_, stale_open) = update(dispatch, ToggleSelectMenu(ProjectMenu), base)
+  let removed = stale_open.with_dev(dev => { ..dev, projects: [current], })
+  let (_, ignored) = update(dispatch, ProjectMenuProjectChosen(other), removed)
+  assert_true(ignored.select_menu is None)
+  assert_eq(ignored.active_session, base.active_session)
+  assert_eq(ignored.dev().active_project, Some(current))
+
+  // If a registry refresh removes the active project without a session
+  // identity change, the root invariant still retires the now-hidden menu.
+  let (_, current_open) = update(dispatch, ToggleSelectMenu(ProjectMenu), base)
+  let detached = current_open.with_dev(dev => { ..dev, projects: [other], })
+  let (_, reconciled) = update(
+    dispatch,
+    ProjectMenuQueryChanged("stale"),
+    detached,
+  )
+  assert_true(reconciled.select_menu is None)
+  assert_eq(reconciled.project_menu_query, "")
+}
+
+///|
 test "a rotation lands in the device's active project" {
   let dispatch = test_dispatch()
   let (_, next) = update(

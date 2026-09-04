@@ -255,7 +255,187 @@
   color: var(--color-text-secondary);
 }
 .empty-title {
-  font-size: var(--font-size-lg);
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  flex-wrap: wrap;
+  font-size: calc(var(--font-size-base) + 12px);
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--color-text-primary);
+}
+.empty-title-project {
+  display: inline-flex;
+  align-items: baseline;
+  min-width: 0;
+}
+.empty-project-control {
+  anchor-scope: --empty-project-trigger;
+  display: inline-flex;
+  min-width: 0;
+}
+.empty-project-trigger {
+  anchor-name: --empty-project-trigger;
+  display: inline-flex;
+  align-items: center;
+  max-width: min(42vw, 420px);
+  margin: 0;
+  padding: 0.08em 0.34em;
+  overflow: hidden;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-subtle);
+  color: inherit;
+  font-family: var(--font-family-mono);
+  font-size: 0.9em;
+  font-weight: 500;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: baseline;
+  cursor: pointer;
+}
+.empty-project-trigger:hover,
+.empty-project-trigger.open {
+  border-color: var(--color-accent-border);
+  background: var(--color-accent-soft);
+  color: var(--color-accent-strong);
+}
+.empty-project-trigger:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+.empty-project-menu {
+  position: fixed;
+  position-anchor: --empty-project-trigger;
+  position-visibility: anchors-visible;
+  position-area: block-end span-inline-start;
+  position-try-fallbacks: flip-block;
+  inset: auto;
+  z-index: var(--z-menu);
+  display: none;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  width: min(360px, calc(100dvw - 24px));
+  /* 100% is the chosen position-area block. Constraining to it keeps a tall
+     project list on one side of the title instead of shifting across it. */
+  max-height: min(420px, calc(100dvh - 24px), calc(100% - 18px));
+  margin: 9px 0;
+  overflow: hidden;
+  padding: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-surface);
+  color: var(--color-text-primary);
+  box-shadow: var(--shadow-overlay);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-md);
+  font-weight: 400;
+  line-height: var(--line-height-normal);
+  text-align: left;
+}
+.empty-project-menu:popover-open {
+  display: grid;
+}
+.empty-project-search {
+  --icon-size: var(--icon-md);
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: center;
+  min-width: 0;
+  margin-bottom: 6px;
+  padding: 0 9px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-surface);
+  color: var(--color-text-muted);
+}
+.empty-project-search input {
+  width: 100%;
+  padding: 8px 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-primary);
+  font-family: inherit;
+  font-size: inherit;
+}
+.empty-project-search input::placeholder {
+  color: var(--color-text-muted);
+  opacity: 1;
+}
+.empty-project-options {
+  display: grid;
+  min-height: 0;
+  max-height: 300px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 1px 0;
+}
+.empty-project-option {
+  --icon-size: var(--icon-lg);
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin: 0;
+  padding: 8px 9px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.empty-project-option:hover,
+.empty-project-option.selected {
+  background: var(--color-bg-subtle);
+}
+.empty-project-option:focus-visible,
+.empty-project-new:focus-visible {
+  outline: 1px solid var(--color-focus-ring);
+  outline-offset: -1px;
+}
+.empty-project-option-icon {
+  display: grid;
+  place-items: center;
+  color: var(--color-text-secondary);
+}
+.empty-project-option-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.empty-project-option-check {
+  color: var(--color-text-secondary);
+  text-align: center;
+}
+.empty-project-no-results {
+  padding: 18px 10px;
+  color: var(--color-text-muted);
+  text-align: center;
+}
+.empty-project-new {
+  --icon-size: var(--icon-lg);
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 6px;
+  padding: 9px;
+  border: 0;
+  border-top: 1px solid var(--color-border-subtle);
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.empty-project-new:hover {
+  background: var(--color-bg-subtle);
   color: var(--color-text-primary);
 }
 .empty-sub {

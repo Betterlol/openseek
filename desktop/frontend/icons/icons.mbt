@@ -116,6 +116,34 @@ pub fn icon_edit() -> @html.Html {
 }
 
 ///|
+/// A compose glyph for starting a conversation: the page outline separates
+/// this action from every add-project control, which intentionally keeps the
+/// plain plus. Stroke geometry matches the quiet outline style of the project
+/// folder and overflow controls at the same 16px size.
+pub fn icon_new_chat() -> @html.Html {
+  @svg.svg(
+    width=16,
+    height=16,
+    view_box="0 0 16 16",
+    attrs=@svg.Attrs::build()
+      .fill("none")
+      .stroke("currentColor")
+      .stroke_width("1.25")
+      .stroke_linecap("round")
+      .stroke_linejoin("round"),
+    [
+      @svg.path(
+        d="M7 2.25H4A1.75 1.75 0 0 0 2.25 4v8A1.75 1.75 0 0 0 4 13.75h8A1.75 1.75 0 0 0 13.75 12V9",
+      ),
+      @svg.path(
+        d="m6 10 .55-2.2 4.75-4.75a1.2 1.2 0 0 1 1.7 1.7L8.25 9.5 6 10Z",
+      ),
+      @svg.path(d="m10.7 3.65 1.65 1.65"),
+    ],
+  )
+}
+
+///|
 /// Hand-drawn (not a codicon): a horizontal ellipsis — three filled dots —
 /// for a row's overflow menu.
 pub fn icon_more() -> @html.Html {

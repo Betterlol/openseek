@@ -51,6 +51,20 @@ fn conversation_title(conv : Conversation) -> String {
       }
     }
   }
+  // The first submit makes the conversation a sidebar item immediately,
+  // before the durable User event can make the round trip from the engine.
+  // Use the exact recoverable submission during that interval so the new row
+  // never flashes a generic product name.
+  if conv.pending_prompt is Some(pending) {
+    let title = user_display_text(
+        @composer.Draft::{ task: pending.draft, mentions: pending.mentions, }.prompt(),
+      )
+      .trim()
+      .to_owned()
+    if !title.is_empty() {
+      return title
+    }
+  }
   let task = conv.task.trim().to_owned()
   if task.is_empty() {
     // The live draft text is component-local, so the root knows only that it
@@ -167,10 +181,11 @@ fn session_item_label(item : @transcript.SessionListItem) -> String {
 ///|
 /// One group's conversation inputs: the app-run-only (unlisted) conversations
 /// newest first, then the store's durable sessions in list order — the same
-/// ordering the flat sidebar always had, applied per group. Conversations
-/// worth keeping get a row, plus the one fresh "New chat" on screen; an empty
-/// husk holding an unsent draft keeps its row because that row is the only
-/// way back to the draft.
+/// ordering the flat sidebar always had, applied per group. A fresh chat on
+/// screen is represented by its active project instead of a redundant "New
+/// chat" child row. An off-screen unsent draft still gets a row so it remains
+/// recoverable, and a submitted conversation appears immediately while its
+/// first turn is starting.
 fn Model::push_group_component_inputs(
   self : Model,
   rows : Array[(RowStamp, @conversation.Input)],
@@ -190,18 +205,25 @@ fn Model::push_group_component_inputs(
       archived(conv.session_id) {
       continue
     }
+    let worth_keeping = conv.worth_keeping()
+    let on_screen = self.screen is Chat &&
+      conv.device == self.focused &&
+      conv.session_id == self.active_session
+    // The new-chat page belongs to the highlighted project until it becomes
+    // real work. Do not manufacture a selected child row merely because its
+    // client-local session id already exists.
+    if composing && on_screen {
+      continue
+    }
+    if !worth_keeping {
+      continue
+    }
     // A fresh worktree conversation knows its binding locally; once the
     // first turn is durable the registry mapping takes over.
     let worktree = if conv.worktree_name() is Some(name) {
       Some(name)
     } else {
       worktree_name_for(dev, workspace, conv.session_id)
-    }
-    let worth_keeping = conv.worth_keeping()
-    let active = conv.device == self.focused &&
-      conv.session_id == self.active_session
-    if !worth_keeping && !(composing && active) {
-      continue
     }
     rows.push(
       (
@@ -212,11 +234,7 @@ fn Model::push_group_component_inputs(
           self,
           dev.channel,
           conv.session_id,
-          if worth_keeping {
-            conversation_title(conv)
-          } else {
-            "New chat"
-          },
+          conversation_title(conv),
           nested=true,
           worktree?,
           root~,
@@ -401,6 +419,9 @@ fn Model::sidebar_component_sections(
     let mut codex_activation : String? = None
     if codex_context is Some(context) &&
       @resource.path_for(path, dev.channel) is Some(root) {
+      // The selected Codex draft is the project's new-chat page, not a child
+      // conversation yet. `project_draft` returns only an off-screen draft
+      // that needs a recovery row.
       if self.codex.project_draft(context, root) is Some(draft) {
         stamped.push((ComposingNow, draft))
       }

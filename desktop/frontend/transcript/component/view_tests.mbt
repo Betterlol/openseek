@@ -4,6 +4,12 @@ fn stream_keys(input : Input) -> Array[String] {
 }
 
 ///|
+test "empty transcript title names its project when available" {
+  assert_eq(empty_title(Some("openseek")), "What should we build in openseek?")
+  assert_eq(empty_title(None), "What should we build?")
+}
+
+///|
 test "transcript stream children use stable typed keys in display order" {
   let call : @transcript.ToolCall = {
     call_id: "c1",
@@ -26,6 +32,11 @@ test "transcript stream children use stable typed keys in display order" {
     source=OpenSeek,
     focused=@interop.ChannelId::Local,
     active_session="desktop-test",
+    current_project=None,
+    projects=[],
+    can_choose_project=false,
+    project_menu_open=false,
+    project_query="",
     root=None,
     submission_generation=1,
     items=[
@@ -80,6 +91,11 @@ test "the live response is one node, replaced by the durable one" {
     source=OpenSeek,
     focused=@interop.ChannelId::Local,
     active_session="desktop-test",
+    current_project=None,
+    projects=[],
+    can_choose_project=false,
+    project_menu_open=false,
+    project_query="",
     root=None,
     submission_generation=1,
     items=[user],
@@ -123,6 +139,11 @@ test "a streaming delta changes only the live block" {
     source=OpenSeek,
     focused=@interop.ChannelId::Local,
     active_session="desktop-test",
+    current_project=None,
+    projects=[],
+    can_choose_project=false,
+    project_menu_open=false,
+    project_query="",
     root=None,
     submission_generation=1,
     items=[
@@ -169,6 +190,11 @@ test "transcript stream section key scopes equal session ids by channel" {
     source=OpenSeek,
     focused=@interop.ChannelId::Local,
     active_session="desktop-test",
+    current_project=None,
+    projects=[],
+    can_choose_project=false,
+    project_menu_open=false,
+    project_query="",
     root=None,
     submission_generation=0,
     items=[],

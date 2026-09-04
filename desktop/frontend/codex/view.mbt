@@ -141,15 +141,18 @@ pub(all) struct CodexProjectRow {
 }
 
 ///|
-/// The composing draft's row when it belongs to this registered project.
-/// The root pins it with the other this-session composing rows instead of
-/// ranking it by a stamp it cannot have yet.
+/// A recoverable composing draft's row when it belongs to this registered
+/// project but the Codex page is not on screen. While selected, the draft is
+/// represented by the project's activation instead of a redundant "New chat"
+/// child row. The root pins an off-screen draft with the other this-session
+/// rows instead of ranking it by a stamp it cannot have yet.
 pub fn State::project_draft(
   self : State,
   context : SidebarContext,
   root : String,
 ) -> @conversation.Input? {
-  guard context.project_registered(root) &&
+  guard !context.selected &&
+    context.project_registered(root) &&
     self.active_draft() is Some(draft) &&
     CodexProject(draft.grouping_root()) == CodexProject(root) else {
     return None

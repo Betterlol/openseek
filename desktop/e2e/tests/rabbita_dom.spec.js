@@ -964,15 +964,32 @@ test('composer sends a turn and stops the accepted run', async ({ page }) => {
   expect(app.pageErrors).toEqual([]);
 });
 
-test('new chat, archive, and restore update the conversation sidebar', async ({ page }) => {
+test('new chat materializes on send, and archive and restore update the sidebar', async ({ page }) => {
   const app = new DesktopBrowserHarness(page);
   await app.install();
   await app.goto();
 
-  await page.locator('.workspace-row', { hasText: 'workspace' }).hover();
-  await page.getByTitle('New conversation in this project').click();
-  await expect(page.locator('.conversation-row', { hasText: 'New chat' })).toBeVisible();
+  const project = page.locator('.workspace-row', { hasText: 'workspace' });
+  await project.hover();
+  const newConversation = project.getByTitle('New conversation in this project');
+  const addProject = page.locator('.sidebar-header')
+    .getByRole('button', { name: 'Add a project' });
+  const iconPaths = button => button.locator('svg path').evaluateAll(paths =>
+    paths.map(path => path.getAttribute('d')),
+  );
+  expect(await iconPaths(newConversation)).not.toEqual(await iconPaths(addProject));
+
+  await newConversation.click();
+  await expect(project).toHaveClass(/\bactive\b/);
+  await expect(page.locator('.conversation-row', { hasText: 'New chat' })).toHaveCount(0);
+  await expect(page.locator('.empty-title')).toHaveText('What should we build in workspace?');
   await expect(page.locator('#task')).toHaveValue('');
+
+  const firstPrompt = 'Explain the sidebar state';
+  await page.locator('#task').fill(firstPrompt);
+  await page.getByTitle('Send', { exact: true }).click();
+  await expect(page.locator('.conversation-row.active')).toHaveCount(1);
+  await expect(page.locator('.conversation-row', { hasText: 'New chat' })).toHaveCount(0);
 
   await page.getByText('Rabbita browser fixture', { exact: true }).first().click();
   const liveRow = page.locator('.conversation-row[title="session-1"]');
@@ -999,19 +1016,145 @@ test('new chat, archive, and restore update the conversation sidebar', async ({ 
   expect(app.pageErrors).toEqual([]);
 });
 
-test('archiving a selected chat reuses an existing New chat draft', async ({ page }) => {
+test('new-chat project title filters and switches registered projects', async ({ page }) => {
+  const app = new DesktopBrowserHarness(page);
+  app.workspaces.push('/other');
+  await app.install();
+  await app.goto();
+
+  const workspace = page.locator('.workspace-row[title="/workspace"]');
+  const other = page.locator('.workspace-row[title="/other"]');
+  await workspace.hover();
+  await workspace.getByTitle('New conversation in this project').click();
+
+  const title = page.locator('.empty-title');
+  const transcript = page.locator('#transcript');
+  await expect(title).toHaveText('What should we build in workspace?');
+  await expect(page.getByText(/SeekMoon plans the work/)).toHaveCount(0);
+  const originalSession = await transcript.getAttribute('data-transcript-session');
+
+  const trigger = page.getByRole('button', {
+    name: 'Choose project, current project workspace',
+  });
+  await trigger.click();
+  const picker = page.getByRole('dialog', { name: 'Choose a project' });
+  const search = picker.getByRole('textbox', { name: 'Search projects' });
+  const options = picker.getByRole('group', { name: 'Projects' });
+  await expect(picker).toBeVisible();
+  await expect(search).toBeFocused();
+  const triggerBounds = await trigger.boundingBox();
+  const pickerBounds = await picker.boundingBox();
+  const viewport = page.viewportSize();
+  expect(triggerBounds).not.toBeNull();
+  expect(pickerBounds).not.toBeNull();
+  expect(viewport).not.toBeNull();
+  expect(pickerBounds.y).toBeGreaterThanOrEqual(
+    triggerBounds.y + triggerBounds.height,
+  );
+  expect(pickerBounds.x).toBeGreaterThanOrEqual(0);
+  expect(pickerBounds.x + pickerBounds.width).toBeLessThanOrEqual(viewport.width);
+  expect(pickerBounds.y + pickerBounds.height).toBeLessThanOrEqual(viewport.height);
+  await expect(options.getByRole('button')).toHaveCount(2);
+  await expect(
+    options.getByRole('button', { name: /^workspace, current project/ }),
+  ).toHaveAttribute('aria-current', 'true');
+  await expect(
+    options.getByRole('button', { name: /^other —/ }),
+  ).toHaveAttribute('aria-current', 'false');
+  await expect(picker.getByText("Don't work in a project")).toHaveCount(0);
+  await expect(picker.getByRole('button', { name: 'New project' })).toBeVisible();
+
+  await search.press('Escape');
+  await expect(picker).toBeHidden();
+  await expect(trigger).toBeFocused();
+  await trigger.click();
+  await expect(search).toBeFocused();
+
+  await search.fill('oth');
+  await expect(options.getByRole('button', { name: /^workspace/ })).toHaveCount(0);
+  await expect(options.getByRole('button', { name: /^other —/ })).toBeVisible();
+  await search.fill('');
+
+  // The selected row only closes the picker; it must not rotate the draft.
+  await options.getByRole('button', { name: /^workspace, current project/ }).click();
+  await expect(picker).toBeHidden();
+  await expect(transcript).toHaveAttribute('data-transcript-session', originalSession);
+  await expect(trigger).toBeFocused();
+
+  await trigger.click();
+  await picker.getByRole('button', { name: /^other —/ }).click();
+  await expect(other).toHaveClass(/\bactive\b/);
+  await expect(title).toHaveText('What should we build in other?');
+  await expect(transcript).not.toHaveAttribute('data-transcript-session', originalSession);
+
+  await page.getByRole('button', {
+    name: 'Choose project, current project other',
+  }).click();
+  await picker.getByRole('button', { name: 'New project' }).click();
+  const addProject = page.getByRole('dialog', { name: 'Add a project' });
+  await expect(addProject).toBeVisible();
+  await expect(picker).toBeHidden();
+  await addProject.getByRole('button', { name: 'Close project picker' }).click();
+  await expect(addProject).toBeHidden();
+  expect(app.pageErrors).toEqual([]);
+});
+
+test('new-chat project picker stays clear of its title in a short window', async ({ page }) => {
+  const app = new DesktopBrowserHarness(page);
+  for (let index = 0; index < 30; index += 1) {
+    app.workspaces.push(`/project-${index}`);
+  }
+  await app.install();
+  await page.setViewportSize({ width: 1000, height: 500 });
+  await app.goto();
+
+  const workspace = page.locator('.workspace-row[title="/workspace"]');
+  await workspace.hover();
+  await workspace.getByTitle('New conversation in this project').click();
+  const trigger = page.getByRole('button', {
+    name: 'Choose project, current project workspace',
+  });
+  await trigger.click();
+  const picker = page.getByRole('dialog', { name: 'Choose a project' });
+  await expect(picker).toBeVisible();
+
+  const titleBounds = await page.locator('.empty-title').boundingBox();
+  const pickerBounds = await picker.boundingBox();
+  expect(titleBounds).not.toBeNull();
+  expect(pickerBounds).not.toBeNull();
+  expect(
+    pickerBounds.y >= titleBounds.y + titleBounds.height ||
+      pickerBounds.y + pickerBounds.height <= titleBounds.y,
+  ).toBe(true);
+  expect(pickerBounds.y).toBeGreaterThanOrEqual(0);
+  expect(pickerBounds.y + pickerBounds.height).toBeLessThanOrEqual(500);
+  const listSize = await picker.locator('.empty-project-options').evaluate((list) => ({
+    client: list.clientHeight,
+    overflowY: getComputedStyle(list).overflowY,
+    scroll: list.scrollHeight,
+  }));
+  expect(listSize.scroll).toBeGreaterThan(listSize.client);
+  expect(listSize.overflowY).toBe('auto');
+  expect(app.pageErrors).toEqual([]);
+});
+
+test('archiving a selected chat restores the existing project draft', async ({ page }) => {
   const app = new DesktopBrowserHarness(page);
   await app.install();
   await app.goto();
 
-  await page.locator('.workspace-row', { hasText: 'workspace' }).hover();
+  const workspace = page.locator('.workspace-row', { hasText: 'workspace' });
+  await workspace.hover();
   await page.getByTitle('New conversation in this project').click();
   const newChat = page.locator('.conversation-row', { hasText: 'New chat' });
-  await expect(newChat).toHaveCount(1);
+  await expect(newChat).toHaveCount(0);
+  await expect(workspace).toHaveClass(/\bactive\b/);
   await page.locator('#task').fill('Keep this draft');
 
   const stored = page.locator('.conversation-row[title="session-1"]');
   await stored.click();
+  await expect(newChat).toHaveCount(1);
+  await expect(newChat).not.toHaveClass(/\bactive\b/);
   await expect(page.getByText('Browser result', { exact: true })).toBeVisible();
   await page.locator('#task').fill('Discard this archived draft');
   await stored.click({ button: 'right', position: { x: 18, y: 18 } });
@@ -1020,8 +1163,8 @@ test('archiving a selected chat reuses an existing New chat draft', async ({ pag
   await expect.poll(() => app.requests.some(request =>
     request.method === 'session.archive' &&
     request.params?.session === 'session-1')).toBe(true);
-  await expect(newChat).toHaveCount(1);
-  await expect(newChat).toHaveClass(/active/);
+  await expect(newChat).toHaveCount(0);
+  await expect(workspace).toHaveClass(/\bactive\b/);
   await expect(page.locator('#task')).toHaveValue('Keep this draft');
   expect(app.pageErrors).toEqual([]);
 });
@@ -1042,6 +1185,9 @@ test('shared WebView action menu supports context position, keyboard, and rename
   let menu = page.getByRole('menu', { name: 'Workspace actions' });
   await expect(menu).toBeFocused();
   await expect(menu.getByRole('menuitem').first()).not.toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(menu).toHaveCount(0);
+  await expect(firstWorkspaceMenu).toBeFocused();
   await secondWorkspace.hover();
   await secondWorkspaceMenu.click();
   await expect(firstWorkspaceMenu).toHaveAttribute('aria-expanded', 'false');
@@ -1208,7 +1354,9 @@ test('removing a pending selection exits its loading state', async ({ page }) =>
   await expect(page.getByRole('menu')).toHaveCount(0);
   await expect(page.getByText('Loading conversation…', { exact: true })).toHaveCount(0);
   await expect(page.locator('#task')).toBeVisible();
-  await expect(page.locator('.conversation-row', { hasText: 'New chat' })).toBeVisible();
+  await expect(page.locator('.conversation-row', { hasText: 'New chat' })).toHaveCount(0);
+  await expect(page.locator('.workspace-row', { hasText: 'workspace' })).toHaveClass(/\bactive\b/);
+  await expect(page.locator('.empty-title')).toHaveText('What should we build in workspace?');
   expect(app.pageErrors).toEqual([]);
 });
 

@@ -1665,6 +1665,24 @@ fn update(
   } else {
     model
   }
+  // A registry refresh can retire the title control without changing the
+  // active session. Do not leave its root menu flag hiding a native Browser
+  // view after the control itself has disappeared.
+  let model = if model.select_menu == Some(ProjectMenu) &&
+    !model.can_choose_new_chat_project() {
+    { ..model, select_menu: None, project_menu_query: "", }
+  } else {
+    model
+  }
+  // The query has meaning only while its exact menu is open. Context changes,
+  // covering overlays, and selections close menus in several handlers; keep
+  // all of those paths from reviving an old filter on the next fresh draft.
+  let model = if model.select_menu == Some(ProjectMenu) ||
+    model.project_menu_query.is_empty() {
+    model
+  } else {
+    { ..model, project_menu_query: "", }
+  }
   // On the narrow layout the sidebar is a full-screen drawer, so any
   // navigation that lands somewhere else — switching or creating a
   // conversation, opening Skills or Settings — closes it; centralizing the
@@ -2782,6 +2800,9 @@ fn update_msg(
     QuickOpenOpen(provider) => open_quick_open(dispatch, model, provider)
     QuickOpen(msg) => update_quick_open(dispatch, model, msg)
     ToggleSelectMenu(menu) => {
+      if menu is ProjectMenu && !model.can_choose_new_chat_project() {
+        return (@cmd.none, model)
+      }
       let select_menu = if model.select_menu == Some(menu) {
         None
       } else {
@@ -2792,12 +2813,41 @@ fn update_msg(
         {
           ..model,
           select_menu,
+          project_menu_query: "",
           git_details_open: false,
           codex: model.codex.with_git_details_closed(),
         },
       )
     }
-    CloseSelectMenu => (@cmd.none, { ..model, select_menu: None, })
+    CloseSelectMenu =>
+      (@cmd.none, { ..model, select_menu: None, project_menu_query: "", })
+    ProjectMenuQueryChanged(query) =>
+      if model.select_menu == Some(ProjectMenu) &&
+        model.screen is Chat &&
+        model.composing_new_chat() {
+        (@cmd.none, { ..model, project_menu_query: query, })
+      } else {
+        (@cmd.none, model)
+      }
+    ProjectMenuProjectChosen(workspace) => {
+      let menu_open = model.select_menu == Some(ProjectMenu)
+      let closed = { ..model, select_menu: None, project_menu_query: "", }
+      guard menu_open &&
+        model.can_choose_new_chat_project() &&
+        @resource.belongs_to(workspace, model.focused) &&
+        model.focused_device() is Some(dev) &&
+        dev.projects.contains(workspace) &&
+        model.active_conversation() is Some(active) else {
+        return (@cmd.none, closed)
+      }
+      // The selected row is still actionable so keyboard and pointer behavior
+      // are uniform, but choosing it must not rotate a second empty session.
+      if active.project() == workspace {
+        (@cmd.none, closed)
+      } else {
+        update_msg(dispatch, NewChatIn(model.focused, Some(workspace)), closed)
+      }
+    }
     ModelPicked(value) => {
       guard ModelChoice::parse(value) is Some(choice) else {
         return (@cmd.none, model)
@@ -13037,15 +13087,13 @@ test "Codex threads share the Projects section's project rows" {
   guard sections[0].entries[0] is @section.Project(project) else {
     fail("expected the fixture project's row")
   }
-  // Rows interleave by recency across both sources: the fixture's unsent
-  // "New chat" husk leads as this session's composing row, then stamped
-  // history newest-first regardless of which agent owns each row.
+  // The fixture's unsent OpenSeek chat is represented by its project rather
+  // than a child row. Durable history still interleaves newest-first across
+  // both agents.
   let order = project.conversations.map(row => row.id.conversation())
-  assert_eq(order, [
-    "desktop-test", "desktop-newer", "codex-thread-1", "desktop-older",
-  ])
-  assert_true(project.conversations[2].id.source() is @conversation.CodexLive)
-  assert_true(project.conversations[2].nested)
+  assert_eq(order, ["desktop-newer", "codex-thread-1", "desktop-older"])
+  assert_true(project.conversations[1].id.source() is @conversation.CodexLive)
+  assert_true(project.conversations[1].nested)
   // With the Codex page on screen, its active task claims the activation.
   assert_eq(sections[0].activation, Some("codex-thread-1"))
 }
