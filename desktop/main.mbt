@@ -129,6 +129,31 @@ async fn main {
     // otherwise leaves a bright strip above the dark application shell.
     .titlebar_style(Overlay)
     .debug_level(1)
+    // Rabbita consumes ordinary left-click navigation for the dock Browser,
+    // but deliberately leaves Ctrl/Cmd-click and middle-click to Chromium.
+    // Proton 0.2.6 reports those new-window requests here without their target
+    // disposition, so `user_gesture` is temporarily the closest available
+    // signal. This also includes a page calling `window.open` during a click;
+    // deny the embedded window in every case, and send user-initiated URLs to
+    // the system opener until Proton exposes the disposition.
+    .on_new_window_request(async fn(_, request) noraise {
+      if request.user_gesture {
+        ignore(
+          Some(@extension.open_external({ url: request.url, })) catch {
+            error => {
+              @xlog.error() <?
+                {
+                  "event": "external_link_open_failed",
+                  "url": request.url,
+                  "error": @debug.render(Repr(error)),
+                }
+              None
+            }
+          },
+        )
+      }
+      Deny
+    })
   // Proton auto-fills only the Application menu; Edit and Window must be
   // declared or macOS loses their key equivalents (Cmd+A/C/V/X/Z, Cmd+W/M),
   // which is what dispatches editing shortcuts to every text field. The
