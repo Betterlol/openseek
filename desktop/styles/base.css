@@ -297,7 +297,6 @@ html {
   --resize-handle-height: 6px;
   --sidebar-column-width: clamp(220px, var(--sidebar-width, 264px), 480px);
   --sidebar-drawer-width: min(320px, 86vw);
-  --sidebar-boundary-width: var(--sidebar-column-width);
   --sidebar-toggle-size: 28px;
   --topbar-inline-padding: 18px;
   --topbar-leading-toggle-offset: -4px;
@@ -305,10 +304,6 @@ html {
     var(--topbar-inline-padding) + var(--topbar-leading-toggle-offset)
   );
   --sidebar-toggle-trailing-gap: 12px;
-  --sidebar-toggle-inline-start: min(
-    calc(var(--sidebar-boundary-width) + var(--sidebar-toggle-inline-inset)),
-    calc(100vw - var(--sidebar-toggle-size))
-  );
   --sidebar-toggle-reserved-width: calc(
     var(--sidebar-toggle-inline-inset) + var(--sidebar-toggle-size) +
       var(--sidebar-toggle-trailing-gap)
@@ -381,15 +376,15 @@ html {
   height: 46px;
 }
 
-/* macOS keeps its traffic-light controls in the top-left corner. The open
-   sidebar reserves them with its empty titlebar strip; once collapsed, the
-   main column reaches that corner and its visible chrome takes the inset. */
+/* macOS keeps its traffic-light controls in the top-left corner. Whichever
+   header owns the sidebar toggle reserves that native hit area. */
 .app.native-apple-titlebar {
   --native-titlebar-leading-inset: 88px;
 }
 .app.native-apple-titlebar.sidebar-collapsed {
   --sidebar-toggle-inline-inset: var(--native-titlebar-leading-inset);
 }
+.app.native-apple-titlebar .sidebar-header,
 .app.native-apple-titlebar.sidebar-collapsed .topbar {
   padding-inline-start: var(--native-titlebar-leading-inset);
 }
@@ -470,18 +465,21 @@ html {
   grid-template-columns: 0 minmax(0, 1fr);
 }
 
-/* Expanded hides the zero-width conversation column behind the editor. Float
-   its sidebar control back to the boundary it owns and reserve matching room
-   in the tab strip so open tabs never sit underneath it. */
-.content.panel-expanded :where(.topbar > .sidebar-boundary-toggle) {
+/* With both the sidebar collapsed and the editor expanded, the reopen action
+   would otherwise stay inside the main column's zero-width track. Float that
+   one fallback above the editor and reserve matching tab-strip room. */
+.app.sidebar-collapsed
+  .content.panel-expanded
+  .topbar
+  > .topbar-toggle {
   position: fixed;
   inset-block-start: calc(
     (var(--topbar-height) - var(--sidebar-toggle-size)) / 2
   );
-  inset-inline-start: var(--sidebar-toggle-inline-start);
+  inset-inline-start: var(--sidebar-toggle-inline-inset);
   z-index: var(--z-editor-overlay-control);
   margin-inline-start: 0;
 }
-.content.panel-expanded .editor-tabsbar {
+.app.sidebar-collapsed .content.panel-expanded .editor-tabsbar {
   padding-inline-start: var(--sidebar-toggle-reserved-width);
 }

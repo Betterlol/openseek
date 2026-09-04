@@ -54,13 +54,13 @@ main {
   color: var(--color-text-primary);
 }
 
-/* Pages without a topbar float the same control at the live sidebar boundary. */
+/* Pages without a topbar float the reopen action at the window's leading edge. */
 .page-sidebar-toggle {
   position: fixed;
   inset-block-start: calc(
     (var(--topbar-height) - var(--sidebar-toggle-size)) / 2
   );
-  inset-inline-start: var(--sidebar-toggle-inline-start);
+  inset-inline-start: var(--sidebar-toggle-inline-inset);
   z-index: var(--z-titlebar-control);
   margin-inline-start: 0;
 }

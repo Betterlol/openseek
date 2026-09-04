@@ -43,16 +43,16 @@ html.is-resizing .sidebar-resize-handle {
   background: var(--color-accent-soft);
 }
 
-/* The hierarchy starts at the top of the sidebar. macOS alone keeps an empty
-   native-titlebar strip so project controls never sit beneath the traffic
-   lights; the main-column toggle owns the visible layout action. */
+/* The sidebar's own header owns its close action while the sidebar is visible.
+   Its height matches the main topbar so collapsing swaps the control between
+   columns without changing its vertical position. */
 .sidebar-header {
-  display: none;
+  display: flex;
+  align-items: center;
   height: 46px;
+  padding-block: 0;
+  padding-inline: var(--topbar-inline-padding);
   border-bottom: 1px solid var(--color-separator);
-}
-.app.native-apple-titlebar .sidebar-header {
-  display: block;
 }
 
 .sidebar-main {
