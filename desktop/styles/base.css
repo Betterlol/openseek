@@ -297,24 +297,22 @@ html {
   --resize-handle-height: 6px;
   --sidebar-column-width: clamp(220px, var(--sidebar-width, 264px), 480px);
   --sidebar-drawer-width: min(320px, 86vw);
-  --sidebar-boundary-width: var(--sidebar-column-width);
   --sidebar-toggle-size: 28px;
   --topbar-inline-padding: 18px;
   --app-header-height: 46px;
   --topbar-height: max(var(--app-header-height), var(--native-titlebar-height, 0px));
-  --topbar-leading-toggle-offset: -4px;
   --sidebar-toggle-inline-inset: max(
-    calc(var(--topbar-inline-padding) + var(--topbar-leading-toggle-offset)),
-    calc(var(--native-titlebar-left, 0px) - var(--sidebar-boundary-width))
+    calc(var(--topbar-inline-padding) - 4px),
+    var(--native-titlebar-left, 0px)
   );
   --sidebar-toggle-trailing-gap: 12px;
-  --sidebar-toggle-inline-start: min(
-    calc(var(--sidebar-boundary-width) + var(--sidebar-toggle-inline-inset)),
-    calc(100vw - var(--sidebar-toggle-size))
-  );
   --sidebar-toggle-reserved-width: calc(
     var(--sidebar-toggle-inline-inset) + var(--sidebar-toggle-size) +
       var(--sidebar-toggle-trailing-gap)
+  );
+  --main-titlebar-leading-inset: max(
+    var(--topbar-inline-padding),
+    calc(var(--sidebar-toggle-reserved-width) - var(--sidebar-column-width))
   );
   display: grid;
   /* The sidebar track reads `--sidebar-width`, set as the user drags the
@@ -385,15 +383,8 @@ html.native-titlebar-overlay .app
   height: var(--topbar-height);
 }
 
-/* Proton reports the safe titlebar rectangle in CSS pixels. The sidebar
-   already protects part of the left edge; only the remaining inset belongs
-   to the main column. Right controls belong to the rightmost visible header. */
-html.native-titlebar-overlay .app .topbar {
-  padding-left: max(
-    var(--topbar-inline-padding),
-    calc(var(--native-titlebar-left, 0px) - var(--sidebar-column-width) - var(--topbar-leading-toggle-offset))
-  );
-}
+/* Native right controls belong to the rightmost visible header. The fixed
+   sidebar toggle reserves its own leading space on every platform. */
 html.native-titlebar-overlay .app .content:not(.panel-open) .topbar,
 html.native-titlebar-overlay .app .content.panel-open .editor-tabsbar {
   padding-right: max(var(--topbar-inline-padding), var(--native-titlebar-right, 0px));
@@ -452,18 +443,7 @@ html.native-titlebar-overlay .app .window-titlebar-drag-strip {
   grid-template-columns: 0 minmax(0, 1fr);
 }
 
-/* Expanded hides the zero-width conversation column behind the editor. Float
-   its sidebar control back to the boundary it owns and reserve matching room
-   in the tab strip so open tabs never sit underneath it. */
-.content.panel-expanded :where(.topbar > .sidebar-boundary-toggle) {
-  position: fixed;
-  inset-block-start: calc(
-    (var(--topbar-height) - var(--sidebar-toggle-size)) / 2
-  );
-  inset-inline-start: var(--sidebar-toggle-inline-start);
-  z-index: var(--z-editor-overlay-control);
-  margin-inline-start: 0;
-}
+/* The expanded editor occupies the main column and inherits its reservation. */
 .content.panel-expanded .editor-tabsbar {
-  padding-inline-start: var(--sidebar-toggle-reserved-width);
+  padding-inline-start: var(--main-titlebar-leading-inset);
 }

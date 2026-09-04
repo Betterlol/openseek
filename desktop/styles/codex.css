@@ -67,7 +67,7 @@
   );
 }
 
-.codex-topbar > button:not(.topbar-toggle):not(.panel-toggle) {
+.codex-topbar > button:not(.panel-toggle) {
   flex: 0 0 auto;
   padding: 5px 9px;
   border-color: transparent;

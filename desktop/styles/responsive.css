@@ -49,17 +49,12 @@
      content column always has the full width. */
   .app {
     --sidebar-column-width: 0px;
-    --sidebar-boundary-width: 0px;
     --sidebar-toggle-size: 44px;
     --topbar-inline-padding: 12px;
     grid-template-columns: minmax(0, 1fr);
   }
   .app.sidebar-collapsed {
     grid-template-columns: minmax(0, 1fr);
-  }
-  .app:not(.sidebar-collapsed) {
-    --sidebar-boundary-width: var(--sidebar-drawer-width);
-    --sidebar-toggle-inline-inset: 0px;
   }
   .app > aside {
     position: fixed;
@@ -114,6 +109,9 @@
     transform: translateX(0);
     transition-delay: 0s;
   }
+  .content.panel-open .editor-tabsbar {
+    padding-inline-start: var(--sidebar-toggle-reserved-width);
+  }
   /* Drill-down: exactly one of tree/viewer shows. Opening a file
      closes the tree (the fileeditor's narrow Ctx flag); the
      breadcrumb's toggle brings the tree back. */
@@ -150,7 +148,7 @@
   }
   .settings-page,
   .skills-page {
-    padding: 24px 16px;
+    padding: calc(var(--topbar-height) + 24px) 16px 24px;
   }
 
   /* Touch targets at 44px and 16px fields — a smaller font makes iOS
@@ -170,17 +168,6 @@
   .panel-toggle {
     min-width: 44px;
     min-height: 44px;
-  }
-  /* The drawer overlays the main column, so its layout control leaves normal
-     flow and sits on the drawer boundary above the dimmed backdrop. */
-  .app:not(.sidebar-collapsed) .sidebar-boundary-toggle {
-    position: fixed;
-    inset-block-start: calc(
-      (var(--topbar-height) - var(--sidebar-toggle-size)) / 2
-    );
-    inset-inline-start: var(--sidebar-toggle-inline-start);
-    z-index: var(--z-sidebar-drawer-control);
-    margin-inline-start: 0;
   }
   .button,
   .portal-button-link {

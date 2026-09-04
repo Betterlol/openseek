@@ -59,7 +59,6 @@ extern "js" fn install_window_titlebar_geometry() -> @js.Value =
   #|       area.x < 0 || area.y < 0 || area.width <= 0 || area.height <= 0
   #|     )) throw new Error("Invalid Proton titlebar area");
   #|     html.classList.toggle("native-titlebar-overlay", area !== null);
-  #|     html.classList.toggle("native-titlebar-leading-controls", area !== null && area.x > 0);
   #|     if (area === null) {
   #|       for (const name of ["left", "right", "height"]) {
   #|         html.style.removeProperty(`--native-titlebar-${name}`);

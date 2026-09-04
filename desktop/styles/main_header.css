@@ -28,17 +28,24 @@ main {
   height: var(--topbar-height);
   padding-block: 0;
   padding-inline: var(--topbar-inline-padding);
+  padding-inline-start: var(--main-titlebar-leading-inset);
+  transition: padding-inline-start var(--drawer-duration) var(--drawer-easing);
   border-bottom: 1px solid var(--color-separator);
   background: var(--color-bg-surface);
 }
 
-.topbar-toggle {
-  flex: none;
+.sidebar-toggle {
+  position: fixed;
+  inset-block-start: calc(
+    (var(--topbar-height) - var(--sidebar-toggle-size)) / 2
+  );
+  inset-inline-start: var(--sidebar-toggle-inline-inset);
+  z-index: var(--z-titlebar-control);
+  -webkit-app-region: no-drag;
   display: grid;
   place-items: center;
   inline-size: var(--sidebar-toggle-size);
   block-size: var(--sidebar-toggle-size);
-  margin-inline-start: var(--topbar-leading-toggle-offset);
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
@@ -47,20 +54,9 @@ main {
   line-height: var(--line-height-tight);
   cursor: pointer;
 }
-.topbar-toggle:hover {
+.sidebar-toggle:hover {
   background: var(--color-bg-subtle);
   color: var(--color-text-primary);
-}
-
-/* Pages without a topbar float the same control at the live sidebar boundary. */
-.page-sidebar-toggle {
-  position: fixed;
-  inset-block-start: calc(
-    (var(--topbar-height) - var(--sidebar-toggle-size)) / 2
-  );
-  inset-inline-start: var(--sidebar-toggle-inline-start);
-  z-index: var(--z-titlebar-control);
-  margin-inline-start: 0;
 }
 
 .topbar-title {

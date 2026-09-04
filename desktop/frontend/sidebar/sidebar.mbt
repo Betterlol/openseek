@@ -225,9 +225,7 @@ pub fn component(
       }
     }
     @html.aside([
-      // Navigation actions live with the hierarchy they affect. This empty
-      // strip exists only under the macOS overlay titlebar, where it protects
-      // the traffic-light controls and remains a native drag region.
+      // Reserve chrome for the shell-owned fixed toggle and native controls.
       @html.div(class="sidebar-header", @html.nothing),
       @html.div(class="sidebar-main", [
         @html.div(class="sidebar-section sessions", rows),

@@ -59,6 +59,7 @@ button.panel-toggle:not(:disabled):hover {
    opens/closes). Always rendered — the editor's child order is
    structural (see panel_view). */
 .editor-tabsbar {
+  transition: padding-inline-start var(--drawer-duration) var(--drawer-easing);
   display: flex;
   align-items: center;
   gap: 10px;

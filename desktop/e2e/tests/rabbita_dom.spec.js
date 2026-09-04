@@ -1016,35 +1016,31 @@ test('new chat materializes on send, and archive and restore update the sidebar'
   expect(app.pageErrors).toEqual([]);
 });
 
-test('sidebar toggle follows the sidebar boundary in the main header', async ({ page }) => {
+test('sidebar toggle stays fixed throughout the sidebar animation', async ({ page }) => {
   const app = new DesktopBrowserHarness(page);
   await app.install();
   await app.goto();
 
-  const sidebar = page.locator('aside');
-  const topbar = page.locator('.topbar');
-  const closeToggle = topbar.getByRole('button', { name: 'Hide sidebar' });
-
-  await expect(closeToggle).toBeVisible();
-  await expect(page.locator('.sidebar-header')).not.toBeVisible();
-  const [sidebarBounds, toggleBounds] = await Promise.all([
-    sidebar.boundingBox(),
-    closeToggle.boundingBox(),
-  ]);
-  expect(sidebarBounds).not.toBeNull();
-  expect(toggleBounds).not.toBeNull();
-  expect(toggleBounds.x).toBeGreaterThanOrEqual(sidebarBounds.x + sidebarBounds.width);
-  expect(toggleBounds.x - sidebarBounds.x - sidebarBounds.width).toBeLessThan(32);
-
-  await closeToggle.click();
-  const reopenToggle = topbar.getByRole('button', { name: 'Show sidebar' });
-  await expect(reopenToggle).toBeVisible();
-  await expect(sidebar).not.toBeVisible();
-  await expect.poll(async () => (await reopenToggle.boundingBox()).x).toBeLessThan(32);
-
-  await reopenToggle.click();
-  await expect(closeToggle).toBeVisible();
-  await expect(reopenToggle).toHaveCount(0);
+  for (const name of ['Hide sidebar', 'Show sidebar']) {
+    const toggle = page.getByRole('button', { name, exact: true });
+    const frames = await toggle.evaluate(button => new Promise(resolve => {
+      const start = performance.now();
+      const positions = [button.getBoundingClientRect().x];
+      button.click();
+      const sample = now => {
+        positions.push(button.getBoundingClientRect().x);
+        if (now - start < 250) requestAnimationFrame(sample);
+        else resolve({ positions, connected: button.isConnected });
+      };
+      requestAnimationFrame(sample);
+    }));
+    expect(frames.connected).toBe(true);
+    expect(Math.max(...frames.positions) - Math.min(...frames.positions)).toBeLessThan(0.5);
+    await expect(page.getByRole('button', {
+      name: name === 'Hide sidebar' ? 'Show sidebar' : 'Hide sidebar',
+      exact: true,
+    })).toBeVisible();
+  }
   expect(app.pageErrors).toEqual([]);
 });
 
