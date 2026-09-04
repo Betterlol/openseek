@@ -7,6 +7,8 @@ import {
 }
 
 // Values
+pub const CloseFocusedMenuCommand : String = "app.close_focused"
+
 pub const ExtensionId : String = "openseek-desktop"
 
 pub let agent_approval : Command[@protocol.ApprovalPayload, @protocol.ApprovalReply]
@@ -24,6 +26,10 @@ pub let agent_runs : Command[@protocol.RunsPayload, @protocol.RunsReply]
 pub let agent_start : Command[@protocol.StartPayload, @protocol.StartReply]
 
 pub let agent_steer : Command[@protocol.SteerPayload, @protocol.SteerReply]
+
+pub let app_close_window : Command[@protocol.EmptyPayload, @protocol.EmptyReply]
+
+pub let app_focused_browser : Command[@protocol.EmptyPayload, @protocol.AppFocusedBrowserReply]
 
 pub let app_info : Command[@protocol.EmptyPayload, @protocol.AppInfoReply]
 

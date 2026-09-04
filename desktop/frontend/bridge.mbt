@@ -296,6 +296,8 @@ fn bridge_event(dispatch : @cmd.Emit[Msg], event : @bridge.Event) -> @cmd.Cmd {
     @bridge.Event::MenuCommand(command_id~) =>
       if command_id == @commands.app_open_devtools.name() {
         dispatch(AppDeveloperToolsRequested)
+      } else if command_id == @commands.CloseFocusedMenuCommand {
+        close_focused(dispatch)
       } else {
         @cmd.none
       }

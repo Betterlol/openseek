@@ -106,6 +106,7 @@ fn panel_view(
     class=@fileeditor.editor_classes(input.file_panel, input.file_ctx) +
       " " +
       mode,
+    attrs=@html.Attrs::build().tabindex(-1),
     [
       @fileeditor.resize_handle_view(),
       @dock.tabs_bar(

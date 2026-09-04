@@ -351,10 +351,26 @@ fn BrowserViews::close(
   // Closing a view that is already gone is not an error: the close raced a
   // page reload's `close_all`.
   guard self.window is Some(window) else { return Acknowledged }
-  if window.view(view_name(payload.id)) is Some(_) {
+  if window.view(view_name(payload.id)) is Some(view) {
+    let focused = view.is_focused()
+    if focused {
+      window.browser().focus()
+    }
     window.remove_view(view_name(payload.id))
   }
   Acknowledged
+}
+
+///|
+fn BrowserViews::focused_browser(
+  self : BrowserViews,
+) -> @protocol.AppFocusedBrowserReply raise {
+  for view in self.attached_window().views() {
+    if browser_view_id(view.id()) is Some(id) && view.is_focused() {
+      return { id: Some(id), }
+    }
+  }
+  { id: None, }
 }
 
 ///|
@@ -364,6 +380,13 @@ fn BrowserViews::close(
 /// the same create-if-missing handler as `browser.open`.
 fn window_endpoints(views : BrowserViews) -> Array[@endpoint.Endpoint] {
   [
+    @endpoint.Endpoint::window(@commands.app_close_window, (_, _) => {
+      views.attached_window().close()
+      Acknowledged
+    }),
+    @endpoint.Endpoint::window(@commands.app_focused_browser, (_, _) => {
+      views.focused_browser()
+    }),
     @endpoint.Endpoint::window(@commands.browser_open, (_, payload) => {
       views.open(payload)
     }),

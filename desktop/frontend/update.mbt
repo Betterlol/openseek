@@ -5044,6 +5044,35 @@ fn update_msg(
         ),
         model,
       )
+    AppCloseFocused(region) => {
+      guard model.is_desktop else { return (@cmd.none, model) }
+      match region {
+        Window =>
+          (
+            browser_op(
+              dispatch,
+              @commands.app_close_window,
+              @protocol.NoPayload,
+              quiet=false,
+            ),
+            model,
+          )
+        Dock =>
+          match model.dock.active {
+            Some(tab) => {
+              let (cmd, model) = update_msg(
+                dispatch,
+                Dock(TabClosed(tab)),
+                model,
+              )
+              (@cmd.batch([cmd, focus_dock_after_close()]), model)
+            }
+            None => (@cmd.none, model)
+          }
+        Terminal =>
+          update_msg(dispatch, Terminal(@terminal.CloseActiveTerminal), model)
+      }
+    }
     BrowserPaneMeasured(rect~) => {
       // A rectangle for a view that already left the screen (or a zero
       // rectangle from the observer watching a hidden pane) is stale.

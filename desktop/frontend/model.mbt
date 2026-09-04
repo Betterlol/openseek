@@ -2060,6 +2060,8 @@ priv enum Msg {
   // The native Developer menu always inspects the SeekMoon frontend page.
   // Embedded Browser views can receive their own explicit action later.
   AppDeveloperToolsRequested
+  // The native Close menu routes by keyboard focus, not panel visibility.
+  AppCloseFocused(CloseRegion)
   // The browser pane's on-screen rectangle, reported after a render by the
   // measurer or the pane's ResizeObserver; drives view bounds/visibility.
   BrowserPaneMeasured(rect~ : @preview.Rect)
