@@ -299,14 +299,20 @@ html {
   --sidebar-drawer-width: min(320px, 86vw);
   --sidebar-toggle-size: 28px;
   --topbar-inline-padding: 18px;
-  --topbar-leading-toggle-offset: -4px;
-  --sidebar-toggle-inline-inset: calc(
-    var(--topbar-inline-padding) + var(--topbar-leading-toggle-offset)
+  --app-header-height: 46px;
+  --topbar-height: max(var(--app-header-height), var(--native-titlebar-height, 0px));
+  --sidebar-toggle-inline-inset: max(
+    calc(var(--topbar-inline-padding) - 4px),
+    var(--native-titlebar-left, 0px)
   );
   --sidebar-toggle-trailing-gap: 12px;
   --sidebar-toggle-reserved-width: calc(
     var(--sidebar-toggle-inline-inset) + var(--sidebar-toggle-size) +
       var(--sidebar-toggle-trailing-gap)
+  );
+  --main-titlebar-leading-inset: max(
+    var(--topbar-inline-padding),
+    calc(var(--sidebar-toggle-reserved-width) - var(--sidebar-column-width))
   );
   display: grid;
   /* The sidebar track reads `--sidebar-width`, set as the user drags the
@@ -340,14 +346,14 @@ html {
    Empty chrome drags the native window; every interactive descendant opts
    back out. The inline mirror in window_titlebar.mbt makes CEF publish the
    initial regions after DOM creation. */
-.app.native-titlebar-overlay .sidebar-header,
-.app.native-titlebar-overlay .topbar,
-.app.native-titlebar-overlay .editor-tabsbar,
-.app.native-titlebar-overlay .window-titlebar-drag-strip {
+html.native-titlebar-overlay .app .sidebar-header,
+html.native-titlebar-overlay .app .topbar,
+html.native-titlebar-overlay .app .editor-tabsbar,
+html.native-titlebar-overlay .app .window-titlebar-drag-strip {
   -webkit-app-region: drag;
   user-select: none;
 }
-.app.native-titlebar-overlay
+html.native-titlebar-overlay .app
   :is(.sidebar-header, .topbar, .editor-tabsbar)
   :is(
     button,
@@ -370,50 +376,22 @@ html {
   position: relative;
 }
 .window-titlebar-drag-strip {
+  display: none;
   position: absolute;
   inset: 0 0 auto 0;
   z-index: 2;
-  height: 46px;
+  height: var(--topbar-height);
 }
 
-/* macOS keeps its traffic-light controls in the top-left corner. Whichever
-   header owns the sidebar toggle reserves that native hit area. */
-.app.native-apple-titlebar {
-  --native-titlebar-leading-inset: 88px;
+/* Native right controls belong to the rightmost visible header. The fixed
+   sidebar toggle reserves its own leading space on every platform. */
+html.native-titlebar-overlay .app .content:not(.panel-open) .topbar,
+html.native-titlebar-overlay .app .content.panel-open .editor-tabsbar {
+  padding-right: max(var(--topbar-inline-padding), var(--native-titlebar-right, 0px));
 }
-.app.native-apple-titlebar.sidebar-collapsed {
-  --sidebar-toggle-inline-inset: var(--native-titlebar-leading-inset);
-}
-.app.native-apple-titlebar .sidebar-header,
-.app.native-apple-titlebar.sidebar-collapsed .topbar {
-  padding-inline-start: var(--native-titlebar-leading-inset);
-}
-
-/* Windows keeps its real minimize/maximize/close cluster in the top-right.
-   Compact all app header variants to one 40px row and reserve the live
-   caption-button width on whichever column reaches the window edge. 150px is
-   Proton's Windows overlay reserve at 100% scale; CSS pixels and native
-   logical coordinates scale together at higher DPI. */
-.app.native-windows-titlebar {
-  --native-titlebar-height: 40px;
-  --native-titlebar-caption-inset: 150px;
-}
-.app.native-windows-titlebar main {
-  --topbar-height: var(--native-titlebar-height);
-}
-.app.native-windows-titlebar .sidebar-header,
-.app.native-windows-titlebar .editor-tabsbar {
-  height: var(--native-titlebar-height);
-}
-.app.native-windows-titlebar .content:not(.panel-open) .topbar {
-  padding-right: var(--native-titlebar-caption-inset);
-}
-.app.native-windows-titlebar .content.panel-open .editor-tabsbar {
-  padding-right: var(--native-titlebar-caption-inset);
-}
-.app.native-windows-titlebar .window-titlebar-drag-strip {
-  right: var(--native-titlebar-caption-inset);
-  height: var(--native-titlebar-height);
+html.native-titlebar-overlay .app .window-titlebar-drag-strip {
+  display: block;
+  right: var(--native-titlebar-right, 0px);
 }
 /* The conversation (left) and the editor (right) live side by side as two
    independent parts. The editor track is zero-width until the panel
@@ -465,21 +443,7 @@ html {
   grid-template-columns: 0 minmax(0, 1fr);
 }
 
-/* With both the sidebar collapsed and the editor expanded, the reopen action
-   would otherwise stay inside the main column's zero-width track. Float that
-   one fallback above the editor and reserve matching tab-strip room. */
-.app.sidebar-collapsed
-  .content.panel-expanded
-  .topbar
-  > .topbar-toggle {
-  position: fixed;
-  inset-block-start: calc(
-    (var(--topbar-height) - var(--sidebar-toggle-size)) / 2
-  );
-  inset-inline-start: var(--sidebar-toggle-inline-inset);
-  z-index: var(--z-editor-overlay-control);
-  margin-inline-start: 0;
-}
-.app.sidebar-collapsed .content.panel-expanded .editor-tabsbar {
-  padding-inline-start: var(--sidebar-toggle-reserved-width);
+/* The expanded editor occupies the main column and inherits its reservation. */
+.content.panel-expanded .editor-tabsbar {
+  padding-inline-start: var(--main-titlebar-leading-inset);
 }

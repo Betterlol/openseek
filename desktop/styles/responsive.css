@@ -26,8 +26,8 @@
 }
 
 @media (max-width: 760px) {
-  main {
-    --topbar-height: 52px;
+  .app {
+    --app-header-height: 52px;
   }
 
   .quick-open-backdrop {
@@ -50,6 +50,7 @@
   .app {
     --sidebar-column-width: 0px;
     --sidebar-toggle-size: 44px;
+    --topbar-inline-padding: 12px;
     grid-template-columns: minmax(0, 1fr);
   }
   .app.sidebar-collapsed {
@@ -108,6 +109,9 @@
     transform: translateX(0);
     transition-delay: 0s;
   }
+  .content.panel-open .editor-tabsbar {
+    padding-inline-start: var(--sidebar-toggle-reserved-width);
+  }
   /* Drill-down: exactly one of tree/viewer shows. Opening a file
      closes the tree (the fileeditor's narrow Ctx flag); the
      breadcrumb's toggle brings the tree back. */
@@ -144,7 +148,7 @@
   }
   .settings-page,
   .skills-page {
-    padding: 24px 16px;
+    padding: calc(var(--topbar-height) + 24px) 16px 24px;
   }
 
   /* Touch targets at 44px and 16px fields — a smaller font makes iOS
@@ -159,36 +163,11 @@
   .topbar,
   .sidebar-header,
   .editor-tabsbar {
-    height: 52px;
+    height: var(--topbar-height);
   }
-  /* The fallback on pages without a topbar keeps the pre-drawer phone inset. */
-  .page-sidebar-toggle {
-    inset-block-start: 4px;
-    inset-inline-start: 8px;
-  }
-  .topbar-toggle,
   .panel-toggle {
     min-width: 44px;
     min-height: 44px;
-  }
-  /* A narrow Windows desktop window still shares its first row with native
-     caption buttons. Keep that row compact instead of applying phone touch
-     geometry that would make native and web chrome diverge. */
-  .app.native-windows-titlebar {
-    --sidebar-toggle-size: 32px;
-  }
-  .app.native-windows-titlebar main {
-    --topbar-height: var(--native-titlebar-height);
-  }
-  .app.native-windows-titlebar .topbar,
-  .app.native-windows-titlebar .sidebar-header,
-  .app.native-windows-titlebar .editor-tabsbar {
-    height: var(--native-titlebar-height);
-  }
-  .app.native-windows-titlebar .topbar-toggle,
-  .app.native-windows-titlebar .panel-toggle {
-    min-width: 32px;
-    min-height: 32px;
   }
   .button,
   .portal-button-link {

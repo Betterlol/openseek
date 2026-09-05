@@ -393,9 +393,8 @@ fn CodexGitStatus::presentation(
 
 ///|
 /// Shell-owned controls embedded in the Codex topbar. Passing commands keeps
-/// terminal, file-editor, sidebar, and external-link policy in the root shell.
+/// terminal, file-editor, and external-link policy in the root shell.
 pub(all) struct PageActions {
-  toggle_sidebar : @cmd.Cmd
   toggle_terminal : @cmd.Cmd
   toggle_files : @cmd.Cmd
   workspace_label : (@common.Uri) -> String
@@ -415,7 +414,6 @@ pub fn State::page(
   self : State,
   dispatch : @cmd.Emit[Msg],
   channel : @interop.ChannelId,
-  sidebar_open : Bool,
   terminal_open : Bool,
   file_panel_open : Bool,
   actions : PageActions,
@@ -423,19 +421,6 @@ pub fn State::page(
   // Account actions (sign in/out, the pending sign-in page) live in the
   // Settings page's Codex group; the topbar keeps only the status label.
   let topbar : Array[@html.Html] = []
-  // The sidebar header owns the close action while visible; Codex only needs
-  // to supply the reopen action after the sidebar has collapsed.
-  if !sidebar_open {
-    topbar.push(
-      @html.button(
-        class="topbar-toggle",
-        title="Show sidebar",
-        on_click=actions.toggle_sidebar,
-        attrs=@html.Attrs::build().aria_label("Show sidebar"),
-        icon(icon_layout_sidebar_left),
-      ),
-    )
-  }
   let title = match self.selection {
     CodexDraftTask(_) => "New chat"
     CodexStoredTask(thread) => thread.title

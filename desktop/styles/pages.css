@@ -118,7 +118,7 @@ a:where(.setting-link) {
   grid-row: 1 / -1;
   min-height: 0;
   overflow: auto;
-  padding: 40px 28px 28px;
+  padding: calc(var(--topbar-height) + 24px) 28px 28px;
 }
 
 .settings-page-inner {
@@ -366,7 +366,7 @@ h2 {
   grid-row: 1 / -1;
   min-height: 0;
   overflow: auto;
-  padding: 40px 28px 28px;
+  padding: calc(var(--topbar-height) + 24px) 28px 28px;
 }
 
 .skills-page-inner {

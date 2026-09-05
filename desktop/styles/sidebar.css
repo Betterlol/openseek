@@ -43,15 +43,9 @@ html.is-resizing .sidebar-resize-handle {
   background: var(--color-accent-soft);
 }
 
-/* The sidebar's own header owns its close action while the sidebar is visible.
-   Its height matches the main topbar so collapsing swaps the control between
-   columns without changing its vertical position. */
+/* The fixed shell toggle needs a header even without native titlebar controls. */
 .sidebar-header {
-  display: flex;
-  align-items: center;
-  height: 46px;
-  padding-block: 0;
-  padding-inline: var(--topbar-inline-padding);
+  height: var(--topbar-height);
   border-bottom: 1px solid var(--color-separator);
 }
 
@@ -70,15 +64,10 @@ html.is-resizing .sidebar-resize-handle {
      off the edge on its own; an overlay bar (macOS) floats above the content
      and reserves nothing, so there the whole inset has to be real padding.
      `--scrollbar-lane` is the measured width of the gutter the bar claims. */
-  padding-top: 12px;
+  padding-top: 0;
   padding-right: max(0px, var(--sidebar-inset) - var(--scrollbar-lane));
   scrollbar-gutter: stable;
 }
-.app.native-apple-titlebar .sidebar-main {
-  /* The titlebar strip already contributes the sidebar's leading rhythm. */
-  padding-top: 0;
-}
-
 .sidebar-section {
   display: grid;
   gap: 4px;

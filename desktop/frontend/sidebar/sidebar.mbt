@@ -28,7 +28,6 @@ pub(all) struct Input {
 
 ///|
 pub(all) struct Actions {
-  toggle : @cmd.Cmd
   update : @cmd.Cmd
   open_skills : @cmd.Cmd
   open_settings : @cmd.Cmd
@@ -226,17 +225,8 @@ pub fn component(
       }
     }
     @html.aside([
-      // While the sidebar is visible, its own header owns the close action.
-      // The collapsed main topbar supplies the corresponding reopen action.
-      @html.div(class="sidebar-header", [
-        @html.button(
-          class="topbar-toggle",
-          title="Hide sidebar",
-          on_click=actions.toggle,
-          attrs=@html.Attrs::build().aria_label("Hide sidebar"),
-          @icons.icon(@icons.icon_layout_sidebar_left),
-        ),
-      ]),
+      // Reserve chrome for the shell-owned fixed toggle and native controls.
+      @html.div(class="sidebar-header", @html.nothing),
       @html.div(class="sidebar-main", [
         @html.div(class="sidebar-section sessions", rows),
       ]),

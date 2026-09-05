@@ -210,6 +210,16 @@ async fn main {
         bridge.window_closed()
       },
     )
+    // Geometry can change without a DOM fullscreen event (native fullscreen,
+    // display scaling, or page zoom). Only this window's page is notified.
+    .on_window_event(async fn(_, event) noraise {
+      if event is StateChanged(_) {
+        bridge.notify_window_chrome_changed() catch {
+          // Cancellation during shutdown leaves no page to notify.
+          _ => ()
+        }
+      }
+    })
     // Browser view events reach the page as `browser.event` notifications;
     // views that are not browser tabs are not the frontend's business.
     .on_view_event(async fn(view, event) noraise {

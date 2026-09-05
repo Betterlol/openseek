@@ -162,13 +162,20 @@ let semantic_search_progress_event : @proton_contract.Event[
 )
 
 ///|
-/// The one window-local event: native browser view events (navigation,
+/// Window-local native browser view events (navigation,
 /// title, load state), pumped in by `App::on_view_event` through
 /// `DesktopBridgeActor::notify_browser_event`. It deliberately has no
 /// `NotificationKind` — the shared wire catalog must never carry it to a
 /// relay client, which has no native views.
 let browser_event : @proton_contract.Event[Json] = @commands.extension_contract.event(
   "browser.event",
+)
+
+///|
+/// A window-local invalidation, not shared host state. The renderer queries
+/// Proton's current titlebar area; no native coordinates enter the relay.
+let window_chrome_changed : @proton_contract.Event[@protocol.EmptyPayload] = @commands.extension_contract.event(
+  "window.chrome_changed",
 )
 
 ///|
@@ -182,6 +189,7 @@ priv enum BridgeControl {
   PageConnected(@proton.CommandContext, @async.Queue[Unit])
   WindowReady(@proton.WindowEventEmitter)
   WindowClosed
+  WindowChromeChanged
 }
 
 ///|
@@ -191,6 +199,7 @@ priv enum BridgeControl {
 priv enum PageNotification {
   Hub(@protocol.Notification)
   BrowserEvent(Json)
+  WindowChromeChanged
 }
 
 ///|
@@ -247,6 +256,7 @@ async fn PageEventTarget::emit(
     Hub(SemanticSearchProgress(payload)) =>
       self.events.emit(semantic_search_progress_event, payload)
     BrowserEvent(payload) => self.events.emit(browser_event, payload)
+    WindowChromeChanged => self.events.emit(window_chrome_changed, NoPayload)
   }
 }
 
@@ -305,6 +315,13 @@ pub async fn DesktopBridgeActor::notify_browser_event(
   params : Json,
 ) -> Unit {
   self.browser_events.put(params)
+}
+
+///|
+pub async fn DesktopBridgeActor::notify_window_chrome_changed(
+  self : DesktopBridgeActor,
+) -> Unit {
+  self.controls.put(WindowChromeChanged)
 }
 
 ///|
@@ -484,6 +501,8 @@ pub async fn DesktopBridgeActor::run(self : DesktopBridgeActor) -> Unit {
               target = None
               pending.clear()
             }
+            WindowChromeChanged =>
+              deliver_to_page(connected, target, pending, WindowChromeChanged)
           }
         Deliver(notification) =>
           deliver_to_page(connected, target, pending, notification)

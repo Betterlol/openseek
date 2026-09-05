@@ -1372,19 +1372,6 @@ fn topbar_view(
   conv : Conversation,
 ) -> @html.Html {
   let items : Array[@html.Html] = []
-  // The visible sidebar owns its close action. Once collapsed, the topbar
-  // supplies the reopen action at the window's leading edge.
-  if !model.sidebar_open {
-    items.push(
-      @html.button(
-        class="topbar-toggle",
-        title="Show sidebar",
-        on_click=dispatch(ToggleSidebar),
-        attrs=@html.Attrs::build().aria_label("Show sidebar"),
-        icon(icon_layout_sidebar_left),
-      ),
-    )
-  }
   items.push(
     @html.span(
       class="topbar-title",
@@ -1492,30 +1479,6 @@ fn onboarding_view(dispatch : @cmd.Emit[Msg], model : Model) -> @html.Html {
     _ => card.push(@html.p("Connecting to this device…"))
   }
   @html.section(class="onboarding", [@html.div(class="onboarding-card", card)])
-}
-
-///|
-/// Skills and Settings have no topbar, so while the sidebar is collapsed they
-/// float the reopen action at the window's leading edge.
-fn page_with_toggle(
-  dispatch : @cmd.Emit[Msg],
-  model : Model,
-  page : @html.Html,
-) -> Array[@html.Html] {
-  if model.sidebar_open {
-    [page]
-  } else {
-    [
-      @html.button(
-        class="topbar-toggle page-sidebar-toggle",
-        title="Show sidebar",
-        on_click=dispatch(ToggleSidebar),
-        attrs=@html.Attrs::build().aria_label("Show sidebar"),
-        icon(icon_layout_sidebar_left),
-      ),
-      page,
-    ]
-  }
 }
 
 ///|
@@ -1643,25 +1606,12 @@ fn console_gate_view(
 }
 
 ///|
-/// Root shell classes keep platform chrome geometry explicit in CSS. Browser
-/// pages and Linux retain ordinary header geometry; native Apple and Windows
-/// windows expose the distinct control reserves their overlays require.
-fn app_shell_class(
-  sidebar_open : Bool,
-  is_desktop : Bool,
-  platform : String,
-  is_windows? : Bool = @common.platform_is_win32(),
-) -> String {
+/// Native chrome geometry is owned by the window subscription, independently
+/// of the application view's sidebar state.
+fn app_shell_class(sidebar_open : Bool) -> String {
   let classes : Array[String] = ["app"]
   if !sidebar_open {
     classes.push("sidebar-collapsed")
-  }
-  if is_desktop && browser_platform_is_apple(platform) {
-    classes.push("native-titlebar-overlay")
-    classes.push("native-apple-titlebar")
-  } else if is_desktop && is_windows {
-    classes.push("native-titlebar-overlay")
-    classes.push("native-windows-titlebar")
   }
   classes.join(" ")
 }
@@ -1774,7 +1724,6 @@ fn view(
   let window_titlebar_drag_strip = window_titlebar_drag_strip_visible(
     window_titlebar_page,
     model.is_desktop,
-    app_shortcut_browser_platform(),
   )
   let content = match model.screen {
     // The one fork that decides what the conversation column is. A chat needs
@@ -1785,17 +1734,12 @@ fn view(
     Chat =>
       if model.conversation_load_failure is Some(failure) &&
         model.selected_conversation == Some(failure.target) {
-        page_with_toggle(
-          dispatch,
-          model,
-          conversation_load_failed_view(dispatch, failure.message),
-        )
+        [conversation_load_failed_view(dispatch, failure.message)]
       } else if !model.selected_conversation_loaded() {
-        page_with_toggle(dispatch, model, conversation_loading_view())
+        [conversation_loading_view()]
       } else {
         match model.active_conversation() {
-          None =>
-            page_with_toggle(dispatch, model, onboarding_view(dispatch, model))
+          None => [onboarding_view(dispatch, model)]
           Some(conv) =>
             [
               topbar_view(
@@ -1814,11 +1758,9 @@ fn view(
       model.codex.page(
         dispatch.map(msg => Codex(channel=model.focused, msg)),
         model.focused,
-        model.sidebar_open,
         terminal_panel_visible,
         file_panel_visible,
         @codex.PageActions::{
-          toggle_sidebar: dispatch(ToggleSidebar),
           toggle_terminal,
           toggle_files: toggle_right_panel,
           workspace_label: workspace => @resource.label(workspace),
@@ -1826,11 +1768,9 @@ fn view(
           composer: codex_composer_html,
         },
       )
-    Skills => page_with_toggle(dispatch, model, skills_html)
-    Settings =>
-      page_with_toggle(dispatch, model, settings_page(dispatch, model))
-    WorkspaceSettings(..) =>
-      page_with_toggle(dispatch, model, workspace_settings_html)
+    Skills => [skills_html]
+    Settings => [settings_page(dispatch, model)]
+    WorkspaceSettings(..) => [workspace_settings_html]
   }
   // The app is `sidebar | content`; `content` itself splits into the
   // conversation (left) and the editor (right) as two independent parts, so
@@ -1854,6 +1794,11 @@ fn view(
   } else {
     content
   }
+  let sidebar_toggle_label = if model.sidebar_open {
+    "Hide sidebar"
+  } else {
+    "Show sidebar"
+  }
   let children : Array[@html.Html] = [
     sidebar_html,
     @html.div(class=content_class, [
@@ -1868,6 +1813,14 @@ fn view(
       right_panel_html,
       terminal_html,
     ]),
+    // One shell-owned control remains outside all animated content tracks.
+    @html.button(
+      class="sidebar-toggle",
+      title=sidebar_toggle_label,
+      on_click=dispatch(ToggleSidebar),
+      attrs=@html.Attrs::build().aria_label(sidebar_toggle_label),
+      icon(icon_layout_sidebar_left),
+    ),
   ]
   // On the narrow layout the sidebar's stable backdrop fades with the drawer;
   // keeping it mounted lets the closing transition finish before it becomes
@@ -1930,14 +1883,7 @@ fn view(
   if model.is_desktop && model.bridge_state() is BridgeLost(message) {
     children.push(bridge_lost_overlay(message))
   }
-  @html.div(
-    class=app_shell_class(
-      model.sidebar_open,
-      model.is_desktop,
-      app_shortcut_browser_platform(),
-    ),
-    children,
-  )
+  @html.div(class=app_shell_class(model.sidebar_open), children)
 }
 
 ///|

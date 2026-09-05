@@ -25,7 +25,9 @@ async function installDesktop(page) {
     window.desktopEvent = (name, payload) => {
       for (const callback of listeners.get(name) || []) callback({ payload });
     };
+    window.titlebarArea = null;
     window.__MoonBit__ = {
+      getTitlebarArea: async () => window.titlebarArea,
       app: events,
       events,
       openseek: new Proxy({}, {
@@ -48,6 +50,57 @@ async function closeFocused(page) {
     command_id: 'app.close_focused',
   }));
 }
+
+test('fixed sidebar toggle respects native geometry across pages and fullscreen', async ({ page }) => {
+  const app = await installDesktop(page);
+  const toggle = page.getByRole('button', { name: /^(Hide|Show) sidebar$/ });
+  await page.evaluate(() => {
+    window.titlebarArea = { x: 88, y: 0, width: innerWidth - 88, height: 46 };
+    window.desktopEvent('openseek.window.chrome_changed', {});
+  });
+  await expect.poll(async () => (await toggle.boundingBox()).x).toBe(88);
+  const original = await toggle.elementHandle();
+  for (const name of ['Hide sidebar', 'Show sidebar']) {
+    await expect(toggle).toHaveAccessibleName(name);
+    const frames = await toggle.evaluate(button => new Promise(resolve => {
+      const positions = [button.getBoundingClientRect().x];
+      const start = performance.now();
+      button.click();
+      const sample = now => {
+        positions.push(button.getBoundingClientRect().x);
+        if (now - start < 250) requestAnimationFrame(sample);
+        else resolve(positions);
+      };
+      requestAnimationFrame(sample);
+    }));
+    expect(frames.every(x => x === 88)).toBe(true);
+  }
+  await page.getByRole('button', { name: 'Show panel', exact: true }).click();
+  await page.getByRole('button', { name: 'Expand panel', exact: true }).click();
+  await expect(toggle).toBeVisible();
+  await toggle.click();
+  await expect(toggle).toHaveAccessibleName('Show sidebar');
+  await expect.poll(async () => (await toggle.boundingBox()).x).toBe(88);
+  await page.getByRole('button', { name: 'Hide panel', exact: true }).click();
+  await toggle.click();
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible();
+  await expect(toggle).toHaveCount(1);
+  expect(await original.evaluate(button => button.isConnected)).toBe(true);
+  await page.setViewportSize({ width: 640, height: 850 });
+  await expect.poll(async () => (await toggle.boundingBox()).x).toBe(88);
+  await page.evaluate(() => {
+    window.titlebarArea = null;
+    window.desktopEvent('openseek.window.chrome_changed', {});
+  });
+  await expect.poll(async () => (await toggle.boundingBox()).x).toBe(8);
+  // A real click must reach the fixed control above the narrow drawer.
+  await toggle.click();
+  await expect(toggle).toHaveAccessibleName('Hide sidebar');
+  await toggle.click();
+  await expect(toggle).toHaveAccessibleName('Show sidebar');
+  expect(app.pageErrors).toEqual([]);
+});
 
 test('Launcher tabs receive focus and Close never closes the window', async ({ page }) => {
   const app = await installDesktop(page);
