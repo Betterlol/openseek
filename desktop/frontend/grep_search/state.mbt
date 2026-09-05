@@ -24,6 +24,7 @@ fn fresh_page() -> Page {
     limit_hit: false,
     collapsed: Map([]),
     selected: Map([]),
+    semantic_filter: AllSemanticResults,
     visible_lines: InitialVisibleSearchLines,
     phase: Idle,
     pattern_repair_phase: PatternRepairIdle,
@@ -440,46 +441,8 @@ pub fn State::handle(self : State, msg : Msg, input : Input) -> State {
       }
       { ..self, page: { ..page, selected, }, }
     }
-    RestoreSemanticReference(reference) => {
-      let generation = self.generation + 1
-      let hits : Array[@protocol.SemanticSearchHit] = reference.matches.map(hit => {
-        path: hit.file,
-        rule_id: hit.pattern,
-        description: None,
-        start_line: hit.start_line,
-        start_column: hit.start_column,
-        end_line: hit.end_line,
-        end_column: hit.end_column,
-        matched_source: hit.matched_source,
-        source_context: [],
-      })
-      let selected : Map[String, Bool] = Map([])
-      for hit in hits {
-        selected[semantic_hit_key(hit)] = true
-      }
-      let files : Map[String, Bool] = Map([])
-      for hit in hits {
-        files[hit.path] = true
-      }
-      {
-        generation,
-        page: {
-          ..page,
-          mode: Semantic,
-          semantic: { patterns: reference.patterns, hits, partial: false, },
-          include_glob: reference.include_glob,
-          exclude_glob: reference.exclude_glob,
-          match_count: hits.length(),
-          file_count: files.length(),
-          limit_hit: false,
-          collapsed: Map([]),
-          selected,
-          visible_lines: InitialVisibleSearchLines.min(hits.length()),
-          phase: Ready,
-          generation,
-        },
-      }
-    }
+    SetSemanticResultFilter(filter) =>
+      { ..self, page: { ..page, semantic_filter: filter, }, }
     RequestStarted(owner~, root~, generation~) =>
       if input.owner == owner &&
         input.root_text() == root &&

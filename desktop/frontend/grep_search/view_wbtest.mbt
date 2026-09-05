@@ -4,9 +4,7 @@
 fn render_search(state : State, input : Input) -> String {
   let emit : @cmd.Emit[Msg] = @cmd.Emit(_ => @cmd.none)
   @vdom.server_side_render(() => {
-    state
-    .explorer_view(input, emit, (_, _) => @cmd.none, _ => @cmd.none)
-    .to_virtual_dom()
+    state.explorer_view(input, emit, (_, _) => @cmd.none).to_virtual_dom()
   })
 }
 
@@ -203,38 +201,52 @@ test "semantic selection stays independent from its presentation groups" {
 
 ///|
 #cfg(not(target="js"))
-test "semantic reference restoration keeps the selected snapshot" {
+test "semantic selected-only view keeps the original selected hits" {
   let owner : @interop.ConversationKey = {
     channel: @interop.ChannelId::Local,
     session: "semantic-restore",
   }
   let root = @common.Uri::parse("file:///work")
   let input : Input = { owner, root: Some(root), }
-  let reference : @mention_context.SemanticSearchReference = {
-    id: "reference",
-    root: root.path,
-    patterns: ["inspect($(x:arg))"],
-    include_glob: "src/**",
-    exclude_glob: "",
-    matches: [
-      {
-        pattern: "inspect($(x:arg))",
-        file: "src/main.mbt",
-        start_line: 4,
-        start_column: 1,
-        end_line: 4,
-        end_column: 10,
-        matched_source: "inspect(x)",
-      },
-    ],
+  let state = State::empty()
+    .handle(ModeChanged(Semantic), input)
+    .handle(PatternChanged(0, "inspect($(x:arg))"), input)
+    .handle(Submit, input)
+  let page = state.page
+  let hit : @protocol.SemanticSearchHit = {
+    path: "src/main.mbt",
+    rule_id: "inspect($(x:arg))",
+    description: None,
+    start_line: 4,
+    start_column: 1,
+    end_line: 4,
+    end_column: 10,
+    matched_source: "inspect(x)",
+    source_context: [],
   }
-  let restored = State::empty().handle(
-    RestoreSemanticReference(reference),
+  let ready = state
+    .handle(
+      SemanticLoaded(owner~, root=root.path, generation=page.generation, reply={
+        root: root.path,
+        generation: page.generation,
+        matches: [hit],
+        match_count: 1,
+        file_count: 1,
+        limit_hit: false,
+        cancelled: false,
+        partial: false,
+        error: None,
+      }),
+      input,
+    )
+    .handle(ToggleSemanticHit(semantic_hit_key(hit)), input)
+  let filtered = ready.handle(
+    SetSemanticResultFilter(SelectedSemanticResults),
     input,
   )
-  assert_eq(restored.selected_semantic_hits().length(), 1)
-  assert_eq(restored.selected_semantic_hits()[0].path, "src/main.mbt")
-  assert_true(render_search(restored, input).contains("Add to prompt"))
+  assert_true(
+    render_search(filtered, input).contains("Showing selected matches"),
+  )
 }
 
 ///|

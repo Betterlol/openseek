@@ -71,6 +71,12 @@ struct SearchResultSummary {
 } derive(Eq)
 
 ///|
+pub(all) enum SemanticResultFilter {
+  AllSemanticResults
+  SelectedSemanticResults
+} derive(Eq, Debug)
+
+///|
 struct Page {
   mode : Mode
   text : TextSearchState
@@ -83,6 +89,7 @@ struct Page {
   limit_hit : Bool
   collapsed : Map[String, Bool]
   selected : Map[String, Bool]
+  semantic_filter : SemanticResultFilter
   visible_lines : Int
   phase : Phase
   pattern_repair_phase : PatternRepairPhase
@@ -125,6 +132,11 @@ pub fn State::selected_semantic_hits(
   self : State,
 ) -> Array[@protocol.SemanticSearchHit] {
   selected_semantic_hits(self.page.semantic.hits, self.page.selected)
+}
+
+///|
+pub fn State::is_semantic(self : State) -> Bool {
+  self.page.mode is Semantic
 }
 
 ///|
@@ -238,7 +250,7 @@ pub(all) enum Msg {
   ToggleSemanticHit(String)
   ToggleSemanticPattern(String)
   ToggleSemanticFile(String, String)
-  RestoreSemanticReference(@mention_context.SemanticSearchReference)
+  SetSemanticResultFilter(SemanticResultFilter)
   RequestStarted(
     owner~ : @interop.ConversationKey,
     root~ : String,
@@ -291,6 +303,12 @@ pub extend Mode with Debug::{to_repr}
 
 ///|
 pub extend Mode with Eq::{equal, not_equal}
+
+///|
+pub extend SemanticResultFilter with Eq::{equal, not_equal}
+
+///|
+pub extend SemanticResultFilter with Debug::{to_repr}
 
 ///|
 pub extend Page with Eq::{equal, not_equal}

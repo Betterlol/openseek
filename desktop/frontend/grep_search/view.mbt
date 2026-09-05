@@ -559,13 +559,10 @@ fn search_body(
   page : Page,
   emit : @cmd.Emit[Msg],
   open_match : (String, @common.Range) -> @cmd.Cmd,
-  add_reference : (@mention_context.SemanticSearchReference) -> @cmd.Cmd,
-  root : String,
 ) -> @html.Html {
   match page.mode {
     Text => text_search_body(page, emit, open_match)
-    Semantic =>
-      semantic_search_body(page, emit, open_match, add_reference, root)
+    Semantic => semantic_search_body(page, emit, open_match)
   }
 }
 
@@ -835,8 +832,6 @@ fn semantic_search_body(
   page : Page,
   emit : @cmd.Emit[Msg],
   open_match : (String, @common.Range) -> @cmd.Cmd,
-  add_reference : (@mention_context.SemanticSearchReference) -> @cmd.Cmd,
-  root : String,
 ) -> @html.Html {
   let children : Array[@html.Html] = []
   let busy = page.phase is Debouncing || page.phase is Loading
@@ -868,18 +863,21 @@ fn semantic_search_body(
       @html.div(class="search-selection-toolbar", [
         @html.span("\{selected_count} selected"),
         @html.button(
-          disabled=!page.semantic_reference_available(),
-          on_click=match page.selected_semantic_reference(root) {
-            Some(reference) => add_reference(reference)
-            None => @cmd.none
-          },
-          if page.semantic_reference_available() {
-            "Add to prompt"
-          } else {
-            "Selection too large"
-          },
+          on_click=emit(SetSemanticResultFilter(SelectedSemanticResults)),
+          "Show selected",
         ),
         @html.button(on_click=emit(ClearSelection), "Clear selection"),
+      ]),
+    )
+  }
+  if page.semantic_filter is SelectedSemanticResults {
+    children.push(
+      @html.div(class="search-selection-toolbar", [
+        @html.span("Showing selected matches"),
+        @html.button(
+          on_click=emit(SetSemanticResultFilter(AllSemanticResults)),
+          "Show all",
+        ),
       ]),
     )
   }
@@ -904,22 +902,24 @@ fn semantic_search_body(
   if search_message(page, emit) is Some(message) {
     children.push(message)
   }
+  let filtered_hits = match page.semantic_filter {
+    AllSemanticResults => page.semantic.hits
+    SelectedSemanticResults =>
+      selected_semantic_hits(page.semantic.hits, page.selected)
+  }
   for
-    group in visible_semantic_pattern_groups(
-      page.semantic.hits,
-      page.visible_lines,
-    ) {
+    group in visible_semantic_pattern_groups(filtered_hits, page.visible_lines) {
     children.push(semantic_pattern_group_view(page, group, emit, open_match))
   }
-  let shown = page.visible_lines.min(page.semantic.hits.length())
-  if shown < page.semantic.hits.length() {
-    let next = VisibleSearchLineStep.min(page.semantic.hits.length() - shown)
+  let shown = page.visible_lines.min(filtered_hits.length())
+  if shown < filtered_hits.length() {
+    let next = VisibleSearchLineStep.min(filtered_hits.length() - shown)
     children.push(
       @html.div(class="search-show-more", [
         @html.button(on_click=emit(ShowMore), "Show \{next} more matches"),
         @html.div(
           class="search-show-more-detail",
-          "\{shown} of \{page.semantic.hits.length()} matches rendered",
+          "\{shown} of \{filtered_hits.length()} matches rendered",
         ),
       ]),
     )
@@ -933,8 +933,6 @@ fn page_view(
   page : Page,
   emit : @cmd.Emit[Msg],
   open_match : (String, @common.Range) -> @cmd.Cmd,
-  add_reference : (@mention_context.SemanticSearchReference) -> @cmd.Cmd,
-  root : String,
 ) -> @html.Html {
   let details = if page.details_open {
     let details : Array[@html.Html] = [
@@ -1051,7 +1049,7 @@ fn page_view(
         "Collapse All",
       ),
     ]),
-    search_body(page, emit, open_match, add_reference, root),
+    search_body(page, emit, open_match),
   ])
 }
 
@@ -1063,11 +1061,9 @@ pub fn State::explorer_view(
   input : Input,
   emit : @cmd.Emit[Msg],
   open_match : (String, @common.Range) -> @cmd.Cmd,
-  add_reference : (@mention_context.SemanticSearchReference) -> @cmd.Cmd,
 ) -> @html.Html {
   match input.root {
-    Some(root) =>
-      page_view(self.page, emit, open_match, add_reference, root.path)
+    Some(_) => page_view(self.page, emit, open_match)
     None =>
       @html.div(class="workspace-search search-no-workspace", [
         @html.div(class="search-empty-title", "No checkout available"),
