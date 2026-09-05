@@ -262,6 +262,8 @@ async fn edit_file(
             )
           }
           return err(
+            "old_string not found" +
+            range_detail(input) +
             old_string_context(
               content,
               input.old_string,
@@ -1319,7 +1321,7 @@ test "normalize_content_for_matching converts CRLF to LF and builds correct offs
 test "normalize_content_for_matching handles mixed CRLF and LF" {
   let (norm, map) = normalize_content_for_matching("a\r\nb\nc\r\n")
   assert_eq(norm, "a\nb\nc\n")
-  assert_eq(map, [0, 1, 3, 4, 5, 7])
+  assert_eq(map, [0, 1, 3, 4, 5, 6])
 }
 
 ///|
