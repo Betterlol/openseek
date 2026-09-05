@@ -239,21 +239,24 @@ async fn edit_file(
       write_scope?,
     )
   }
-  let (norm_content, offset_map) = normalize_content_for_matching(content)
+  let (norm_content, offset_map) = @matching.normalize_content_for_matching(
+    content,
+  )
   let region = select_edit_region(norm_content, input)
   let (match_start, is_quote_match) = match region.body.find(input.old_string) {
     Some(start) => (start, false)
     None =>
-      match find_quote_normalized_match(region.body, input.old_string) {
+      match
+        @matching.find_quote_normalized_match(region.body, input.old_string) {
         Some(start) => (start, true)
         None => {
           let file_hints = StringBuilder()
-          if has_crlf(content) {
+          if @matching.has_crlf(content) {
             file_hints.write_string(
               "— the file uses CRLF line endings; old_string uses LF — re-read the file and copy the exact text",
             )
           }
-          if has_curly_quotes(content) {
+          if @matching.has_curly_quotes(content) {
             if file_hints.to_string().length() > 0 {
               file_hints.write_char('\n')
             }
@@ -353,7 +356,7 @@ async fn preview_replace_all(
   err : (String) -> @agent_tool.ToolAction,
 ) -> @agent_tool.ToolAction {
   let orig_content = @fs.read_file(path).text()
-  let (content, _) = normalize_content_for_matching(orig_content)
+  let (content, _) = @matching.normalize_content_for_matching(orig_content)
   let region = select_edit_region(content, input)
   // The cap bounds emitted SITES, not raw matches: matches arrive in order, so
   // same-line matches always merge into the LAST site, and only a match that
@@ -905,73 +908,6 @@ fn line_number_at_offset(content : String, offset : Int) -> Int {
 ///|
 
 ///|
-/// Normalize CRLF (`\r\n`) to LF (`\n`) for matching purposes. Returns
-/// the normalized content and an offset map: `offset_map[i]` = position in
-/// the original content corresponding to normalized position `i`. Use this
-/// to map match offsets found in the normalized content back to the
-/// original content for the actual replacement.
-fn normalize_content_for_matching(content : String) -> (String, Array[Int]) {
-  let result = StringBuilder()
-  let map : Array[Int] = []
-  let mut i = 0
-  while i < content.length() {
-    map.push(i)
-    if i + 1 < content.length() && content[i] == '\r' && content[i + 1] == '\n' {
-      result.write_char('\n')
-      i += 2
-    } else {
-      match content[i].to_char() {
-        Some(ch) => {
-          result.write_char(ch)
-          i += 1
-        }
-        _ => break
-      }
-    }
-  }
-  (result.to_string(), map)
-}
-
-///|
-/// Replace curly/smart quotes with straight quotes for matching.
-/// Curly quotes cannot be output by language models, so this normalization
-/// bridges the gap between what the model can produce and what the file
-/// actually contains.
-fn normalize_quotes(s : String) -> String {
-  s
-  .replace_all(old="\u{2018}", new="'")
-  .replace_all(old="\u{2019}", new="'")
-  .replace_all(old="\u{201C}", new="\"")
-  .replace_all(old="\u{201D}", new="\"")
-}
-
-///|
-/// Find a match after normalizing both `body` and `needle` with
-/// `normalize_quotes`. The returned offset is in the original (un-quote-
-/// normalized) body, because quote normalization does not change character
-/// positions (curly and straight quotes are both single characters).
-fn find_quote_normalized_match(body : String, needle : String) -> Int? {
-  let norm_body = normalize_quotes(body)
-  let norm_needle = normalize_quotes(needle)
-  norm_body.find(norm_needle)
-}
-
-///|
-/// Detect whether `content` uses CRLF line endings (contains `\r\n`).
-fn has_crlf(content : String) -> Bool {
-  content.contains("\r\n")
-}
-
-///|
-/// Detect whether `content` contains curly/smart quotes.
-fn has_curly_quotes(content : String) -> Bool {
-  content.contains("\u{2018}") ||
-  content.contains("\u{2019}") ||
-  content.contains("\u{201C}") ||
-  content.contains("\u{201D}")
-}
-
-///|
 fn range_detail(input : @decode.EditInput) -> String {
   match input.end_line {
     Some(end) => " in line range \{input.start_line}-\{end}"
@@ -1303,14 +1239,14 @@ test "old_string_context shows empty suffix for past-EOF context" {
 
 ///|
 test "normalize_content_for_matching preserves LF-only content unchanged" {
-  let (norm, map) = normalize_content_for_matching("a\nb\nc")
+  let (norm, map) = @matching.normalize_content_for_matching("a\nb\nc")
   assert_eq(norm, "a\nb\nc")
   assert_eq(map, [0, 1, 2, 3, 4])
 }
 
 ///|
 test "normalize_content_for_matching converts CRLF to LF and builds correct offset map" {
-  let (norm, map) = normalize_content_for_matching("a\r\nb\r\nc")
+  let (norm, map) = @matching.normalize_content_for_matching("a\r\nb\r\nc")
   assert_eq(norm, "a\nb\nc")
   // Each CRLF pair maps to a single \n in the normalized output
   // map[i] = original position of normalized character i
@@ -1319,34 +1255,40 @@ test "normalize_content_for_matching converts CRLF to LF and builds correct offs
 
 ///|
 test "normalize_content_for_matching handles mixed CRLF and LF" {
-  let (norm, map) = normalize_content_for_matching("a\r\nb\nc\r\n")
+  let (norm, map) = @matching.normalize_content_for_matching("a\r\nb\nc\r\n")
   assert_eq(norm, "a\nb\nc\n")
   assert_eq(map, [0, 1, 3, 4, 5, 6])
 }
 
 ///|
 test "normalize_content_for_matching handles empty and CRLF-only content" {
-  let (norm, map) = normalize_content_for_matching("")
+  let (norm, map) = @matching.normalize_content_for_matching("")
   assert_eq(norm, "")
   assert_eq(map, [])
-  let (norm2, map2) = normalize_content_for_matching("\r\n")
+  let (norm2, map2) = @matching.normalize_content_for_matching("\r\n")
   assert_eq(norm2, "\n")
   assert_eq(map2, [0])
 }
 
 ///|
 test "normalize_quotes leaves straight quotes unchanged" {
-  assert_eq(normalize_quotes("hello 'world'"), "hello 'world'")
-  assert_eq(normalize_quotes("hello \"world\""), "hello \"world\"")
-  assert_eq(normalize_quotes(""), "")
+  assert_eq(@matching.normalize_quotes("hello 'world'"), "hello 'world'")
+  assert_eq(@matching.normalize_quotes("hello \"world\""), "hello \"world\"")
+  assert_eq(@matching.normalize_quotes(""), "")
 }
 
 ///|
 test "normalize_quotes converts curly quotes to straight quotes" {
-  assert_eq(normalize_quotes("hello \u{2018}world\u{2019}"), "hello 'world'")
-  assert_eq(normalize_quotes("hello \u{201C}world\u{201D}"), "hello \"world\"")
   assert_eq(
-    normalize_quotes("\u{2018}a\u{2019} \u{201C}b\u{201D}"),
+    @matching.normalize_quotes("hello \u{2018}world\u{2019}"),
+    "hello 'world'",
+  )
+  assert_eq(
+    @matching.normalize_quotes("hello \u{201C}world\u{201D}"),
+    "hello \"world\"",
+  )
+  assert_eq(
+    @matching.normalize_quotes("\u{2018}a\u{2019} \u{201C}b\u{201D}"),
     "'a' \"b\"",
   )
 }
@@ -1354,41 +1296,43 @@ test "normalize_quotes converts curly quotes to straight quotes" {
 ///|
 test "find_quote_normalized_match finds exact match" {
   let body = "hello world"
-  assert_eq(find_quote_normalized_match(body, "world"), Some(6))
+  assert_eq(@matching.find_quote_normalized_match(body, "world"), Some(6))
 }
 
 ///|
 test "find_quote_normalized_match matches curly quotes in body" {
   let body = "hello \u{2018}world\u{2019}"
   // Model sends straight quotes, file has curly quotes
-  let result = find_quote_normalized_match(body, "hello 'world'")
+  let result = @matching.find_quote_normalized_match(body, "hello 'world'")
   assert_eq(result, Some(0))
 }
 
 ///|
 test "find_quote_normalized_match matches curly quotes in needle" {
   let body = "hello 'world'"
-  let result = find_quote_normalized_match(body, "hello \u{2018}world\u{2019}")
+  let result = @matching.find_quote_normalized_match(
+    body, "hello \u{2018}world\u{2019}",
+  )
   assert_eq(result, Some(0))
 }
 
 ///|
 test "find_quote_normalized_match returns None for no match" {
-  assert_eq(find_quote_normalized_match("abc", "xyz"), None)
-  assert_eq(find_quote_normalized_match("", "x"), None)
+  assert_eq(@matching.find_quote_normalized_match("abc", "xyz"), None)
+  assert_eq(@matching.find_quote_normalized_match("", "x"), None)
 }
 
 ///|
 test "has_crlf detects CRLF content" {
-  assert_true(has_crlf("a\r\nb"))
-  assert_false(has_crlf("a\nb"))
-  assert_false(has_crlf(""))
+  assert_true(@matching.has_crlf("a\r\nb"))
+  assert_false(@matching.has_crlf("a\nb"))
+  assert_false(@matching.has_crlf(""))
 }
 
 ///|
 test "has_curly_quotes detects curly quotes" {
-  assert_true(has_curly_quotes("\u{2018}hello\u{2019}"))
-  assert_true(has_curly_quotes("\u{201C}hello\u{201D}"))
-  assert_false(has_curly_quotes("'hello'"))
-  assert_false(has_curly_quotes(""))
+  assert_true(@matching.has_curly_quotes("\u{2018}hello\u{2019}"))
+  assert_true(@matching.has_curly_quotes("\u{201C}hello\u{201D}"))
+  assert_false(@matching.has_curly_quotes("'hello'"))
+  assert_false(@matching.has_curly_quotes(""))
 }
