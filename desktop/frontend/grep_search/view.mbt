@@ -586,8 +586,6 @@ fn search_body(
   page : Page,
   emit : @cmd.Emit[Msg],
   open_match : (String, @common.Range) -> @cmd.Cmd,
-  add_reference : (@mention_context.SemanticSearchReference) -> @cmd.Cmd,
-  root : String,
 ) -> @html.Html {
   let items = page.result_items()
   let children : Array[@html.Html] = []
@@ -618,18 +616,21 @@ fn search_body(
       @html.div(class="search-selection-toolbar", [
         @html.span("\{selected_count} selected"),
         @html.button(
-          disabled=!page.semantic_reference_available(),
-          on_click=match page.selected_semantic_reference(root) {
-            Some(reference) => add_reference(reference)
-            None => @cmd.none
-          },
-          if page.semantic_reference_available() {
-            "Add to prompt"
-          } else {
-            "Selection too large"
-          },
+          on_click=emit(SetSemanticResultFilter(SelectedSemanticResults)),
+          "Show selected",
         ),
         @html.button(on_click=emit(ClearSelection), "Clear selection"),
+      ]),
+    )
+  }
+  if page.mode is Semantic && page.semantic_filter is SelectedSemanticResults {
+    children.push(
+      @html.div(class="search-selection-toolbar", [
+        @html.span("Showing selected matches"),
+        @html.button(
+          on_click=emit(SetSemanticResultFilter(AllSemanticResults)),
+          "Show all",
+        ),
       ]),
     )
   }
@@ -656,8 +657,13 @@ fn search_body(
   }
   // A diagnostic and retained results are independent: both engines can
   // return useful matches before reporting a scan failure.
+  let filtered_hits = match page.semantic_filter {
+    AllSemanticResults => page.semantic.hits
+    SelectedSemanticResults =>
+      selected_semantic_hits(page.semantic.hits, page.selected)
+  }
   if page.mode is Semantic {
-    for group in visible_semantic_pattern_groups(page.semantic.hits, page.visible_lines) {
+    for group in visible_semantic_pattern_groups(filtered_hits, page.visible_lines) {
       children.push(semantic_pattern_group_view(page, group, emit, open_match))
     }
   } else {
@@ -665,9 +671,15 @@ fn search_body(
       children.push(file_group_view(locale~, page, group, emit, open_match))
     }
   }
-  let shown = page.visible_lines.min(items.length())
-  if shown < items.length() {
-    let next = VisibleSearchLineStep.min(items.length() - shown)
+  // Pagination follows the visible selection filter in semantic mode.
+  let result_count = if page.mode is Semantic {
+    filtered_hits.length()
+  } else {
+    items.length()
+  }
+  let shown = page.visible_lines.min(result_count)
+  if shown < result_count {
+    let next = VisibleSearchLineStep.min(result_count - shown)
     children.push(
       @html.div(class="search-show-more", [
         @html.button(
@@ -676,7 +688,7 @@ fn search_body(
         ),
         @html.div(
           class="search-show-more-detail",
-          "\{shown} of \{items.length()} results displayed",
+          "\{shown} of \{result_count} results displayed",
         ),
       ]),
     )
@@ -892,8 +904,6 @@ fn page_view(
   page : Page,
   emit : @cmd.Emit[Msg],
   open_match : (String, @common.Range) -> @cmd.Cmd,
-  add_reference : (@mention_context.SemanticSearchReference) -> @cmd.Cmd,
-  root : String,
 ) -> @html.Html {
   let details = if page.details_open {
     let details : Array[@html.Html] = [
@@ -1016,7 +1026,7 @@ fn page_view(
         ui(locale, CollapseAll),
       ),
     ]),
-    search_body(locale~, page, emit, open_match, add_reference, root),
+    search_body(locale~, page, emit, open_match),
   ])
 }
 
@@ -1029,11 +1039,9 @@ pub fn State::explorer_view(
   input : Input,
   emit : @cmd.Emit[Msg],
   open_match : (String, @common.Range) -> @cmd.Cmd,
-  add_reference : (@mention_context.SemanticSearchReference) -> @cmd.Cmd,
 ) -> @html.Html {
   match input.root {
-    Some(root) =>
-      page_view(locale~, self.page, emit, open_match, add_reference, root.path)
+    Some(_) => page_view(locale~, self.page, emit, open_match)
     None =>
       @html.div(class="workspace-search search-no-workspace", [
         @html.div(class="search-empty-title", ui(locale, NoCheckout)),

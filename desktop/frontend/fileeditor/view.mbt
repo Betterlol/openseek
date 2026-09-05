@@ -588,7 +588,6 @@ fn tree_pane(
             ctx.search_input(),
             dispatch.map(msg => Search(msg)),
             (path, range) => dispatch(SearchMatchSelected(path~, range~)),
-            reference => dispatch(SearchSelectionReferenced(reference)),
           ),
         ]
     }
