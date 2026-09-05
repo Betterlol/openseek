@@ -193,6 +193,7 @@ async test "edit rejects replace_all even with a range" {
 }
 
 ///|
+#cfg(all(target="native", not(platform="windows")))
 async test "edit resolves relative paths under the workspace root" {
   @vfs.with_tmpdir(prefix="openseek-edit-workspace-", dir => {
     let path = "\{dir}/note.txt"
@@ -671,6 +672,7 @@ async test "edit gates .mbt results through moonc before writing" {
 }
 
 ///|
+#cfg(all(target="native", not(platform="windows")))
 async test "edit gates a breaking edit made through a non-mbt symlink" {
   @vfs.with_tmpdir(prefix="openseek-edit-gate-link-", dir => {
     let src = "\{dir}/lib.mbt"
@@ -697,6 +699,7 @@ async test "edit gates a breaking edit made through a non-mbt symlink" {
 /// `.mbt.md`-spelled link to a `.mbt` target must parse the result as source,
 /// not markdown. Parsing it as `.mbt.md` would ignore everything outside checked
 /// fences and let a broken edit to the real `.mbt` file slip through.
+#cfg(all(target="native", not(platform="windows")))
 async test "edit gates by the target kind through a .mbt.md-named symlink" {
   @vfs.with_tmpdir(prefix="openseek-edit-gate-mdlink-", dir => {
     let src = "\{dir}/lib.mbt"
@@ -723,6 +726,7 @@ async test "edit gates by the target kind through a .mbt.md-named symlink" {
 /// the target kind would parse the result as markdown (checked fences only) and
 /// miss it — the gate must cover BOTH kinds. The target body is valid MoonBit
 /// source, so it parses clean under both kinds until the edit breaks it.
+#cfg(all(target="native", not(platform="windows")))
 async test "edit gates by the link kind through a .mbt-named symlink" {
   @vfs.with_tmpdir(prefix="openseek-edit-gate-mbtlink-", dir => {
     let target = "\{dir}/notes.mbt.md"
@@ -1099,6 +1103,7 @@ async test "the expansion estimate does not overflow 32-bit arithmetic" {
 }
 
 ///|
+#cfg(all(target="native", not(platform="windows")))
 async test "a write scope confines edit to its allowed paths" {
   @vfs.with_tmpdir(prefix="edit-scope-", dir => {
     @vfs.FileSystem({
