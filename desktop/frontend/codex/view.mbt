@@ -311,7 +311,16 @@ fn CodexThreadRow::sidebar_input(
 ) -> @conversation.Input {
   let selected = context.selected &&
     state.active_thread().map(item => item.id == self.id).unwrap_or(false)
-  let run_mark = state.activity.presentation(self.id)
+  let activity = state.activity.entry(self.id)
+  let needs_input = state.pending_requests.any(request => {
+    request.thread_id == self.id
+  })
+  let running = activity.running || needs_input
+  let run_mark = @conversation.RunMark::for_task(
+    running~,
+    needs_input~,
+    unseen_outcome=activity.unseen_outcome.map(outcome => outcome.1),
+  )
   {
     id: @conversation.Id(
       source=@conversation.CodexLive,
@@ -326,7 +335,7 @@ fn CodexThreadRow::sidebar_input(
     active: selected,
     loading: false,
     load_failed: false,
-    running: run_mark is @conversation.RunningMark,
+    running,
     openable: true,
     worktree: self.worktree
     .filter(worktree => worktree.present)
@@ -720,15 +729,56 @@ test "background Codex activity follows its thread instead of selection" {
   assert_true(rows[0].input.trailing is [@conversation.Archive(..)])
   assert_true(rows[1].input.run_mark is @conversation.NoRunMark)
 
-  let completed = running.with_notification(
-    "turn/completed",
-    {
-      "threadId": "thread-background",
-      "turn": { "id": "turn-1", "status": "completed", "items": [] },
-    },
-    2,
-  )
-  let settled = completed.project_conversations(context, "/work/openseek")
-  assert_true(settled[0].input.run_mark is @conversation.NoRunMark)
-  assert_true(settled[0].input.trailing is [@conversation.Archive(..)])
+  for
+    outcome in [
+      ("completed", @conversation.CompletedMark),
+      ("failed", @conversation.FailedMark),
+    ] {
+    let (wire_status, expected) = outcome
+    let stale_frontier = running.activity.frontier()
+    let turn : Json = { "id": "turn-1", "status": wire_status, "items": [] }
+    let completed = running.with_notification(
+      "turn/completed",
+      { "threadId": "thread-background", "turn": turn },
+      2,
+    )
+    // Reading B must not acknowledge A. Neither a delayed active snapshot nor
+    // a fresh idle snapshot can erase A's unread outcome.
+    let retained = completed.mark_visible_read()
+    let stale = {
+      ..retained,
+      activity: retained.activity.reconcile_snapshot(
+        [("thread-background", Some(ThreadActive))],
+        stale_frontier,
+      ),
+    }
+    let idle = {
+      ..stale,
+      activity: stale.activity.reconcile_snapshot(
+        [("thread-background", Some(ThreadInactive))],
+        stale.activity.frontier(),
+      ),
+    }
+    assert_eq(idle.active_id(), Some("thread-selected"))
+    let settled = idle.project_conversations(context, "/work/openseek")
+    assert_eq(settled[0].input.run_mark, expected)
+    assert_false(settled[0].input.running)
+    assert_true(settled[0].input.trailing is [@conversation.Archive(..)])
+    // Selecting A acknowledges only after the terminal turn is loaded.
+    let opened = idle
+      .with_thread_reply(
+        {
+          "thread": {
+            "id": "thread-background",
+            "cwd": "/work/openseek",
+            "projectRoot": "/work/openseek",
+            "turns": [turn],
+          },
+        },
+        CodexHistoryRead("thread-background", idle.activity.frontier()),
+      )
+      .mark_visible_read()
+    let read = opened.project_conversations(context, "/work/openseek")
+    assert_true(read[0].input.run_mark is @conversation.NoRunMark)
+  }
 }

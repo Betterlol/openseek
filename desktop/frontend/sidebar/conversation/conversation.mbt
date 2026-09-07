@@ -74,9 +74,42 @@ pub fn Id::key(self : Id) -> String {
 pub(all) enum RunMark {
   NoRunMark
   RunningMark
+  NeedsInputMark
   CompletedMark
   FailedMark
+  StoppedMark
+  EndedMark
 } derive(Debug, Eq)
+
+///|
+/// Backend adapters supply facts; priority and visual meaning belong here.
+pub(all) enum RunOutcome {
+  Completed
+  Failed
+  Stopped
+  Ended
+} derive(Eq)
+
+///|
+pub fn RunMark::for_task(
+  running~ : Bool,
+  needs_input~ : Bool,
+  unseen_outcome~ : RunOutcome?,
+) -> RunMark {
+  if needs_input {
+    NeedsInputMark
+  } else if running {
+    RunningMark
+  } else {
+    match unseen_outcome {
+      Some(Completed) => CompletedMark
+      Some(Failed) => FailedMark
+      Some(Stopped) => StoppedMark
+      Some(Ended) => EndedMark
+      None => NoRunMark
+    }
+  }
+}
 
 ///|
 /// One hover-revealed control on the row's trailing edge. A live durable
@@ -189,8 +222,7 @@ fn Input::menu_kind(self : Input) -> MenuKind? {
 ///|
 fn Input::menu_enabled(self : Input) -> (Bool, Bool) {
   (
-    self.trailing.any(action => action is Archive(..)) &&
-    !(self.run_mark is RunningMark),
+    self.trailing.any(action => action is Archive(..)) && !self.running,
     self.trailing.any(action => action is Delete(..)),
   )
 }
@@ -496,19 +528,48 @@ pub fn component(
     }
     match input.run_mark {
       NoRunMark => ()
-      RunningMark =>
+      RunningMark
+      | NeedsInputMark
+      | CompletedMark
+      | FailedMark
+      | StoppedMark
+      | EndedMark => {
+        let (label, image, class_name) = match input.run_mark {
+          RunningMark =>
+            ("Running", @icons.icon_loading, "sidebar-run-status running")
+          NeedsInputMark =>
+            (
+              "Needs your input", @icons.icon_question, "sidebar-run-status needs-input",
+            )
+          CompletedMark =>
+            (
+              "Completed — unread", @icons.icon_check, "sidebar-run-status completed",
+            )
+          FailedMark =>
+            (
+              "Failed — unread", @icons.icon_error, "sidebar-run-status failed",
+            )
+          StoppedMark =>
+            (
+              "Stopped — unread", @icons.icon_debug_stop, "sidebar-run-status completed",
+            )
+          _ =>
+            (
+              "Ended — unread", @icons.icon_circle, "sidebar-run-status completed",
+            )
+        }
         status.push(
           @html.span(
-            class="run-dot running",
+            class=class_name,
             attrs=@html.Attrs::build()
               .role("status")
               .aria_live("polite")
-              .aria_label("Running"),
-            "",
+              .aria_label(label)
+              .title(label),
+            @icons.icon(image),
           ),
         )
-      CompletedMark => status.push(@html.span(class="run-dot accent", ""))
-      FailedMark => status.push(@html.span(class="run-dot warn", ""))
+      }
     }
     let menu_kind = input.menu_kind()
     // Direct durable-action shortcuts stay alongside the shared WebView
@@ -521,7 +582,7 @@ pub fn component(
       }
       let buttons : Array[@html.Html] = []
       for action in trailing_actions {
-        let enabled = !(action is Archive(..) && input.run_mark is RunningMark)
+        let enabled = !(action is Archive(..) && input.running)
         let (title, button_class, image, id_suffix) = match action {
           Archive(title~) =>
             (title, "row-archive", @icons.icon_archive, "archive")
@@ -630,3 +691,6 @@ pub extend RenameInput with Debug::{to_repr}
 
 ///|
 pub extend RenameInput with Eq::{equal, not_equal}
+
+///|
+pub extend RunOutcome with Eq::{equal, not_equal}

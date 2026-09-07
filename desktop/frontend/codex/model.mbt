@@ -2167,8 +2167,19 @@ fn State::with_notification(
   let observed = match (method_, thread_id, fields.get("turn")) {
     ("turn/started", Some(thread_id), Some(Object(_))) =>
       { ..self, activity: self.activity.started(thread_id), }
-    ("turn/completed", Some(thread_id), Some(Object(_))) =>
-      { ..self, activity: self.activity.completed(thread_id), }
+    ("turn/completed", Some(thread_id), Some(turn)) =>
+      {
+        ..self,
+        activity: self.activity.completed(
+          thread_id,
+          turn?=if turn is Object(turn_fields) &&
+            turn_fields.get("status") is Some(String(_)) {
+            CodexTurn::decode(turn)
+          } else {
+            None
+          },
+        ),
+      }
     ("thread/status/changed", Some(thread_id), _) =>
       {
         ..self,
@@ -3048,7 +3059,7 @@ test "carried Codex rows do not revive running after completion" {
     0,
   )
   assert_true(
-    completed.activity.presentation("thread-1") is @conversation.NoRunMark,
+    completed.activity.presentation("thread-1") is @conversation.CompletedMark,
   )
   let (frontier, activity) = completed.activity.reserve_snapshot()
   let refreshed = { ..completed, activity, }.with_threads(
@@ -3058,7 +3069,7 @@ test "carried Codex rows do not revive running after completion" {
   )
   assert_eq(refreshed.threads.map(thread => thread.id), ["thread-1"])
   assert_true(
-    refreshed.activity.presentation("thread-1") is @conversation.NoRunMark,
+    refreshed.activity.presentation("thread-1") is @conversation.CompletedMark,
   )
 }
 

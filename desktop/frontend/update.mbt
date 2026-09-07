@@ -1681,6 +1681,9 @@ fn update(
 ) -> (@cmd.Cmd, Model) {
   let previous = model
   let (cmd, model) = update_msg(dispatch, msg, model)
+  // A retained selection is not a read receipt when a panel covers it.
+  // Reconcile after every transition, including panel restore and resize.
+  let model = model.mark_visible_conversation_read()
   let notification_badge_cmd = notification_badge_command(
     previous,
     model,
