@@ -29,6 +29,24 @@ test "markdown survives streaming-truncated input" {
 }
 
 ///|
+test "moonbit-family fences keep their block shape" {
+  // The fence languages that route through the shared MoonBit tokenizer
+  // (`moonbit` itself, plus the editor markdown pipeline's `mbt`/`mbtx`
+  // aliases) each still render as exactly one block, exactly like a plain
+  // fence — the tokenization changes the code payload, never the layout.
+  for fence in ["moonbit", "mbt", "mbtx"] {
+    inspect(
+      markdown_nodes("intro\n\n```\{fence}\nlet answer = 42\n```\n\noutro").length(),
+      content="3",
+    )
+  }
+  inspect(
+    markdown_nodes("intro\n\n```\nplain text\n```\n\noutro").length(),
+    content="3",
+  )
+}
+
+///|
 test "raw html stays text instead of markup" {
   // One pre.raw-html block; the structure proves the branch is taken and the
   // payload is routed through a text node, never through innerHTML.
