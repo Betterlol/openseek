@@ -355,6 +355,18 @@ type MoonIdeLocation = @protocol.MoonIdeLocation
 type MoonIdeLocationsReply = @protocol.MoonIdeLocationsReply
 
 ///|
+/// Request a package dependency graph for one `moon.mod`. The manifest path
+/// is relative to the explicit editor root and is revalidated against the
+/// conversation's host workspace before Moon is invoked.
+type MoonPackageGraphPayload = @protocol.MoonPackageGraphPayload
+
+///|
+/// A successful `moon tree --package --json` source or an in-band operational
+/// error. Keeping the variants distinct prevents failed Moon JSON from being
+/// interpreted as graph input.
+type MoonPackageGraphReply = @protocol.MoonPackageGraphReply
+
+///|
 /// `lsp_open` tells the host the editor is now showing `path` relative to the
 /// explicit absolute `root`, so it runs `moon check` over the file's module.
 /// The reply carries the file's diagnostics from that run; other files'

@@ -67,6 +67,18 @@ pub fn render_mbti_diagram_svg(source : String) -> String? {
 }
 
 ///|
+/// Compile the JSON emitted by `moon tree --package --json` to a package
+/// dependency SVG. The command remains the host's responsibility; this pure
+/// boundary only renders its successful output and keeps malformed graphs on
+/// the caller's fallback path.
+pub fn render_package_dep_diagram_svg(source : String) -> String? {
+  let color_scheme = viewer_uml_color_scheme()
+  Some(@uml.render_package_dep_svg(source, color_scheme~)) catch {
+    _ => None
+  }
+}
+
+///|
 /// Keep every synchronous UML surface on the same CSS-backed palette. SVGs
 /// can then follow a host theme change without recompiling their source.
 fn viewer_uml_color_scheme() -> @uml_style.ColorScheme {

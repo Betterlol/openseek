@@ -298,7 +298,7 @@ pub fn resize_handle_view() -> @html.Html {
 /// always rooted at the workspace root) as a toggleable pane on
 /// the viewer's right. Always rendered so the viewer's host element
 /// (`viewer-host`, `markdown-viewer-host`, `mbti-diagram-host`,
-/// `diff-editor-host`, and `semantic-review-host`) stay put
+/// `package-diagram-host`, `diff-editor-host`, and `semantic-review-host`) stay put
 /// across renders and screen
 /// switches; CSS hides the inactive surface and the tree pane when toggled off,
 /// and collapses the whole panel to zero width when it is closed. The children's
@@ -342,6 +342,10 @@ pub fn body_view(
   let use_mbti_surface = !use_diff_surface &&
     !use_markdown_surface &&
     uses_mbti_diagram_surface(state, ctx)
+  let use_package_surface = !use_diff_surface &&
+    !use_markdown_surface &&
+    !use_mbti_surface &&
+    uses_package_diagram_surface(state, ctx)
   let use_semantic_surface = use_diff_surface &&
     state.review_diff_mode != ReviewDiffLine &&
     (match ctx.active_history_diff {
@@ -353,7 +357,10 @@ pub fn body_view(
     attrs=@html.Attrs::build()
       .id(ViewerHostId)
       .class(
-        if use_diff_surface || use_markdown_surface || use_mbti_surface {
+        if use_diff_surface ||
+          use_markdown_surface ||
+          use_mbti_surface ||
+          use_package_surface {
           "viewer-host editor-shell moonbit-viewer-surface-hidden"
         } else {
           "viewer-host editor-shell"
@@ -383,6 +390,19 @@ pub fn body_view(
           "viewer-host editor-shell mbti-diagram-host"
         } else {
           "viewer-host editor-shell mbti-diagram-host moonbit-viewer-surface-hidden"
+        },
+      )
+      .data_set("theme", if ctx.dark_mode { "dark" } else { "light" }),
+    ([] : Array[@html.Html]),
+  )
+  let package_diagram_host = @html.div(
+    attrs=@html.Attrs::build()
+      .id(PackageDiagramHostId)
+      .class(
+        if use_package_surface {
+          "viewer-host editor-shell package-diagram-host"
+        } else {
+          "viewer-host editor-shell package-diagram-host moonbit-viewer-surface-hidden"
         },
       )
       .data_set("theme", if ctx.dark_mode { "dark" } else { "light" }),
@@ -426,6 +446,7 @@ pub fn body_view(
       viewer_host,
       markdown_viewer_host,
       mbti_diagram_host,
+      package_diagram_host,
       diff_editor_host,
       semantic_review_host,
       viewer_notice(state, ctx),
@@ -1805,6 +1826,9 @@ pub fn breadcrumb_view(
   if mbti_view_available(state, ctx) {
     path_row.push(mbti_view_toolbar(dispatch, state, ctx))
   }
+  if moon_mod_view_available(state, ctx) {
+    path_row.push(moon_mod_view_toolbar(dispatch, state, ctx))
+  }
   path_row.push(
     @html.button(
       class="panel-toggle",
@@ -1906,6 +1930,72 @@ fn mbti_view_toolbar(
     [
       mbti_view_button(dispatch, selected, MbtiDiagram, "Diagram"),
       mbti_view_button(dispatch, selected, MbtiSource, "Source"),
+    ],
+  )
+}
+
+///|
+/// A package dependency graph belongs only to an ordinary, loaded file whose
+/// exact basename is `moon.mod`. Reviews and historical comparisons retain
+/// their source/diff surfaces even if their path names a module manifest.
+fn moon_mod_view_available(state : State, ctx : Ctx) -> Bool {
+  guard ctx.active_history_diff is None && ctx.active_file is Some(path) else {
+    return false
+  }
+  state.docs.get(path) is Some({ name, state: TabLoaded(..), review: None, .. }) &&
+  uses_moon_mod_presentation(name)
+}
+
+///|
+fn uses_package_diagram_surface(state : State, ctx : Ctx) -> Bool {
+  guard moon_mod_view_available(state, ctx) && ctx.active_file is Some(path) else {
+    return false
+  }
+  state.moon_mod_view_mode(path) == MoonModDependencies
+}
+
+///|
+fn moon_mod_view_button(
+  dispatch : @cmd.Emit[Msg],
+  selected : MoonModViewMode,
+  mode : MoonModViewMode,
+  label : String,
+) -> @html.Html {
+  let active = selected == mode
+  @html.button(
+    type_="button",
+    class=if active {
+      "review-mode-button active"
+    } else {
+      "review-mode-button"
+    },
+    // An already-selected failed dependency view treats another click as an
+    // explicit retry; the update loop leaves every other same-mode click inert.
+    on_click=dispatch(MoonModViewModeSelected(mode)),
+    attrs=@html.Attrs::build().aria_pressed(active.to_string()),
+    label,
+  )
+}
+
+///|
+fn moon_mod_view_toolbar(
+  dispatch : @cmd.Emit[Msg],
+  state : State,
+  ctx : Ctx,
+) -> @html.Html {
+  guard ctx.active_file is Some(path) else { return @html.nothing }
+  let selected = state.moon_mod_view_mode(path)
+  @html.div(
+    class="review-mode-toolbar moon-mod-view-toolbar",
+    attrs=@html.Attrs::build().role("group").aria_label("Moon module view"),
+    [
+      moon_mod_view_button(
+        dispatch,
+        selected,
+        MoonModDependencies,
+        "Dependency graph",
+      ),
+      moon_mod_view_button(dispatch, selected, MoonModSource, "Source"),
     ],
   )
 }

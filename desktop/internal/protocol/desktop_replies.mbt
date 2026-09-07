@@ -1611,6 +1611,53 @@ pub(all) struct MoonIdeLocationsReply {
 } derive(Debug, Eq, FromJson, ToJson)
 
 ///|
+/// The result of asking the Host to run `moon tree --package --json` for an
+/// opened module manifest. Operational failures stay in-band so the local
+/// Proton bridge cannot replace the useful Moon error with a generic rejected
+/// command message, and the already-loaded manifest source remains usable.
+pub(all) enum MoonPackageGraphReply {
+  PackageGraphSource(source~ : String)
+  PackageGraphError(message~ : String)
+} derive(Debug, Eq)
+
+///|
+pub impl ToJson for MoonPackageGraphReply with fn to_json(self) {
+  match self {
+    PackageGraphSource(source~) => { "kind": "source", "source": source }
+    PackageGraphError(message~) => { "kind": "error", "message": message }
+  }
+}
+
+///|
+pub impl FromJson for MoonPackageGraphReply with fn from_json(json, path) {
+  guard json is Object(fields) && fields.get("kind") is Some(String(kind_)) else {
+    raise JsonDecodeError((path, "expected Moon package-graph reply"))
+  }
+  match kind_ {
+    "source" => {
+      guard fields.get("source") is Some(String(source)) else {
+        raise JsonDecodeError(
+          (path.add_key("source"), "package-graph source must be a string"),
+        )
+      }
+      PackageGraphSource(source~)
+    }
+    "error" => {
+      guard fields.get("message") is Some(String(message)) else {
+        raise JsonDecodeError(
+          (path.add_key("message"), "package-graph error must be a string"),
+        )
+      }
+      PackageGraphError(message~)
+    }
+    _ =>
+      raise JsonDecodeError(
+        (path.add_key("kind"), "unknown Moon package-graph reply kind"),
+      )
+  }
+}
+
+///|
 pub(all) struct LspPosition {
   line : Int
   character : Int
@@ -2355,6 +2402,18 @@ pub extend MoonIdeLocationsReply with Eq::{equal, not_equal}
 
 ///|
 pub extend MoonIdeLocationsReply with ToJson::{to_json}
+
+///|
+pub extend MoonPackageGraphReply with Debug::{to_repr}
+
+///|
+pub extend MoonPackageGraphReply with FromJson::{from_json}
+
+///|
+pub extend MoonPackageGraphReply with Eq::{equal, not_equal}
+
+///|
+pub extend MoonPackageGraphReply with ToJson::{to_json}
 
 ///|
 pub extend OpenExternalReply with Debug::{to_repr}

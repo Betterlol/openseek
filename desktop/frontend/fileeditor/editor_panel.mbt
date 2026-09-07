@@ -2,7 +2,8 @@
 // no escape hatch for a foreign DOM widget, so the source viewer and Line
 // full-file comparison each own a stable, never-diffed host element. The view
 // renders those hosts empty, and after the first paint each widget attaches its
-// imperative DOM. Token/Tree uses a fourth stable sibling containing keyed,
+// imperative DOM. Diagrams use their own stable siblings, and Token/Tree uses
+// another stable sibling containing keyed,
 // empty per-section hosts; each receives a real DiffEditor. Every top-level
 // stays independent, so no global monotonic line mapping is synthesized.
 
@@ -22,6 +23,12 @@ const MarkdownViewerHostId = "markdown-viewer-host"
 /// MoonBit interface. The code Viewer keeps the same source model mounted
 /// behind it so switching back to source is non-destructive.
 const MbtiDiagramHostId = "mbti-diagram-host"
+
+///|
+/// The stable sibling host for a `moon.mod` package-dependency graph. Its
+/// source is produced asynchronously by the Desktop Host, while the ordinary
+/// code Viewer keeps the manifest model mounted behind it.
+const PackageDiagramHostId = "package-diagram-host"
 
 ///|
 /// The stable sibling host reserved for the switchable DiffEditor.
@@ -76,11 +83,20 @@ priv struct ViewerHost {
   // inside the code Viewer. It shares product services but owns its own model
   // and view-state lifetime.
   mut markdown_viewer : @viewer.MarkdownViewer?
-  // The MBTI host is plain generated SVG rather than another editor widget.
-  // Cache the rendered input so unrelated app updates do not repeat UML
-  // layout while its stable host remains mounted.
+  // The MBTI host uses the same interactive SVG viewport as diagrams rendered
+  // in Markdown. Cache the rendered input so unrelated app updates do not
+  // repeat UML layout while its stable host remains mounted, and retain the
+  // viewport handle so every borrowed listener and DOM node is released before
+  // replacing that SVG.
   mut mbti_resource : String?
   mut mbti_source : String?
+  mut mbti_diagram_viewports : @diagram_viewport.DiagramViewports?
+  // Package graph layout is also imperative. Cache the complete presentation
+  // so root-level sync messages cannot recreate a loading/error live region or
+  // make a screen reader announce the same status repeatedly. Its generated
+  // SVG has an independent Markdown diagram viewport lifetime.
+  mut package_graph : PackageGraphState?
+  mut package_diagram_viewports : @diagram_viewport.DiagramViewports?
   // Desired full-comparison layout survives a pre-mount command in the same
   // way font settings do for the source Viewer.
   mut diff_options : @viewer.DiffEditorOptions
@@ -140,6 +156,9 @@ let viewer_state : ViewerHost = {
   markdown_viewer: None,
   mbti_resource: None,
   mbti_source: None,
+  mbti_diagram_viewports: None,
+  package_graph: None,
+  package_diagram_viewports: None,
   diff_options: @viewer.DiffEditorOptions(
     editor_options=@viewer.ViewerOptions(
       theme="light",
@@ -316,6 +335,13 @@ fn uses_markdown_presentation(name : String) -> Bool {
 ///|
 fn uses_mbti_presentation(name : String) -> Bool {
   name.to_lower().has_suffix(".mbti")
+}
+
+///|
+/// Only the module manifest itself owns the dependency-graph presentation;
+/// similarly named files and legacy JSON manifests remain ordinary source.
+fn uses_moon_mod_presentation(name : String) -> Bool {
+  name == "moon.mod"
 }
 
 ///|
@@ -1019,6 +1045,23 @@ fn dispose_source_model(model : @model.TextModel?) -> Unit {
 }
 
 ///|
+/// Put one trusted generated SVG behind the same interaction surface used by
+/// Markdown diagrams. The wrapper is the shared component's DOM contract; the
+/// returned lifetime owns its controls, resize observer, and input listeners.
+fn mount_generated_svg_viewport(
+  host : @dom.Element,
+  svg : String,
+) -> @diagram_viewport.DiagramViewports {
+  host.set_inner_html("")
+  let wrapper = @dom.document().create_element("div")
+  wrapper.set_attribute("class", "moonbit-viewer-markdown-diagram")
+  wrapper.set_attribute("data-diagram-language", "uml")
+  wrapper.set_inner_html(svg)
+  host.append_child(wrapper.as_node())
+  @diagram_viewport.DiagramViewports(host, () => (), fill_container=true)
+}
+
+///|
 /// Render a generated interface into the stable MBTI host at most once per
 /// resource/content pair. The UML module returns generated SVG at this trusted
 /// insertion boundary; a malformed interface gets an explicit error surface
@@ -1035,8 +1078,15 @@ fn show_mbti_diagram(resource : @common.Uri, source : String) -> Unit {
   }
   viewer_state.mbti_resource = Some(resource_key)
   viewer_state.mbti_source = Some(source)
+  if viewer_state.mbti_diagram_viewports is Some(viewports) {
+    viewports.dispose()
+  }
+  viewer_state.mbti_diagram_viewports = None
   match @viewer.render_mbti_diagram_svg(source) {
-    Some(svg) => host.set_inner_html(svg)
+    Some(svg) =>
+      viewer_state.mbti_diagram_viewports = Some(
+        mount_generated_svg_viewport(host, svg),
+      )
     None => {
       let message =
         #|<div class="mbti-diagram-error" role="status">This interface could not be rendered as a UML diagram. View the source for details.</div>
@@ -1049,7 +1099,83 @@ fn show_mbti_diagram(resource : @common.Uri, source : String) -> Unit {
 fn clear_mbti_diagram() -> Unit {
   viewer_state.mbti_resource = None
   viewer_state.mbti_source = None
+  if viewer_state.mbti_diagram_viewports is Some(viewports) {
+    viewports.dispose()
+  }
+  viewer_state.mbti_diagram_viewports = None
   if @dom.document().get_element_by_id(MbtiDiagramHostId).to_option()
+    is Some(host) {
+    host.set_inner_html("")
+  }
+}
+
+///|
+/// Replace the package graph host with a status node without interpreting any
+/// Host-provided text as HTML. Only SVG returned by the pinned UML renderer is
+/// inserted through the trusted `innerHTML` boundary below.
+fn show_package_diagram_status(host : @dom.Element, message : String) -> Unit {
+  if viewer_state.package_diagram_viewports is Some(viewports) {
+    viewports.dispose()
+  }
+  viewer_state.package_diagram_viewports = None
+  host.set_inner_html("")
+  let status = @dom.document().create_element("div")
+  status.set_attribute("class", "package-diagram-status")
+  status.set_attribute("role", "status")
+  status.append_child(@dom.document().create_text_node(message).as_node())
+  host.append_child(status.as_node())
+}
+
+///|
+/// Reconcile one asynchronous `moon tree --package --json` result into the
+/// stable package-diagram host after Rabbita has exposed it. Every complete
+/// presentation is applied at most once; a new loading or failure state still
+/// retires the preceding graph so switching tabs can never display stale SVG.
+fn show_package_graph_in_viewer(state : PackageGraphState) -> @cmd.Cmd {
+  after_render_effect(() => {
+    guard @dom.document().get_element_by_id(PackageDiagramHostId).to_option()
+      is Some(host) else {
+      return
+    }
+    if viewer_state.package_graph == Some(state) {
+      return
+    }
+    viewer_state.package_graph = Some(state)
+    match state {
+      PackageGraphLoading(_) =>
+        show_package_diagram_status(host, "Loading dependency graph…")
+      PackageGraphReady(_, source) =>
+        match @viewer.render_package_dep_diagram_svg(source) {
+          Some(svg) => {
+            if viewer_state.package_diagram_viewports is Some(viewports) {
+              viewports.dispose()
+            }
+            viewer_state.package_diagram_viewports = Some(
+              mount_generated_svg_viewport(host, svg),
+            )
+          }
+          None =>
+            show_package_diagram_status(
+              host, "This dependency graph could not be rendered. View the source for details.",
+            )
+        }
+      PackageGraphFailed(_, message) =>
+        show_package_diagram_status(
+          host,
+          "Could not load dependency graph: \{message}",
+        )
+    }
+  })
+}
+
+///|
+fn clear_package_graph() -> Unit {
+  viewer_state.package_graph = None
+  if viewer_state.package_diagram_viewports is Some(viewports) {
+    viewports.dispose()
+  }
+  viewer_state.package_diagram_viewports = None
+  if @dom.document().get_element_by_id(PackageDiagramHostId).to_option()
     is Some(host) {
     host.set_inner_html("")
   }
@@ -1126,6 +1252,9 @@ fn show_file_in_viewer(
     }
     if uses_mbti_presentation(name) {
       show_mbti_diagram(uri, content)
+    }
+    if !uses_moon_mod_presentation(name) {
+      clear_package_graph()
     }
     // Whether anything needs redrawing is decided here, against the document
     // the viewer really shows — the update loop only says "show this", it
@@ -1433,6 +1562,7 @@ fn clear_viewer() -> @cmd.Cmd {
     viewer_state.relative = None
     viewer_state.navigation = None
     clear_mbti_diagram()
+    clear_package_graph()
     clear_diff_comparison()
     clear_semantic_review_editors()
   })
@@ -1471,6 +1601,7 @@ fn clear_document() -> @cmd.Cmd {
     viewer_state.relative = None
     viewer_state.navigation = None
     clear_mbti_diagram()
+    clear_package_graph()
   })
 }
 

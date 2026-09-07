@@ -360,6 +360,8 @@ extern "js" fn diagram_viewport_test_target(
   #|     add('diago', true, 400, 400, 800, 400);
   #|   } else if (mode === 'tall') {
   #|     add('diago', true, 400, 800, 200, 800);
+  #|   } else if (mode === 'panel') {
+  #|     add('diago', true, 600, 500, 200, 100);
   #|   } else {
   #|     add('diago', true, 400, 100, 200, 100);
   #|   }
@@ -945,6 +947,46 @@ test "mounts synchronous UML SVGs with UML accessibility labels" {
     "UML diagram controls",
   )
   diagram_viewport_test_flush_frame(harness)
+}
+
+///|
+test "fill-container mode occupies owner geometry and omits inline resizing" {
+  let harness = install_diagram_viewport_test_dom()
+  defer harness.dispose()
+  let target = diagram_viewport_test_target(harness, "panel")
+  let changes = Ref(0)
+  let viewports = DiagramViewports(
+    target,
+    () => changes.val += 1,
+    fill_container=true,
+  )
+  defer viewports.dispose()
+  diagram_viewport_test_flush_frame(harness)
+
+  assert_eq(diagram_viewport_test_wrapper_height(viewports.lifetime, 0), "")
+  assert_eq(
+    diagram_viewport_test_child_classes(viewports.lifetime, 0),
+    "moonbit-viewer-markdown-diagram-content|moonbit-viewer-markdown-diagram-controls",
+  )
+  assert_eq(diagram_viewport_test_scale(viewports.lifetime, 0), 1.0)
+  assert_eq(diagram_viewport_test_translate_x(viewports.lifetime, 0), 200.0)
+  assert_eq(diagram_viewport_test_translate_y(viewports.lifetime, 0), 200.0)
+  assert_eq(changes.val, 0)
+
+  diagram_viewport_test_set_geometry(
+    viewports.lifetime,
+    0,
+    800.0,
+    600.0,
+    200.0,
+    100.0,
+  )
+  diagram_viewport_test_trigger_observer(harness, 0)
+  assert_eq(diagram_viewport_test_translate_x(viewports.lifetime, 0), 300.0)
+  assert_eq(diagram_viewport_test_translate_y(viewports.lifetime, 0), 250.0)
+  assert_false(viewports.lifetime.controllers[0].resize_to_height(320.0))
+  assert_eq(diagram_viewport_test_wrapper_height(viewports.lifetime, 0), "")
+  assert_eq(changes.val, 0)
 }
 
 ///|

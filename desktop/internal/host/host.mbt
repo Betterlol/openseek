@@ -283,6 +283,9 @@ pub fn endpoints(
       terminal_close_op(connection.terminal, payload)
       Acknowledged
     }),
+    @endpoint.Endpoint::remote(@commands.moon_package_graph, async fn(payload) {
+      moon_package_graph_op(state.moon, payload)
+    }),
     @endpoint.Endpoint::remote(@commands.lsp_open, async fn(payload) {
       lsp_open_op(state.moon, payload)
     }),

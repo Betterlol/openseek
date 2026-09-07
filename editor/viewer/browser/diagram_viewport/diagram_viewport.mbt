@@ -82,6 +82,7 @@ priv struct MarkdownDiagramViewport {
   resize_handle : @rdom.Element
   owner_document : @rdom.Document
   owner_window : @rdom.Window
+  fill_container : Bool
   saved_tabindex : SavedAttribute
   saved_aria_label : SavedAttribute
   saved_height : SavedStyle
@@ -121,6 +122,7 @@ priv struct MarkdownDiagramViewportLifetime {
   target : @rdom.Element
   on_size_changed : () -> Unit
   schedule_frame : (() -> Unit) -> () -> Unit
+  fill_container : Bool
   controllers : Array[MarkdownDiagramViewport]
   mut active : Bool
 }
@@ -148,6 +150,10 @@ struct DiagramViewports {
 /// commits or replaces a direct SVG.
 /// `on_size_changed` invalidates the owning presentation whenever this
 /// component writes a new inline viewport height.
+/// `fill_container` keeps each viewport at the size supplied by its owning
+/// container and initially fits the SVG into that complete surface. It is
+/// intended for standalone image panels; inline Markdown diagrams retain their
+/// intrinsic, user-resizable height by default.
 ///
 /// ```d2
 /// direction: right
@@ -171,6 +177,7 @@ struct DiagramViewports {
 pub fn DiagramViewports::DiagramViewports(
   target : @rdom.Element,
   on_size_changed : () -> Unit,
+  fill_container? : Bool = false,
 ) -> DiagramViewports {
   let schedule_frame = (callback : () -> Unit) => {
     let registration = @base_browser.schedule_at_next_animation_frame(callback)
@@ -180,6 +187,7 @@ pub fn DiagramViewports::DiagramViewports(
     target,
     on_size_changed,
     schedule_frame,
+    fill_container,
     controllers: [],
     active: true,
   }
@@ -222,6 +230,7 @@ fn MarkdownDiagramViewportLifetime::refresh(
         self.target,
         self.on_size_changed,
         self.schedule_frame,
+        self.fill_container,
       ) {
       Mounted(controller) => self.controllers.push(controller)
       Skipped => ()
@@ -288,6 +297,7 @@ fn mount_diagram_viewport(
   fallback_target : @rdom.Element,
   on_size_changed : () -> Unit,
   schedule_frame : (() -> Unit) -> () -> Unit,
+  fill_container : Bool,
 ) -> DiagramViewportMountResult {
   guard direct_svg_child(wrapper) is Some(svg) else { return Skipped }
   let result : Ref[DiagramViewportMountResult] = Ref(Skipped)
@@ -297,6 +307,7 @@ fn mount_diagram_viewport(
   ) => {
     result.val = mount_diagram_viewport_in_environment(
       wrapper, svg, owner_document, owner_window, on_size_changed, schedule_frame,
+      fill_container,
     )
   })
   if found {
@@ -314,6 +325,7 @@ fn mount_diagram_viewport_in_environment(
   owner_window : @rdom.Window,
   on_size_changed : () -> Unit,
   schedule_frame : (() -> Unit) -> () -> Unit,
+  fill_container : Bool,
 ) -> DiagramViewportMountResult {
   let content = owner_document.create_element("div")
   content.set_attribute("class", diagram_content_class)
@@ -366,6 +378,7 @@ fn mount_diagram_viewport_in_environment(
     resize_handle,
     owner_document,
     owner_window,
+    fill_container,
     saved_tabindex: save_element_attribute(wrapper, "tabindex"),
     saved_aria_label: save_element_attribute(wrapper, "aria-label"),
     saved_height: save_element_style(wrapper, "height"),
@@ -417,7 +430,9 @@ fn mount_diagram_viewport_in_environment(
   )
   content.append_child(svg.as_node())
   wrapper.append_child(controls.as_node())
-  wrapper.append_child(resize_handle.as_node())
+  if !fill_container {
+    wrapper.append_child(resize_handle.as_node())
+  }
   controller.install_listeners()
   controller.observer = @base_browser.observe_element_resize(wrapper, () => {
     if controller.active {
@@ -899,6 +914,16 @@ fn MarkdownDiagramViewport::center_natural_content(
   self : MarkdownDiagramViewport,
 ) -> Bool {
   guard self.measure_svg() is Some(svg_size) else { return false }
+  if self.fill_container {
+    let rect = self.viewport_rect()
+    if !is_positive_finite(rect.get_width()) ||
+      !is_positive_finite(rect.get_height()) ||
+      !self.fit_content_to_rect(svg_size, rect) {
+      return false
+    }
+    self.initialized = true
+    return true
+  }
   let before = self.viewport_rect()
   if !is_positive_finite(before.get_width()) {
     return false
@@ -954,11 +979,13 @@ fn MarkdownDiagramViewport::preserve_visible_origin(
     0.0
   }
   guard self.measure_svg() is Some(svg_size) else { return false }
-  let height = self.height_for_svg(svg_size)
-  if !is_positive_finite(height) {
-    return false
+  if !self.fill_container {
+    let height = self.height_for_svg(svg_size)
+    if !is_positive_finite(height) {
+      return false
+    }
+    self.write_height(height) |> ignore
   }
-  self.write_height(height) |> ignore
   let rect = self.viewport_rect()
   if !is_positive_finite(rect.get_width()) ||
     !is_positive_finite(rect.get_height()) {
@@ -1059,7 +1086,7 @@ fn MarkdownDiagramViewport::resize_to_height(
   self : MarkdownDiagramViewport,
   height : Double,
 ) -> Bool {
-  if !is_finite(height) {
+  if self.fill_container || !is_finite(height) {
     return false
   }
   let next_height = diagram_minimum_height.max(height)

@@ -163,6 +163,68 @@ fn read_file(
 }
 
 ///|
+/// Ask the owning Desktop Host to run `moon tree --package --json` beside an
+/// exact `moon.mod`. This auxiliary failure is kept separate from the source
+/// read so the editable manifest remains available when Moon cannot render it.
+fn read_package_graph(
+  dispatch : @cmd.Emit[Msg],
+  owner : @interop.ConversationKey,
+  epoch : Int,
+  path : @pathx.Relative,
+  generation : Int,
+  root~ : @common.Uri?,
+) -> @cmd.Cmd {
+  guard root is Some(root) && @resource.belongs_to(root, owner.channel) else {
+    return dispatch(
+      PackageGraphRequestFailed(
+        owner~,
+        epoch~,
+        path~,
+        generation~,
+        message="file root moved to another host before package graph request",
+      ),
+    )
+  }
+  @cmd.custom_cmd(scheduler => {
+    @js.async_run(() => {
+      let reply = @interop.bridge_request(
+        owner.channel,
+        @commands.moon_package_graph,
+        { session: owner.session, root: root.path, path: path.0, },
+      ) catch {
+        error => {
+          scheduler.add(
+            dispatch(
+              PackageGraphRequestFailed(
+                owner~,
+                epoch~,
+                path~,
+                generation~,
+                message=@interop.bridge_error_text(error),
+              ),
+            ),
+          )
+          return
+        }
+      }
+      let message = match reply {
+        @protocol.PackageGraphSource(source~) =>
+          PackageGraphRequestLoaded(owner~, epoch~, path~, generation~, source~)
+        @protocol.PackageGraphError(message~) =>
+          PackageGraphRequestFailed(
+            owner~,
+            epoch~,
+            path~,
+            generation~,
+            message~,
+          )
+      }
+      scheduler.add(dispatch(message))
+    })
+  })
+}
+
+///|
 /// A workspace-relative path's final `/`-segment, for a mention chip's jump
 /// target — it carries only the path, not a display name.
 pub fn basename(path : @pathx.Relative) -> String {

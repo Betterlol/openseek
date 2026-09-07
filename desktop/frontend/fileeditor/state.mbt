@@ -93,6 +93,25 @@ pub(all) enum MbtiViewMode {
 } derive(Eq)
 
 ///|
+/// The presentation selected for an ordinary `moon.mod`. The dependency
+/// graph is the default, while positioned navigation, reviews, and history
+/// keep the source surface.
+pub(all) enum MoonModViewMode {
+  MoonModDependencies
+  MoonModSource
+} derive(Eq)
+
+///|
+/// One package-graph request cached for an open `moon.mod` tab. Every state
+/// carries the request generation so closing/reopening or invalidating a graph
+/// cannot accept a late Host reply from its predecessor.
+pub(all) enum PackageGraphState {
+  PackageGraphLoading(Int)
+  PackageGraphReady(Int, String)
+  PackageGraphFailed(Int, String)
+} derive(Eq)
+
+///|
 /// The layout shared by Line and sectioned semantic comparison. This
 /// panel-level preference is independent from `ReviewViewMode`: returning to
 /// source keeps it for the next review and the next changed file.
@@ -524,6 +543,13 @@ pub(all) struct State {
   // so a closed and later reopened interface starts rendered again. Special
   // source-bearing opens record `MbtiSource` while that tab remains open.
   mbti_view_modes : Map[@pathx.Relative, MbtiViewMode]
+  // Per-tab moon.mod presentation and the Host-produced package graph JSON.
+  // Absence from `moon_mod_view_modes` defaults to the dependency graph;
+  // absence from `package_graphs` means the next active rendered view starts
+  // one request. The generation is page-lifetime state used to fence replies.
+  moon_mod_view_modes : Map[@pathx.Relative, MoonModViewMode]
+  package_graphs : Map[@pathx.Relative, PackageGraphState]
+  package_graph_generation : Int
   // The directory whose immediate children are open in the breadcrumb's
   // VS Code-style picker. The legacy field and message names remain so this
   // presentation change does not grow the package's public API.
@@ -585,6 +611,9 @@ pub fn State::empty() -> State {
     children: Map([]),
     docs: Map([]),
     mbti_view_modes: Map([]),
+    moon_mod_view_modes: Map([]),
+    package_graphs: Map([]),
+    package_graph_generation: 0,
     highlighted: None,
     index: IndexEmpty,
     error: None,
@@ -597,6 +626,16 @@ pub fn State::empty() -> State {
 /// lifetime.
 fn State::mbti_view_mode(self : State, path : @pathx.Relative) -> MbtiViewMode {
   self.mbti_view_modes.get(path).unwrap_or(MbtiDiagram)
+}
+
+///|
+/// An open `moon.mod` defaults to its dependency graph without storing a map
+/// entry. Explicit source/graph selections live only for that tab's lifetime.
+fn State::moon_mod_view_mode(
+  self : State,
+  path : @pathx.Relative,
+) -> MoonModViewMode {
+  self.moon_mod_view_modes.get(path).unwrap_or(MoonModDependencies)
 }
 
 ///|
@@ -634,6 +673,7 @@ pub fn State::prepare_owner(
     request_epoch: self.request_epoch + 1,
     file_link_generation: self.file_link_generation,
     review_generation: self.review_generation,
+    package_graph_generation: self.package_graph_generation + 1,
     watch_generation: self.watch_generation,
     // Preserve the old host configuration until `sync` can explicitly retire
     // or replace it against the newly resolved checkout placement.
@@ -877,6 +917,25 @@ pub(all) enum Msg {
   // Select the ordinary `.mbti` tab's rendered diagram or source. Reviews,
   // history comparisons, and non-MBTI documents ignore the action.
   MbtiViewModeSelected(MbtiViewMode)
+  // Select an ordinary `moon.mod` tab's package dependency graph or source.
+  // Reviews, history comparisons, and non-manifest documents ignore it.
+  MoonModViewModeSelected(MoonModViewMode)
+  // One Host-side `moon tree --package --json` request settled. The complete
+  // owner/epoch/path/generation tuple fences checkout and close/reopen races.
+  PackageGraphRequestLoaded(
+    owner~ : @interop.ConversationKey,
+    epoch~ : Int,
+    path~ : @pathx.Relative,
+    generation~ : Int,
+    source~ : String
+  )
+  PackageGraphRequestFailed(
+    owner~ : @interop.ConversationKey,
+    epoch~ : Int,
+    path~ : @pathx.Relative,
+    generation~ : Int,
+    message~ : String
+  )
   // One `git.original_file` request settled. `path` is always the current
   // changed path (the dock/document key), even when the host read its rename
   // source from `original_path`.
@@ -1104,6 +1163,12 @@ pub extend ReviewBaseline with Eq::{equal, not_equal}
 
 ///|
 pub extend MbtiViewMode with Eq::{equal, not_equal}
+
+///|
+pub extend MoonModViewMode with Eq::{equal, not_equal}
+
+///|
+pub extend PackageGraphState with Eq::{equal, not_equal}
 
 ///|
 pub extend ReviewDiffLayout with Eq::{equal, not_equal}

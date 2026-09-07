@@ -11,7 +11,7 @@ import {
 
 // Types and methods
 type DiagramViewports
-pub fn DiagramViewports::DiagramViewports(@dom.Element, () -> Unit) -> Self
+pub fn DiagramViewports::DiagramViewports(@dom.Element, () -> Unit, fill_container? : Bool) -> Self
 pub fn DiagramViewports::dispose(Self) -> Unit
 pub fn DiagramViewports::refresh(Self) -> Unit
 

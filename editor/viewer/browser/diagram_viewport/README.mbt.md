@@ -12,5 +12,11 @@ may have been inserted or replaced, and call `dispose` before removing or
 replacing the borrowed root. `dispose` restores the attributes, inline styles,
 and direct SVG structure that the package borrowed.
 
+Standalone image panels can construct `DiagramViewports` with
+`fill_container=true`. In that mode the owning host supplies the viewport
+dimensions, the SVG is initially fitted into the complete surface, and the
+inline-only height resize handle is omitted. Markdown callers keep the default
+intrinsic-height behavior.
+
 The stylesheet beside this document is part of the package's presentation
 contract and must be included by each browser host.

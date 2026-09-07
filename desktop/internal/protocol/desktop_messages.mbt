@@ -724,6 +724,34 @@ pub impl ToJson for TerminalClosePayload with fn to_json(self) {
 }
 
 ///|
+/// Request the package dependency graph for one concrete `moon.mod` shown by
+/// the file editor. `root` is the owning conversation checkout and `path` is
+/// relative to it; the Host revalidates both before invoking Moon.
+pub(all) struct MoonPackageGraphPayload {
+  session : String
+  root : String
+  path : String
+} derive(Debug, Eq)
+
+///|
+pub impl FromJson for MoonPackageGraphPayload with fn from_json(json, path) {
+  guard json is Object(fields) else {
+    raise JsonDecodeError((path, "expected Moon package-graph payload"))
+  }
+  let object = JsonObject::of(fields, path)
+  {
+    session: object.required_string("session"),
+    root: object.required_string("root"),
+    path: object.required_string("path"),
+  }
+}
+
+///|
+pub impl ToJson for MoonPackageGraphPayload with fn to_json(self) {
+  { "session": self.session, "root": self.root, "path": self.path }
+}
+
+///|
 pub(all) struct LspOpenPayload {
   session : String
   root : String
@@ -1791,6 +1819,18 @@ pub extend MoonIdeNavigationPayload with Eq::{equal, not_equal}
 
 ///|
 pub extend MoonIdeNavigationPayload with ToJson::{to_json}
+
+///|
+pub extend MoonPackageGraphPayload with Debug::{to_repr}
+
+///|
+pub extend MoonPackageGraphPayload with FromJson::{from_json}
+
+///|
+pub extend MoonPackageGraphPayload with Eq::{equal, not_equal}
+
+///|
+pub extend MoonPackageGraphPayload with ToJson::{to_json}
 
 ///|
 pub extend OpenSeekThinking with Debug::{to_repr}
