@@ -434,7 +434,7 @@ priv enum BlockContent {
     step_label~ : String?,
     assistant_name~ : String,
     subrun_parent~ : String?,
-    wait_labels~ : Map[String, String]
+    wait_labels~ : Map[Int, String]
   )
   /// The rule closing a user turn.
   TurnRule(ts~ : Double?)

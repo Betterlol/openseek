@@ -1891,7 +1891,8 @@ test('pending job waits show descriptions from earlier tool rows', async ({ page
     } } },
     { sequence: 4, item: { kind: 'assistant', payload: {
       content: '', tool_calls: [{ id: 'wait', name: 'job_wait',
-        arguments: JSON.stringify({ job_ids: ['bg-10', 'bg-11'] }) }],
+        arguments: JSON.stringify({ job_ids: ['bg-10', 'bg-11'] }) },
+        { id: 'wait', name: 'job_wait', arguments: JSON.stringify({ job_ids: ['bg-11'] }) }],
     } } },
   ];
   await app.install();
@@ -1899,9 +1900,9 @@ test('pending job waits show descriptions from earlier tool rows', async ({ page
   await app.openSession();
   const wait = page.locator('details.tool-call').filter({ hasText: 'Waiting for' });
   await expect(wait.locator('.tool-call-text')).toHaveText(
-    'Waiting for bg-10: Watch CI on rebased PR 27, bg-11');
-  await expect(wait).not.toHaveAttribute('open', '');
-  await wait.locator('summary').click();
-  await expect(wait).toContainText('"job_ids"');
+    ['Waiting for bg-10: Watch CI on rebased PR 27, bg-11', 'Waiting for bg-11']);
+  await expect(wait.first()).not.toHaveAttribute('open', '');
+  await wait.first().locator('summary').click();
+  await expect(wait.first()).toContainText('"job_ids"');
   expect(app.pageErrors).toEqual([]);
 });

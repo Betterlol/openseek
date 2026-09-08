@@ -49,7 +49,7 @@ test "waiting labels reuse recorded job descriptions and keep unknown IDs" {
   }
   let descriptions : Map[String, String] = Map([])
   assert_eq(
-    job_wait_labels(item, descriptions).get("wait"),
+    job_wait_labels(item, descriptions).get(1),
     Some("Waiting for bg-10: Watch CI on rebased PR 27, bg-11"),
   )
   assert_eq(pending_job_wait_label(wait), Some("Waiting for bg-10, bg-11"))
@@ -101,4 +101,31 @@ test "waiting labels reuse recorded job descriptions and keep unknown IDs" {
     ignored,
   )
   assert_true(ignored.is_empty())
+}
+
+///|
+test "waiting labels distinguish duplicate call IDs by position" {
+  let first : @transcript.ToolCall = {
+    call_id: "duplicate",
+    name: "job_wait",
+    arguments: Some("{\"job_ids\":[\"bg-1\"]}"),
+    outcome: Pending(output=None),
+  }
+  let item : @transcript.TranscriptItem = {
+    kind: Assistant(
+      reasoning=None,
+      prose=None,
+      calls=[first, { ..first, arguments: Some("{\"job_ids\":[\"bg-2\"]}"), }],
+      replay=false,
+      finished=false,
+    ),
+    ts: None,
+    sequence: None,
+  }
+  let labels = job_wait_labels(item, {
+    "bg-1": "First job",
+    "bg-2": "Second job",
+  })
+  assert_eq(labels.get(0), Some("Waiting for bg-1: First job"))
+  assert_eq(labels.get(1), Some("Waiting for bg-2: Second job"))
 }

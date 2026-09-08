@@ -42,16 +42,18 @@ fn collect_job_description(
     call.arguments is Some(arguments) else {
     return
   }
-  let args = @json.parse(arguments) catch { _ => return }
   if call.name == "mbtx" {
-    guard brief.strip_prefix("mbtx → bg ") is Some(id) &&
-      !id.is_blank() &&
-      args is { "description": String(description), .. } &&
+    guard brief.strip_prefix("mbtx → bg ") is Some(id) && !id.is_blank() else {
+      return
+    }
+    let args = @json.parse(arguments) catch { _ => return }
+    guard args is { "description": String(description), .. } &&
       !description.is_blank() else {
       return
     }
     descriptions[id.to_owned()] = description
   } else if call.name == "job_output" {
+    let args = @json.parse(arguments) catch { _ => return }
     guard args is { "job_id": String(id), .. } &&
       brief.strip_prefix("job \{id} (") is Some(rest) &&
       rest.to_owned().split_once("): ") is Some((_, description)) &&
@@ -66,15 +68,15 @@ fn collect_job_description(
 fn job_wait_labels(
   item : @transcript.TranscriptItem,
   descriptions : Map[String, String],
-) -> Map[String, String] {
-  let labels : Map[String, String] = Map([])
+) -> Map[Int, String] {
+  let labels : Map[Int, String] = Map([])
   if item.kind is Assistant(calls~, ..) {
     for call in calls {
       collect_job_description(call, descriptions)
     }
-    for call in calls {
+    for index, call in calls {
       if pending_job_wait_label(call, descriptions~) is Some(label) {
-        labels[call.call_id] = label
+        labels[index] = label
       }
     }
   }
