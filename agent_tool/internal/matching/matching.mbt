@@ -14,13 +14,8 @@ pub fn normalize_content_for_matching(content : String) -> (String, Array[Int]) 
       result.write_char('\n')
       i += 2
     } else {
-      match content[i].to_char() {
-        Some(ch) => {
-          result.write_char(ch)
-          i += 1
-        }
-        _ => break
-      }
+      result.write_string(content.unsafe_substring(start=i, end=i + 1))
+      i += 1
     }
   }
   (result.to_string(), map)
