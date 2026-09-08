@@ -29,17 +29,25 @@ async fn main {
 /// `[env: OPENSEEK_*]` fallbacks would otherwise silently never fire.
 async fn dispatch() -> Unit {
   let matches = @argparse.parse(root_command(), env=@env.get_env_vars())
-  match matches.subcommand {
-    Some(("run", m)) => run_task_command(m)
-    Some(("serve", m)) => run_serve_command(m)
-    Some(("review", m)) => run_review_command(m)
-    Some(("subrun", m)) => run_subrun_command(m)
-    Some(("mcp", m)) => run_mcp_command(m)
-    Some(("sessions", m)) => run_sessions_command(m)
-    // argparse rejects unknown and missing subcommands during parse, so this is
-    // unreachable.
-    Some((name, _)) => fail("unhandled subcommand: \{name}")
-    None => fail("missing subcommand (argparse should have rejected this)")
+  // argparse rejects unknown and missing subcommands during parse, so the
+  // absent case is unreachable.
+  guard matches.subcommand is Some((name, m)) else {
+    fail("missing subcommand (argparse should have rejected this)")
+  }
+  // Only the agent-running commands spawn children, and only they read the
+  // setting at all: a malformed value must not break `sessions list`, for the
+  // same reason `--api-key` is not argparse-`required`.
+  if name is ("run" | "serve" | "review" | "subrun") {
+    export_retry_overrides(m)
+  }
+  match name {
+    "run" => run_task_command(m)
+    "serve" => run_serve_command(m)
+    "review" => run_review_command(m)
+    "subrun" => run_subrun_command(m)
+    "mcp" => run_mcp_command(m)
+    "sessions" => run_sessions_command(m)
+    name => fail("unhandled subcommand: \{name}")
   }
 }
 
@@ -152,6 +160,7 @@ async fn run_task_command(matches : @argparse.Matches) -> Unit {
     guard model.api_key(matches.values) is Some(api_key) else {
       fail("an API key is required for \{model}: pass --api-key")
     }
+    let (retry_attempts, retry_backoff_ms) = retry_overrides(matches)
     let max_steps = max_steps(matches)
     let task = task_text(matches)
     match resolved_session_id(matches) {
@@ -177,6 +186,8 @@ async fn run_task_command(matches : @argparse.Matches) -> Unit {
           max_steps?,
           thinking~,
           api_url?,
+          retry_attempts?,
+          retry_backoff_ms?,
           workspace_root~,
           review_deadline_ms~,
         )
@@ -210,6 +221,8 @@ async fn run_task_command(matches : @argparse.Matches) -> Unit {
           max_steps?,
           thinking~,
           api_url?,
+          retry_attempts?,
+          retry_backoff_ms?,
           workspace_root~,
           review_deadline_ms~,
           child_session=ChildSession(
@@ -268,6 +281,8 @@ async fn run_task_turn(
   max_steps? : Int,
   thinking~ : @deepseek.ThinkingMode,
   api_url? : String,
+  retry_attempts? : Int,
+  retry_backoff_ms? : Int,
   workspace_root~ : String,
   review_deadline_ms~ : Int?,
   child_session? : @agent_subrun.ChildSession,
@@ -346,6 +361,8 @@ async fn run_task_turn(
         max_steps?,
         thinking~,
         api_url?,
+        retry_attempts?,
+        retry_backoff_ms?,
         tools~,
         on_goal_met?,
       ),
@@ -833,6 +850,54 @@ fn max_steps(matches : @argparse.Matches) -> Int? raise {
     { values: { "max-steps": [input, ..], .. }, .. } =>
       Some(@cli.parse_positive_int(input, "--max-steps"))
     _ => None
+  }
+}
+
+///|
+/// Model-request retry overrides. `None` for either half means the DeepSeek
+/// client keeps its own default, so the defaults live in exactly one place
+/// (`@client.Client`) and are never restated here.
+///
+/// The pair is forwarded as `retry_attempts?, retry_backoff_ms?` down to every
+/// in-process `@client.Client`; `export_retry_overrides` carries it to child
+/// processes.
+fn retry_overrides(matches : @argparse.Matches) -> (Int?, Int?) raise {
+  let attempts = match matches {
+    { values: { "retry-attempts": [input, ..], .. }, .. } =>
+      Some(@cli.parse_positive_int(input, "--retry-attempts"))
+    _ => None
+  }
+  let backoff_ms = match matches {
+    { values: { "retry-backoff-ms": [input, ..], .. }, .. } =>
+      Some(@cli.parse_positive_int(input, "--retry-backoff-ms"))
+    _ => None
+  }
+  (attempts, backoff_ms)
+}
+
+///|
+/// Write the resolved retry overrides back into this process's environment, so
+/// that a child sees exactly what this process resolved.
+///
+/// `--retry-attempts 2` and `OPENSEEK_RETRY_ATTEMPTS=2` must mean the same
+/// thing to a subagent, and before this a child got only the second: nothing
+/// injects these on the child command line, and four separate spawn sites
+/// would each have to — the review gate, the model-callable review tool, and
+/// the workflow scout and worker runners, the last two reachable only through
+/// the `SubrunInjection` handoff an `mbtx` snippet receives. Children do
+/// inherit the environment (`@process.spawn(inherit_env=true)`), so writing
+/// the flag back closes all four at once. It is also the shape `--api-key`
+/// already has: argv carries what a child cannot otherwise know, and the
+/// environment carries the rest.
+///
+/// A value that arrived from the environment is rewritten unchanged.
+fn export_retry_overrides(matches : @argparse.Matches) -> Unit raise {
+  let (attempts, backoff_ms) = retry_overrides(matches)
+  if attempts is Some(attempts) {
+    @env.set_env_var("OPENSEEK_RETRY_ATTEMPTS", "\{attempts}")
+  }
+  if backoff_ms is Some(backoff_ms) {
+    @env.set_env_var("OPENSEEK_RETRY_BACKOFF_MS", "\{backoff_ms}")
   }
 }
 
@@ -1367,6 +1432,8 @@ test "cli parses env backed options and task" {
     "OPENSEEK_MAX_STEPS": "120",
     "OPENSEEK_SYSTEM_PROMPT_FILE": "/tmp/prompt-a.md",
     "OPENSEEK_SYSTEM_PROMPT_ADDENDUM_FILE": "/tmp/prompt-b.md",
+    "OPENSEEK_RETRY_ATTEMPTS": "4",
+    "OPENSEEK_RETRY_BACKOFF_MS": "25",
   })
   let (model, _, api_url) = agent_settings(parsed)
   assert_true(model is Deepseek(V4Pro))
@@ -1383,6 +1450,7 @@ test "cli parses env backed options and task" {
   assert_false(parsed is { values: { "session": [_, ..], .. }, .. })
   assert_eq(session_root(parsed), ".openseek")
   assert_eq(task_text(parsed), "write MoonBit")
+  assert_eq(retry_overrides(parsed), (Some(4), Some(25)))
 }
 
 ///|
@@ -1399,6 +1467,55 @@ test "cli defaults model and max steps" {
   assert_true(max_steps(parsed) is None)
   assert_true(parsed is { values: { "session"? : None, .. }, .. })
   assert_eq(session_root(parsed), ".openseek")
+  // Absent on both halves: the DeepSeek client keeps its own defaults, which
+  // the CLI never restates.
+  assert_eq(retry_overrides(parsed), (None, None))
+}
+
+///|
+test "cli retry flags override the environment and reject non-positives" {
+  let parsed = run_matches(
+    argv=["--retry-attempts", "2", "--retry-backoff-ms", "7", "write"],
+    env={ "DEEPSEEK": "test-key", "OPENSEEK_RETRY_ATTEMPTS": "9" },
+  )
+  assert_eq(retry_overrides(parsed), (Some(2), Some(7)))
+  // Rejection is checked through the environment: argparse refuses a bare
+  // `-1` as a missing value before the parsed string ever reaches here.
+  for bad in ["0", "-1", "many"] {
+    let rejected = run_matches(argv=["write"], env={
+      "DEEPSEEK": "test-key",
+      "OPENSEEK_RETRY_ATTEMPTS": bad,
+    })
+    try ignore(retry_overrides(rejected)) catch {
+      err =>
+        assert_true(
+          "\{err}".contains("--retry-attempts must be a positive integer"),
+        )
+    } noraise {
+      _ => fail("expected --retry-attempts \{bad} to be rejected")
+    }
+  }
+}
+
+///|
+/// The flag has to reach subagents, and they are handed the environment, not
+/// this process's argv — see `export_retry_overrides`.
+test "cli exports argv retry overrides into the environment for children" {
+  let parsed = run_matches(
+    argv=["--retry-attempts", "3", "--retry-backoff-ms", "11", "write"],
+    env={ "DEEPSEEK": "test-key" },
+  )
+  export_retry_overrides(parsed)
+  assert_eq(@env.get_env_var("OPENSEEK_RETRY_ATTEMPTS"), Some("3"))
+  assert_eq(@env.get_env_var("OPENSEEK_RETRY_BACKOFF_MS"), Some("11"))
+  @env.unset_env_var("OPENSEEK_RETRY_ATTEMPTS")
+  @env.unset_env_var("OPENSEEK_RETRY_BACKOFF_MS")
+  // Nothing to carry means nothing written: a child keeps falling back to the
+  // client default rather than being pinned to a value nobody asked for.
+  let bare = run_matches(argv=["write"], env={ "DEEPSEEK": "test-key" })
+  export_retry_overrides(bare)
+  assert_eq(@env.get_env_var("OPENSEEK_RETRY_ATTEMPTS"), None)
+  assert_eq(@env.get_env_var("OPENSEEK_RETRY_BACKOFF_MS"), None)
 }
 
 ///|
