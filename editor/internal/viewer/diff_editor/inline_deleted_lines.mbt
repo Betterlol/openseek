@@ -63,6 +63,7 @@ fn inline_alignment_spacer_spec(
   after_line_number : Int,
   height_in_px : Double,
   pane_class : String,
+  ordinal~ : Int,
 ) -> @code_widget.ManagedCodeEditorViewZoneSpec {
   let document = @rdom.document()
   let node = document.create_element("div")
@@ -71,7 +72,9 @@ fn inline_alignment_spacer_spec(
     "moonbit-diff-editor-alignment-spacer \{pane_class}",
   )
   node.set_attribute("aria-hidden", "true")
-  ManagedCodeEditorViewZoneSpec(after_line_number, height_in_px, node)
+  // Spacers and deleted code can share an anchor. Use their common alignment
+  // order so ignored source rows stay before the following deleted code.
+  ManagedCodeEditorViewZoneSpec(after_line_number, height_in_px, node, ordinal~)
 }
 
 ///|
@@ -146,6 +149,7 @@ fn inline_deleted_view_zone_specs(
             alignment.original_range.end_line_number_exclusive - 1,
             delta,
             "moonbit-diff-editor-inline-original-alignment-spacer",
+            ordinal=alignment_index,
           ),
         )
       } else if delta < -0.01 {
@@ -154,6 +158,7 @@ fn inline_deleted_view_zone_specs(
             alignment.modified_range.end_line_number_exclusive - 1,
             -delta,
             "moonbit-diff-editor-inline-modified-alignment-spacer",
+            ordinal=alignment_index,
           ),
         )
       }
@@ -191,6 +196,7 @@ fn inline_deleted_view_zone_specs(
                   alignment.original_range.start_line_number + model_line_index,
                   (view_line_count - 1).to_double() * line_height,
                   "moonbit-diff-editor-inline-original-continuation-spacer",
+                  ordinal=alignment_index,
                 ),
               )
             }
@@ -227,6 +233,7 @@ fn inline_deleted_view_zone_specs(
           alignment.original_range.end_line_number_exclusive - 1,
           original_companion_height,
           "moonbit-diff-editor-inline-original-companion-spacer",
+          ordinal=alignment_index,
         ),
       )
     }
@@ -236,6 +243,7 @@ fn inline_deleted_view_zone_specs(
           alignment.modified_range.end_line_number_exclusive - 1,
           modified_compensation_height,
           "moonbit-diff-editor-inline-modified-companion-spacer",
+          ordinal=alignment_index,
         ),
       )
     }

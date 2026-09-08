@@ -111,14 +111,18 @@ impl @diff.DocumentDiffProvider for IgnoredDiffLifecycleProvider with fn compute
         kind=Ignored,
       ),
       DocumentDiffChange(
-        DetailedLineRangeMapping(LineRange(3, 4), LineRange(2, 3), None),
-      ),
-      DocumentDiffChange(
-        DetailedLineRangeMapping(LineRange(4, 4), LineRange(3, 4), None),
+        DetailedLineRangeMapping(LineRange(3, 5), LineRange(2, 2), None),
         kind=Ignored,
       ),
       DocumentDiffChange(
-        DetailedLineRangeMapping(LineRange(5, 6), LineRange(5, 6), None),
+        DetailedLineRangeMapping(LineRange(5, 6), LineRange(2, 3), None),
+      ),
+      DocumentDiffChange(
+        DetailedLineRangeMapping(LineRange(6, 6), LineRange(3, 4), None),
+        kind=Ignored,
+      ),
+      DocumentDiffChange(
+        DetailedLineRangeMapping(LineRange(7, 8), LineRange(5, 6), None),
         kind=Ignored,
       ),
     ],
@@ -184,7 +188,7 @@ pub fn run_diff_editor_lifecycle_test() -> Unit {
     "indicator-modified", "shared head\nnew value\nshared tail",
   )
   let ignored_original = diff_editor_lifecycle_model(
-    "ignored-original", "// removed\nkeep\nold value\nlast\n// tail old\nend",
+    "ignored-original", "// removed\nkeep\n// before value one\n// before value two\nold value\nlast\n// tail old\nend",
   )
   let ignored_modified = diff_editor_lifecycle_model(
     "ignored-modified", "keep\nnew value\n// inserted\nlast\n// tail new\nend",

@@ -592,6 +592,15 @@ for (const layout of ['split', 'inline']) {
         await expect(deleted).not.toContainText('// removed');
         await expect(deleted).not.toContainText('// tail old');
         await expect(modified.locator('.view-line').filter({ hasText: '// inserted' })).toBeVisible();
+        // The ignored deletion and visible old code share a modified-side
+        // anchor. Their ViewZones must keep source order so old code stays
+        // beside its own line number, including after provider toggles.
+        const oldNumber = original.locator('.line-numbers').filter({ hasText: /^5$/ });
+        await expect.poll(async () => {
+          const code = await deleted.boundingBox();
+          const gutter = await oldNumber.boundingBox();
+          return code && gutter ? Math.abs(code.y - gutter.y) : Number.POSITIVE_INFINITY;
+        }).toBeLessThanOrEqual(1);
       }
     }
     await disposeDiffLifecycle(page);
