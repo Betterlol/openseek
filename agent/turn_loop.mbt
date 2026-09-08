@@ -464,6 +464,12 @@ async fn AgentLoop::chat(self : Self, step : Int) -> @deepseek.ChatResponse {
           @emit.emit(ReasoningDelta(content=delta))
         }
       },
+      // The provider request for this step is being retried. Controllers drop
+      // the failed attempt's live preview and show the retry; nothing is
+      // appended to the session and no tool reruns.
+      on_retry=(attempt, max_attempts, reason) => {
+        @emit.emit(StreamRetry(attempt~, max_attempts~, reason~))
+      },
     ),
   )
   response.log_and_reasoning_content()

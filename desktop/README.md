@@ -87,6 +87,12 @@ terminal boundary, so an older commit cannot be mistaken for the next step and
 a finish cannot outrun the canonical row. The UI likewise renders
 `assistant_delta` as a live answer bubble, while durable `session.event`
 commits remain the only permanent transcript source.
+If the provider request fails and the engine decides to retry, `stream_retry`
+clears both live previews and the heartbeat reads "Retrying · attempt 2/5 ·
+reason" until the engine next reports progress on that request (a delta, the
+response's usage, a tool result, or the next step). It leaves the
+current model step and all durable rows untouched; the retry notice is live
+state and is not written to `session.jsonl`.
 
 While a turn runs, the composer exposes a **Steer now / Queue next** selector
 beside Send. It starts from Settings → Interface → Follow-up messages, applies

@@ -20,8 +20,11 @@ The package depends on `moonbitlang/async/http` and is native-only.
   and decode the response as `@deepseek.ChatResponse`. Without `stream`, this
   is a normal JSON response. With `stream=StreamHandler(...)`, it uses SSE and
   still returns the accumulated response.
-- `StreamHandler(on_content_delta~, on_reasoning_delta?)`: receive non-empty
-  content and reasoning deltas while a streaming chat request is in progress.
+- `StreamHandler(on_content_delta~, on_reasoning_delta?, on_retry?)`: receive
+  non-empty content and reasoning deltas while a streaming chat request is in
+  progress. `on_retry(attempt, max_attempts, reason)` opts into retrying an
+  interrupted stream and is told about every retry before its backoff; the
+  `StreamHandler` docstring states the contract.
 
 `Client` implements `Debug` with the API key redacted.
 
@@ -158,7 +161,11 @@ The stream reader:
 
 Streaming calls retry only until the first SSE event is produced. After any
 event - text, reasoning, tool-call, or usage - retrying could duplicate or
-change the completion, so later failures surface directly.
+change the completion, so later failures surface directly. A handler that
+supplies `on_retry` opts out of that rule for socket, EOF, and idle-timeout
+failures: the callback runs when the retry is decided, before the backoff
+sleep, so the consumer can discard the failed attempt's output and show that
+a retry is pending.
 
 At runtime:
 
