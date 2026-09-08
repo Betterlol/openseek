@@ -36,7 +36,7 @@ fn original_diff_overview_ruler_entries(
   diff_state : DiffState,
 ) -> Array[@code_widget.CodeEditorOverviewRulerEntry] {
   let entries : Array[@code_widget.CodeEditorOverviewRulerEntry] = []
-  for change_index, mapping in diff_state.mappings {
+  for change_index, mapping in diff_state.visible_mappings() {
     let range = mapping.line_range_mapping.original
     if !range.is_empty() {
       entries.push({
@@ -55,7 +55,7 @@ fn modified_diff_overview_ruler_entries(
   diff_state : DiffState,
 ) -> Array[@code_widget.CodeEditorOverviewRulerEntry] {
   let entries : Array[@code_widget.CodeEditorOverviewRulerEntry] = []
-  for change_index, mapping in diff_state.mappings {
+  for change_index, mapping in diff_state.visible_mappings() {
     let range = mapping.line_range_mapping.modified
     if !range.is_empty() {
       entries.push({

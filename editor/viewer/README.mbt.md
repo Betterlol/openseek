@@ -115,11 +115,10 @@ Hosts own every `TextModel`, DOM host, and explicitly supplied
 ## Diff editor contract
 
 `DiffEditor` accepts a synchronous `DocumentDiffProvider`. The default line-diff
-provider lives in `viewer/common/diff`. A diff result has
-two distinct inputs:
-
-- `changes` drive decorations, overview markers, and change navigation; and
-- `additional_alignments` affect geometry only.
+provider lives in `viewer/common/diff`. Its result contains one ordered
+`changes` list. Each change carries `kind: Visible | Ignored` and a detailed
+line mapping. All changes drive alignment; only Visible changes drive
+decorations, overview markers, Inline deleted blocks, and navigation.
 
 The shared `DiffEditorViewModel` publishes `NoModel`, `Pending`, `Ready`, or
 `Failed`. Model, provider, and option changes rotate a generation. Computation
@@ -141,9 +140,10 @@ DocumentDiff
        -> navigation
 ```
 
-`additional_alignments` is the only renderer-state extension. It is injected
-only into alignment computation and cannot create decorations, overview
-markers, Inline deleted blocks, or navigation targets.
+`DiffState` retains each mapping's kind and projects visible mappings for diff
+features. Ignored mappings enter alignment only. The host recomputes the
+provider result when ignore settings change, restoring complete visible
+changes from the new result.
 
 The kernel exposes stable geometry, managed-zone, viewport-state, render, and
 scroll adapters for this work. Diff features do not access raw `View`,

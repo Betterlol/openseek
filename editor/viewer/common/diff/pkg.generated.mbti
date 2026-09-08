@@ -28,12 +28,28 @@ pub fn DetailedLineRangeMapping::not_equal(Self, Self) -> Bool
 pub fn DetailedLineRangeMapping::to_repr(Self) -> @debug.Repr
 
 pub(all) struct DocumentDiff {
-  changes : Array[DetailedLineRangeMapping]
-  additional_alignments : Array[LineRangeMapping]
+  changes : Array[DocumentDiffChange]
 } derive(Eq, @debug.Debug)
 pub fn DocumentDiff::equal(Self, Self) -> Bool
 pub fn DocumentDiff::not_equal(Self, Self) -> Bool
 pub fn DocumentDiff::to_repr(Self) -> @debug.Repr
+
+pub(all) struct DocumentDiffChange {
+  kind : DocumentDiffChangeKind
+  mapping : DetailedLineRangeMapping
+} derive(Eq, @debug.Debug)
+pub fn DocumentDiffChange::DocumentDiffChange(DetailedLineRangeMapping, kind? : DocumentDiffChangeKind) -> Self
+pub fn DocumentDiffChange::equal(Self, Self) -> Bool
+pub fn DocumentDiffChange::not_equal(Self, Self) -> Bool
+pub fn DocumentDiffChange::to_repr(Self) -> @debug.Repr
+
+pub(all) enum DocumentDiffChangeKind {
+  Visible
+  Ignored
+} derive(Eq, @debug.Debug)
+pub fn DocumentDiffChangeKind::equal(Self, Self) -> Bool
+pub fn DocumentDiffChangeKind::not_equal(Self, Self) -> Bool
+pub fn DocumentDiffChangeKind::to_repr(Self) -> @debug.Repr
 
 pub(all) struct DocumentDiffOptions {
   ignore_trim_whitespace : Bool

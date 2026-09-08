@@ -60,7 +60,7 @@ fn LineDocumentDiffProvider::compute_lines_diff(
     modified_lines
   }
   if old_input == new_input {
-    return { changes: [], additional_alignments: [], }
+    return { changes: [], }
   }
 
   // Preserve Monaco's useful empty-document shape: its one logical empty line
@@ -69,19 +69,20 @@ fn LineDocumentDiffProvider::compute_lines_diff(
     (new_input.length() == 1 && new_input[0].length() == 0) {
     return {
       changes: [
-        DetailedLineRangeMapping(
-          LineRange(1, original_lines.length() + 1),
-          LineRange(1, modified_lines.length() + 1),
-          compute_inner_changes(
-            original_lines,
-            modified_lines,
+        DocumentDiffChange(
+          DetailedLineRangeMapping(
             LineRange(1, original_lines.length() + 1),
             LineRange(1, modified_lines.length() + 1),
-            options.ignore_trim_whitespace,
+            compute_inner_changes(
+              original_lines,
+              modified_lines,
+              LineRange(1, original_lines.length() + 1),
+              LineRange(1, modified_lines.length() + 1),
+              options.ignore_trim_whitespace,
+            ),
           ),
         ),
       ],
-      additional_alignments: [],
     }
   }
 
@@ -123,7 +124,7 @@ fn LineDocumentDiffProvider::compute_lines_diff(
       ),
     )
   }
-  { changes, additional_alignments: [], }
+  { changes: changes.map(mapping => DocumentDiffChange(mapping)), }
 }
 
 ///|

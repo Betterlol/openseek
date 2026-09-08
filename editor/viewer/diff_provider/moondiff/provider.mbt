@@ -182,28 +182,25 @@ fn new_only_change(
 }
 
 ///|
-fn ranges_touch(
-  left : @base_common.LineRange,
-  right : @base_common.LineRange,
-) -> Bool {
-  left.end_line_number_exclusive >= right.start_line_number &&
-  right.end_line_number_exclusive >= left.start_line_number
-}
-
-///|
 fn append_change(
-  changes : Array[@diff.DetailedLineRangeMapping],
+  changes : Array[@diff.DocumentDiffChange],
   change : @diff.DetailedLineRangeMapping,
+  kind : @diff.DocumentDiffChangeKind,
 ) -> Unit {
   guard !changes.is_empty() else {
-    changes.push(change)
+    changes.push(DocumentDiffChange(change, kind~))
     return
   }
   let index = changes.length() - 1
-  let previous = changes[index]
-  if !ranges_touch(previous.original, change.original) &&
-    !ranges_touch(previous.modified, change.modified) {
-    changes.push(change)
+  let previous = changes[index].mapping
+  // Only merge consecutive rows on both sides. Overlapping or out-of-order
+  // hunks must reach validation unchanged rather than being hidden by a join.
+  if changes[index].kind != kind ||
+    previous.original.end_line_number_exclusive !=
+    change.original.start_line_number ||
+    previous.modified.end_line_number_exclusive !=
+    change.modified.start_line_number {
+    changes.push(DocumentDiffChange(change, kind~))
     return
   }
   let inner_changes = match (previous.inner_changes, change.inner_changes) {
@@ -214,50 +211,28 @@ fn append_change(
     }
     _ => None
   }
-  changes[index] = DetailedLineRangeMapping(
-    previous.original.join(change.original),
-    previous.modified.join(change.modified),
-    inner_changes,
-  )
-}
-
-///|
-fn append_alignment(
-  alignments : Array[@diff.LineRangeMapping],
-  alignment : @diff.LineRangeMapping,
-) -> Unit {
-  guard !alignments.is_empty() else {
-    alignments.push(alignment)
-    return
-  }
-  let index = alignments.length() - 1
-  let previous = alignments[index]
-  if !ranges_touch(previous.original, alignment.original) &&
-    !ranges_touch(previous.modified, alignment.modified) {
-    alignments.push(alignment)
-    return
-  }
-  alignments[index] = LineRangeMapping(
-    previous.original.join(alignment.original),
-    previous.modified.join(alignment.modified),
+  changes[index] = DocumentDiffChange(
+    DetailedLineRangeMapping(
+      previous.original.join(change.original),
+      previous.modified.join(change.modified),
+      inner_changes,
+    ),
+    kind~,
   )
 }
 
 ///|
 fn append_fragment_rows(
   rows : ArrayView[@mbtdiff.DiffRow],
-  visible : Bool,
+  kind : @diff.DocumentDiffChangeKind,
   original_lines : Array[String],
   modified_lines : Array[String],
   original_cursor : Int,
   modified_cursor : Int,
-  changes : Array[@diff.DetailedLineRangeMapping],
-  alignments : Array[@diff.LineRangeMapping],
+  changes : Array[@diff.DocumentDiffChange],
 ) -> (Int, Int)? {
   let mut old_cursor = original_cursor
   let mut new_cursor = modified_cursor
-  let block_changes : Array[@diff.DetailedLineRangeMapping] = []
-  let block_alignments : Array[@diff.LineRangeMapping] = []
   for row in rows {
     match row {
       Paired(original, modified) => {
@@ -265,8 +240,8 @@ fn append_fragment_rows(
           !valid_fragment_line(modified, new_cursor, modified_lines) {
           return None
         }
-        if visible {
-          append_change(block_changes, paired_change(original, modified))
+        if kind is Visible || original.text() != modified.text() {
+          append_change(changes, paired_change(original, modified), kind)
         }
         old_cursor += 1
         new_cursor += 1
@@ -276,11 +251,7 @@ fn append_fragment_rows(
           return None
         }
         let change = old_only_change(original, new_cursor, modified_lines)
-        if visible {
-          append_change(block_changes, change)
-        } else {
-          append_alignment(block_alignments, change.line_mapping())
-        }
+        append_change(changes, change, kind)
         old_cursor += 1
       }
       NewOnly(modified) => {
@@ -288,17 +259,11 @@ fn append_fragment_rows(
           return None
         }
         let change = new_only_change(modified, old_cursor, original_lines)
-        if visible {
-          append_change(block_changes, change)
-        } else {
-          append_alignment(block_alignments, change.line_mapping())
-        }
+        append_change(changes, change, kind)
         new_cursor += 1
       }
     }
   }
-  changes.append(block_changes)
-  alignments.append(block_alignments)
   Some((old_cursor, new_cursor))
 }
 
@@ -308,8 +273,7 @@ fn adapt_fragment_document(
   original_lines : Array[String],
   modified_lines : Array[String],
 ) -> @diff.DocumentDiff? {
-  let changes : Array[@diff.DetailedLineRangeMapping] = []
-  let alignments : Array[@diff.LineRangeMapping] = []
+  let changes : Array[@diff.DocumentDiffChange] = []
   for hunk in document.hunks {
     if !valid_hunk_range(hunk.old_start, hunk.old_len, original_lines.length()) ||
       !valid_hunk_range(hunk.new_start, hunk.new_len, modified_lines.length()) {
@@ -335,13 +299,16 @@ fn adapt_fragment_document(
         ChangeBlock(rows) | IgnoredBlock(rows) => {
           guard append_fragment_rows(
               rows,
-              block is ChangeBlock(_),
+              if block is ChangeBlock(_) {
+                Visible
+              } else {
+                Ignored
+              },
               original_lines,
               modified_lines,
               old_cursor,
               new_cursor,
               changes,
-              alignments,
             )
             is Some((next_old, next_new)) else {
             return None
@@ -356,7 +323,7 @@ fn adapt_fragment_document(
       return None
     }
   }
-  Some({ changes, additional_alignments: alignments, })
+  Some({ changes, })
 }
 
 ///|

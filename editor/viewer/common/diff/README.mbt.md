@@ -7,8 +7,9 @@ provider. The package has no DOM or editor-widget dependency.
 flowchart LR
   O["original TextSnapshot"] --> P["DocumentDiffProvider"]
   M["modified TextSnapshot"] --> P
-  P --> C["DocumentDiff.changes<br/>render and navigate"]
-  P --> A["additional_alignments<br/>geometry only"]
+  P --> C["DocumentDiff.changes"]
+  C --> V["Visible: render, navigate, align"]
+  C --> I["Ignored: align only"]
 ```
 
 ## Computing a diff
@@ -30,9 +31,9 @@ test "an edited line maps original and modified ranges" {
     strict_options,
   )
   assert_eq(result.changes.length(), 1)
-  assert_eq(result.changes[0].original, LineRange(2, 3))
-  assert_eq(result.changes[0].modified, LineRange(2, 3))
-  assert_true(result.additional_alignments.is_empty())
+  assert_eq(result.changes[0].mapping.original, LineRange(2, 3))
+  assert_eq(result.changes[0].mapping.modified, LineRange(2, 3))
+  assert_true(result.changes[0].kind is Visible)
 }
 ```
 
@@ -48,8 +49,8 @@ test "insertions keep half-open line-range semantics" {
     strict_options,
   )
   assert_eq(inserted.changes.length(), 1)
-  assert_true(inserted.changes[0].original.is_empty())
-  assert_eq(inserted.changes[0].modified, LineRange(2, 3))
+  assert_true(inserted.changes[0].mapping.original.is_empty())
+  assert_eq(inserted.changes[0].mapping.modified, LineRange(2, 3))
 }
 ```
 
@@ -100,13 +101,19 @@ test "trim whitespace can ignore re-indentation" {
 }
 ```
 
-External providers implement `DocumentDiffProvider` and may fill
-`additional_alignments` for ignored source rows. `LineRangeMapping`,
-`DetailedLineRangeMapping`, and `RangeMapping` are public constructible values,
-so no viewer-layer adapter is required. As in VS Code's
-`lineRangeMappingFromRangeMappings`, touching changed rows must be grouped into
-one hunk. Consecutive hunks are strictly separated, ordered on both sides, and
-have equal unchanged gaps. `normalize_and_validate_document_diff` is the shared
+External providers implement `DocumentDiffProvider` and return a single ordered
+`changes` list. Each `DocumentDiffChange` contains a `kind` (`Visible` or
+`Ignored`) and a `DetailedLineRangeMapping`. All entries drive alignment;
+only `Visible` entries drive decorations, overview markers, Inline deleted
+blocks, and navigation. Visibility describes the current computation, not the
+source's semantic category. Changing an ignore policy requires recomputing the
+provider result; ignored entries need not retain renderable character diffs.
+
+`DocumentDiffChange`, `LineRangeMapping`, `DetailedLineRangeMapping`, and
+`RangeMapping` are public constructible values, so no viewer-layer adapter is
+required. Touching changes of the same kind must be grouped. Different kinds
+may touch; all mappings remain ordered and non-overlapping on both sides, with
+equal unchanged gaps. `normalize_and_validate_document_diff` is the shared
 contract boundary: optional providers can reject a specialized candidate and
 fall back before publishing their effective mode, while the ViewModel invokes
 the same helper again before rendering any provider result. Invalid generic

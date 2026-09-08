@@ -547,3 +547,53 @@ test('renderIndicators removes only split and inline glyphs while retaining diff
 
   await disposeDiffLifecycle(page);
 });
+
+
+for (const layout of ['split', 'inline']) {
+  test(`ignored changes retain ${layout} geometry without visible markers`, async ({ page }) => {
+    const root = await openDiffLifecycle(page);
+    await setDiffLifecycleFixture(page, 'ignored');
+    await setDiffLifecycleOptions(page, { layout, renderIndicators: true });
+    const original = root.locator('.moonbit-diff-editor-original');
+    const modified = root.locator('.moonbit-diff-editor-modified');
+    const bands = root.locator('[data-diff-overview-side="modified"]');
+    const deleted = root.locator('.diff-editor-inline-deleted-block');
+
+    for (const provider of ['ignored', 'core', 'ignored']) {
+      await page.evaluate((kind) =>
+        globalThis.__diffEditorLifecycleControls.set_provider(kind), provider);
+      await expect(root).not.toHaveAttribute('data-diff-failure');
+      if (provider === 'core') {
+        await expect.poll(async () => Number(await bands.getAttribute(
+          'data-overview-ruler-band-count'))).toBeGreaterThan(1);
+        if (layout === 'inline') {
+          await expect(deleted.filter({ hasText: '// removed' })).toHaveCount(1);
+        }
+        continue;
+      }
+      await expect(bands).toHaveAttribute('data-overview-ruler-band-count', '1');
+      await expect(modified.locator('.diff-editor-line-insert')).toHaveCount(1);
+      if (layout === 'split') {
+        await expect(original.locator('.diff-editor-line-delete')).toHaveCount(1);
+        // Inserted/deleted ignored rows still contribute spacers, so retained
+        // source anchors after both edits must line up in the actual DOM.
+        for (const text of ['keep', 'last', 'end']) {
+          const oldLine = original.locator('.view-line').filter({ hasText: new RegExp(`^${text}$`) });
+          const newLine = modified.locator('.view-line').filter({ hasText: new RegExp(`^${text}$`) });
+          await expect.poll(async () => {
+            const a = await oldLine.boundingBox();
+            const b = await newLine.boundingBox();
+            return a && b ? Math.abs(a.y - b.y) : Number.POSITIVE_INFINITY;
+          }).toBeLessThanOrEqual(1);
+        }
+      } else {
+        await expect(deleted).toHaveCount(1);
+        await expect(deleted).toContainText('old value');
+        await expect(deleted).not.toContainText('// removed');
+        await expect(deleted).not.toContainText('// tail old');
+        await expect(modified.locator('.view-line').filter({ hasText: '// inserted' })).toBeVisible();
+      }
+    }
+    await disposeDiffLifecycle(page);
+  });
+}

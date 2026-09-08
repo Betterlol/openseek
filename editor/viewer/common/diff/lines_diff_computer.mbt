@@ -1,7 +1,7 @@
 // Renderer-neutral document diff contract. Unlike the old partial Monaco
 // `ILinesDiffComputer` facade, this API describes only behavior implemented by
-// this repository: synchronous calculation, trim-whitespace policy, rendered
-// changes, and geometry-only alignments.
+// this repository: synchronous calculation, trim-whitespace policy, changes
+// classified by visibility.
 
 ///|
 /// Options shared by all synchronous document diff providers.
@@ -10,15 +10,35 @@ pub(all) struct DocumentDiffOptions {
 } derive(Eq, Debug)
 
 ///|
-/// A complete document diff. `changes` drive decorations, overview markers,
-/// navigation, and alignment. `additional_alignments` affect geometry only;
-/// providers use them for source rows deliberately omitted from the visible
-/// diff, such as ignored comments. `changes` follow VS Code's canonical hunk
-/// invariants: touching rows are grouped, mappings are ordered on both sides,
-/// and consecutive hunks have equal unchanged gaps.
+/// Whether a change participates in visible diff features. Ignored changes
+/// still participate in line alignment; providers recompute when filters change.
+pub(all) enum DocumentDiffChangeKind {
+  Visible
+  Ignored
+} derive(Eq, Debug)
+
+///|
+/// One source change and its visibility in this computation.
+pub(all) struct DocumentDiffChange {
+  kind : DocumentDiffChangeKind
+  mapping : DetailedLineRangeMapping
+} derive(Eq, Debug)
+
+///|
+pub fn DocumentDiffChange::DocumentDiffChange(
+  mapping : DetailedLineRangeMapping,
+  kind? : DocumentDiffChangeKind = Visible,
+) -> DocumentDiffChange {
+  { kind, mapping, }
+}
+
+///|
+/// A complete document diff. All changes drive alignment; only Visible changes
+/// drive decorations, overview markers, and navigation. Mappings are ordered
+/// on both sides, with equal unchanged gaps. Touching changes of the same kind
+/// are grouped; different kinds may touch but never overlap.
 pub(all) struct DocumentDiff {
-  changes : Array[DetailedLineRangeMapping]
-  additional_alignments : Array[LineRangeMapping]
+  changes : Array[DocumentDiffChange]
 } derive(Eq, Debug)
 
 ///|
@@ -50,3 +70,15 @@ pub extend DocumentDiffOptions with Debug::{to_repr}
 
 ///|
 pub extend DocumentDiffOptions with Eq::{equal, not_equal}
+
+///|
+pub extend DocumentDiffChangeKind with Debug::{to_repr}
+
+///|
+pub extend DocumentDiffChangeKind with Eq::{equal, not_equal}
+
+///|
+pub extend DocumentDiffChange with Debug::{to_repr}
+
+///|
+pub extend DocumentDiffChange with Eq::{equal, not_equal}

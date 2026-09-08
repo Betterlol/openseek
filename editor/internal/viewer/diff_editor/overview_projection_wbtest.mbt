@@ -16,8 +16,15 @@ test "overview rulers keep original and modified model coordinates separate" {
     None,
   )
   let diff_state = DiffState::from_diff_result({
-    changes: [insert, modify, delete],
-    additional_alignments: [LineRangeMapping(LineRange(6, 6), LineRange(6, 7))],
+    changes: [
+      DocumentDiffChange(insert),
+      DocumentDiffChange(
+        DetailedLineRangeMapping(LineRange(1, 2), LineRange(2, 2), None),
+        kind=Ignored,
+      ),
+      DocumentDiffChange(modify),
+      DocumentDiffChange(delete),
+    ],
   })
 
   assert_eq(original_diff_overview_ruler_entries(diff_state), [

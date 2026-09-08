@@ -25,7 +25,8 @@ test "reference: one natural parameter insertion is not fragmented" {
   let result = advanced_compute(
     "function x(alignments: RangeMapping[]): x[] { }", "function x(alignments: RangeMapping[], originalLines: string[], modifiedLines: string[]): x[] { }",
   )
-  guard result.changes is [change] && change.inner_changes is Some([inner]) else {
+  guard result.changes is [{ mapping: change, .. }] &&
+    change.inner_changes is Some([inner]) else {
     fail("expected one line hunk with one inner insertion")
   }
   assert_eq(inner.original, Range(1, 38, 1, 38))
@@ -39,7 +40,8 @@ test "reference: Array to FixedArray highlights only the inserted subword" {
   let result = advanced_compute(
     "let values : Array[Int] = []", "let values : FixedArray[Int] = []",
   )
-  guard result.changes is [change] && change.inner_changes is Some([inner]) else {
+  guard result.changes is [{ mapping: change, .. }] &&
+    change.inner_changes is Some([inner]) else {
     fail("expected one inserted subword")
   }
   assert_eq(inner.original, Range(1, 14, 1, 14))
@@ -54,7 +56,8 @@ test "reference: shared letters do not split ordinary identifier replacements" {
   let result = advanced_compute(
     "\tconst private = 1;", "\tconst protected = 1;",
   )
-  guard result.changes is [change] && change.inner_changes is Some([inner]) else {
+  guard result.changes is [{ mapping: change, .. }] &&
+    change.inner_changes is Some([inner]) else {
     fail("expected one whole-identifier replacement")
   }
   assert_eq(inner.original, Range(1, 8, 1, 15))
@@ -68,7 +71,8 @@ test "reference: repeated identifier letters shift insertion to punctuation" {
   let result = advanced_compute(
     "import { IFooBar, IFoo } from 'foo';", "import { IFooBar, IBar, IFoo } from 'foo';",
   )
-  guard result.changes is [change] && change.inner_changes is Some([inner]) else {
+  guard result.changes is [{ mapping: change, .. }] &&
+    change.inner_changes is Some([inner]) else {
     fail("expected one punctuation-aligned insertion")
   }
   assert_eq(inner.original, Range(1, 18, 1, 18))
@@ -88,7 +92,7 @@ test "reference: tiny unchanged structural line joins substantial refactor hunks
     "  new_gamma()", "  new_delta()",
   ]
   let result = advanced_compute(original.join("\n"), modified.join("\n"))
-  guard result.changes is [change] else {
+  guard result.changes is [{ mapping: change, .. }] else {
     fail("expected the refactor to form one readable hunk")
   }
   assert_eq(change.original, LineRange(1, 8))
@@ -112,7 +116,8 @@ test "reference: substantial edits absorb at most twenty UTF-16 units of matchin
   for entry in cases {
     let (original, modified, expected) = entry
     let result = advanced_compute(original, modified)
-    guard result.changes is [{ inner_changes: Some([inner]), .. }] else {
+    guard result.changes
+      is [{ mapping: { inner_changes: Some([inner]), .. }, .. }] else {
       fail("expected one long-diff refinement")
     }
     assert_eq(inner.original, expected)
@@ -123,7 +128,8 @@ test "reference: substantial edits absorb at most twenty UTF-16 units of matchin
     "a".repeat(80) + " 123456789012345678901 " + "c".repeat(80),
     "b".repeat(80) + " 123456789012345678901 " + "d".repeat(80),
   )
-  guard separated.changes is [{ inner_changes: Some(inner), .. }] else {
+  guard separated.changes
+    is [{ mapping: { inner_changes: Some(inner), .. }, .. }] else {
     fail("expected refined long diff")
   }
   assert_eq(inner.length(), 2)
@@ -139,7 +145,8 @@ test "reference: only changes over one hundred UTF-16 units absorb short line tr
     "  " + "a".repeat(60) + " ; ",
     "  " + "b".repeat(60) + " ; ",
   )
-  guard expanded.changes is [{ inner_changes: Some([inner]), .. }] else {
+  guard expanded.changes
+    is [{ mapping: { inner_changes: Some([inner]), .. }, .. }] else {
     fail("expected one expanded long diff")
   }
   assert_eq(inner.original, Range(1, 1, 1, 66))
@@ -149,7 +156,8 @@ test "reference: only changes over one hundred UTF-16 units absorb short line tr
     "  " + "a".repeat(50),
     "  " + "b".repeat(50),
   )
-  guard exact_guard.changes is [{ inner_changes: Some([inner]), .. }] else {
+  guard exact_guard.changes
+    is [{ mapping: { inner_changes: Some([inner]), .. }, .. }] else {
     fail("expected one unexpanded threshold diff")
   }
   assert_eq(inner.original, Range(1, 3, 1, 53))
@@ -159,7 +167,7 @@ test "reference: only changes over one hundred UTF-16 units absorb short line tr
 ///|
 test "reference: two emoji are a four-unit match and stay between small diffs" {
   let result = advanced_compute("aa😀😀cc", "bb😀😀dd")
-  guard result.changes is [{ inner_changes: Some(inner), .. }] else {
+  guard result.changes is [{ mapping: { inner_changes: Some(inner), .. }, .. }] else {
     fail("expected refined emoji-gap changes")
   }
   assert_eq(inner.length(), 2)
