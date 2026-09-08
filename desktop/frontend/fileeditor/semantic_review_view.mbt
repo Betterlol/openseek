@@ -627,12 +627,9 @@ fn semantic_diff_options(
     diff_word_wrap=@viewer.Off,
     overview_ruler=false,
     render_indicators=true,
-    render_markdown_comments=true,
+    render_markdown_comments=false,
     handle_mouse_wheel=false,
-    // Token/Tree use the same rich, initially folded Markdown-comment
-    // presentation as ordinary code reading and Line diff. MoonDiff has already
-    // decided which sections exist, so presentation must not fall back to raw
-    // `///` rows. The outer MultiDiff scroll plane owns wheel input, matching
+    // The outer MultiDiff scroll plane owns wheel input, matching
     // VS Code's per-item `handleMouseWheel: false` configuration.
   )
 }
