@@ -8,6 +8,7 @@ fn Input::fixture(task : String) -> Input {
     identity: { owner, archive_generation: 0, },
     draft: { task, mentions: [], },
     run: None,
+    turn_id: None,
     goal: { draft: None, standing: None, pending: None, },
     slash_commands: [],
     root: Some(@common.Uri::file("/workspace")),
@@ -46,7 +47,12 @@ test "a running draft keeps Stop beside Steer" {
     ..base,
     presentation: {
       ..base.presentation,
-      primary_action: Running(steer_available=true, can_stop=true, submit=Steer),
+      primary_action: Running(
+        steer_available=true,
+        can_stop=true,
+        submit=Steer,
+        queue_available=true,
+      ),
     },
   }
   let actions = Model(input)
@@ -454,4 +460,209 @@ test "an elapsed span never shows finer units than its own scale" {
   // Past an hour the seconds column is noise to anyone reading it.
   assert_eq(elapsed_label(3_600_000.0), "1h 0m")
   assert_eq(elapsed_label(87_240_000.0), "24h 14m")
+}
+
+///|
+test "follow-up choice is per draft and resets after submission or turn completion" {
+  let base = Input::fixture("follow-up")
+  let input = {
+    ..base,
+    presentation: {
+      ..base.presentation,
+      primary_action: Running(
+        steer_available=true,
+        can_stop=true,
+        submit=Steer,
+        queue_available=true,
+      ),
+    },
+  }
+  let initial = Model(input)
+  assert_eq(initial.active(input).submission_choice(input), Some(SteerNow))
+  let (queued, _) = initial.update(
+    input,
+    FollowupSelected("queue"),
+    Msg::test_emit(),
+    Action::test_emit(),
+  )
+  assert_eq(queued.active(input).submission_choice(input), Some(QueueNext))
+  let actions = queued
+    .active(input)
+    .action_buttons(Msg::test_emit(), Action::test_emit(), input)
+  assert_eq(actions[1].title, "Queue for the next turn")
+  // An unrelated render or a rejected local submission keeps the choice.
+  let (sending, _) = queued.update(
+    input,
+    SubmitRequested,
+    Msg::test_emit(),
+    Action::test_emit(),
+  )
+  assert_eq(sending.active(input).submission_choice(input), Some(QueueNext))
+  let accepted = {
+    ..input,
+    draft: { task: "", mentions: [], },
+    submission_sequence: 1,
+  }
+  assert_eq(
+    sending.active(accepted).submission_choice(accepted),
+    Some(SteerNow),
+  )
+  assert_eq(queued.active(base).followup_choice, None)
+  let other = {
+    ..input,
+    identity: {
+      ..input.identity,
+      owner: { ..input.identity.owner, session: "another", },
+    },
+  }
+  assert_eq(queued.active(other).submission_choice(other), Some(SteerNow))
+}
+
+///|
+test "queue default can be overridden but queue editing and steer-only hosts cannot" {
+  let base = Input::fixture("follow-up")
+  let input = {
+    ..base,
+    presentation: {
+      ..base.presentation,
+      primary_action: Running(
+        steer_available=true,
+        can_stop=true,
+        submit=Queue,
+        queue_available=true,
+      ),
+    },
+  }
+  let (steering, _) = Model(input).update(
+    input,
+    FollowupSelected("steer"),
+    Msg::test_emit(),
+    Action::test_emit(),
+  )
+  assert_eq(steering.active(input).submission_choice(input), Some(SteerNow))
+  let editing = {
+    ..input,
+    presentation: {
+      ..input.presentation,
+      primary_action: Running(
+        steer_available=true,
+        can_stop=true,
+        submit=SaveQueue,
+        queue_available=true,
+      ),
+    },
+  }
+  let entry = steering.active(editing)
+  assert_eq(entry.submission_choice(editing), None)
+  assert_eq(
+    entry.action_buttons(Msg::test_emit(), Action::test_emit(), editing)[1].title,
+    "Save queued message",
+  )
+  let codex = {
+    ..input,
+    presentation: {
+      ..input.presentation,
+      primary_action: Running(
+        steer_available=true,
+        can_stop=true,
+        submit=Steer,
+        queue_available=false,
+      ),
+    },
+  }
+  let (unchanged, _) = Model(codex).update(
+    codex,
+    FollowupSelected("queue"),
+    Msg::test_emit(),
+    Action::test_emit(),
+  )
+  assert_eq(unchanged.active(codex).followup_choice, None)
+  assert_eq(unchanged.active(codex).submission_choice(codex), None)
+}
+
+///|
+test "setting a goal preserves the pending message follow-up choice" {
+  let base = Input::fixture("waiting prompt")
+  let input = {
+    ..base,
+    presentation: {
+      ..base.presentation,
+      primary_action: Running(
+        steer_available=true,
+        can_stop=true,
+        submit=Steer,
+        queue_available=true,
+      ),
+    },
+  }
+  let (queued, _) = Model(input).update(
+    input,
+    FollowupSelected("queue"),
+    Msg::test_emit(),
+    Action::test_emit(),
+  )
+  let goal = { ..input, goal: { ..input.goal, draft: Some("new goal"), }, }
+  let (submitted, _) = queued.update(
+    goal,
+    SubmitRequested,
+    Msg::test_emit(),
+    Action::test_emit(),
+  )
+  let accepted = { ..input, submission_sequence: 1, }
+  assert_eq(submitted.active(accepted).draft.task, "waiting prompt")
+  assert_eq(
+    submitted.active(accepted).submission_choice(accepted),
+    Some(QueueNext),
+  )
+}
+
+///|
+test "a background successor turn resets the unsent follow-up override" {
+  let base = Input::fixture("unsent draft")
+  let first = {
+    ..base,
+    turn_id: Some("turn-1"),
+    presentation: {
+      ..base.presentation,
+      primary_action: Running(
+        steer_available=true,
+        can_stop=true,
+        submit=Steer,
+        queue_available=true,
+      ),
+    },
+  }
+  let (queued, _) = Model(first).update(
+    first,
+    FollowupSelected("queue"),
+    Msg::test_emit(),
+    Action::test_emit(),
+  )
+  let (opened, _) = queued.update(
+    first,
+    FollowupMenuToggled,
+    Msg::test_emit(),
+    Action::test_emit(),
+  )
+  let other = {
+    ..base,
+    identity: {
+      ..base.identity,
+      owner: { ..base.identity.owner, session: "other", },
+    },
+  }
+  let (away, _) = opened.update(
+    other,
+    TextChanged("another conversation"),
+    Msg::test_emit(),
+    Action::test_emit(),
+  )
+  // Visiting another conversation alone must not discard the selection.
+  assert_eq(away.active(first).submission_choice(first), Some(QueueNext))
+  // No idle presentation for turn-1 was ever delivered to this entry.
+  let successor = { ..first, turn_id: Some("turn-2"), }
+  let returned = away.active(successor)
+  assert_eq(returned.draft.task, "unsent draft")
+  assert_eq(returned.submission_choice(successor), Some(SteerNow))
+  assert_false(returned.followup_menu_open)
 }

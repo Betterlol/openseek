@@ -26,8 +26,16 @@ test "the composer is handed the turn's facts, not a rendered row" {
     is Some({ stage: Thinking, started_ms: None, tokens: 0, }) else {
     fail("expected the open turn's heartbeat facts")
   }
+  assert_eq(
+    running.composer_input().turn_id,
+    match conv.run {
+      Open(run_id~, ..) => Some(run_id)
+      _ => None
+    },
+  )
   let idle = running.replace_conversation({ ..conv, run: NoRun(ended=None), })
   assert_eq(idle.composer_input().run, None)
+  assert_eq(idle.composer_input().turn_id, None)
 }
 
 ///|
@@ -143,4 +151,41 @@ test "a background retirement expires old actions without poisoning a reopened i
     model.conversation_for_composer_action({ owner, archive_generation: 1, })
     is Some(_),
   )
+}
+
+///|
+test "composer follow-up overrides route the message without changing the default" {
+  for
+    pair in [
+      (@composer.QueueNext, FollowupSteer),
+      (@composer.SteerNow, FollowupQueue),
+    ] {
+    let (choice, default) = pair
+    let model = { ..running_model(), followup_behavior: default, }
+    let identity = model.composer_input().identity
+    let (_, submitted) = update(
+      test_dispatch(),
+      ComposerAction(
+        @composer.FollowupSubmitted(
+          identity~,
+          draft={ task: "one message", mentions: [], },
+          choice~,
+        ),
+      ),
+      model,
+    )
+    assert_true(submitted.followup_behavior == default)
+    let conv = submitted.active()
+    assert_eq(conv.pending_steers.length(), 1)
+    match choice {
+      @composer.QueueNext => {
+        assert_true(conv.pending_steers[0].behavior is FollowupQueue)
+        assert_eq(conv.queued_inputs.length(), 1)
+      }
+      @composer.SteerNow => {
+        assert_true(conv.pending_steers[0].behavior is FollowupSteer)
+        assert_true(conv.queued_inputs.is_empty())
+      }
+    }
+  }
 }

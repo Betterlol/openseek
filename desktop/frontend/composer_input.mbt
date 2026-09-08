@@ -28,6 +28,7 @@ fn Model::composer_input(self : Model) -> @composer.Input {
     checkout_ready
   let primary_action : @composer.PrimaryAction = if conv.is_running() {
     @composer.Running(
+      queue_available=true,
       steer_available=root_ready &&
         conv.run is Open(stage~, ..) &&
         !(stage is Cancelling),
@@ -190,6 +191,10 @@ fn Model::composer_input(self : Model) -> @composer.Input {
     root: self.conversation_root(conv),
     installed_skills: self.installed_skills,
     context_generation: self.composer_context_generation,
+    turn_id: match conv.run {
+      Open(run_id~, ..) => Some(run_id)
+      _ => None
+    },
     submission_sequence: self.submission_sequence,
     retirements: self.composer_entry_retirements,
     file_candidates: self.file_search().candidates,
@@ -295,6 +300,7 @@ fn Model::dormant_composer_input(self : Model) -> @composer.Input {
     root: None,
     installed_skills: self.installed_skills,
     context_generation: self.composer_context_generation,
+    turn_id: None,
     submission_sequence: self.submission_sequence,
     retirements: self.composer_entry_retirements,
     file_candidates: [],

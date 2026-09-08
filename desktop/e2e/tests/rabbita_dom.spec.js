@@ -1796,3 +1796,81 @@ test('workspace settings open and persist per-workspace choices', async ({ page 
 
   expect(app.pageErrors).toEqual([]);
 });
+
+
+test('composer selects queue for one message and preserves queued controls', async ({ page }) => {
+  const app = new DesktopBrowserHarness(page);
+  await app.install();
+  await app.goto();
+  await app.openSession();
+  const composer = page.locator('#task');
+  await composer.fill('Start a turn');
+  await page.getByTitle('Send', { exact: true }).click();
+  const choice = page.getByRole('button', { name: 'Follow-up action', exact: true });
+  await expect(choice).toContainText('Steer now');
+  await composer.fill('Do this after the turn');
+  await choice.click();
+  await page.getByRole('option', { name: 'Queue next', exact: true }).click();
+  await expect(choice).toContainText('Queue next');
+  await expect(page.getByTitle('Queue for the next turn', { exact: true })).toBeVisible();
+  await composer.press('Enter');
+  await expect.poll(() => app.requests.find(r => r.method === 'agent.queue'))
+    .toMatchObject({ params: { action: 'add', text: 'Do this after the turn', run_id: 'run-e2e' } });
+  await expect(choice).toContainText('Steer now');
+  const queued = page.locator('.queued-input-row');
+  await expect(queued).toContainText('Do this after the turn');
+  await queued.getByTitle('Edit', { exact: true }).click();
+  await expect(choice).toBeHidden();
+  await composer.fill('Edited follow-up');
+  await page.getByTitle('Save queued message', { exact: true }).click();
+  await expect(queued).toContainText('Edited follow-up');
+  await expect(choice).toContainText('Steer now');
+  await queued.getByTitle('Delete', { exact: true }).click();
+  await expect(queued).toHaveCount(0);
+  await composer.fill('An immediate correction');
+  await page.getByTitle('Steer the running task', { exact: true }).click();
+  await expect.poll(() => app.requests.find(r => r.method === 'agent.steer'))
+    .toMatchObject({ params: { text: 'An immediate correction', run_id: 'run-e2e' } });
+  expect(app.requests.filter(r => r.method === 'settings.set')).toEqual([]);
+  expect(app.pageErrors).toEqual([]);
+});
+
+test('composer follow-up menu supports keyboard choice and a queue default', async ({ page }, testInfo) => {
+  const app = new DesktopBrowserHarness(page);
+  app.hostSettings.followup_behavior = 'queue';
+  await app.install();
+  await app.goto();
+  await app.openSession();
+  const composer = page.locator('#task');
+  await composer.fill('Start a turn');
+  await page.getByTitle('Send', { exact: true }).click();
+  const choice = page.getByRole('button', { name: 'Follow-up action', exact: true });
+  await expect(choice).toContainText('Queue next');
+  await composer.fill('Correct the current turn');
+  await choice.focus();
+  await choice.press('ArrowDown');
+  await expect(page.getByRole('option', { name: /Queue next/ })).toBeFocused();
+  await expect(page.getByRole('listbox', { name: 'Follow-up action' })).toBeVisible();
+  await page.keyboard.press('Home');
+  await expect(page.getByRole('option', { name: 'Steer now', exact: true })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(choice).toContainText('Steer now');
+  await composer.press('Enter');
+  await expect.poll(() => app.requests.find(r => r.method === 'agent.steer'))
+    .toMatchObject({ params: { text: 'Correct the current turn' } });
+  await expect(choice).toContainText('Queue next');
+  await page.setViewportSize({ width: 800, height: 800 });
+  await composer.fill('A queued follow-up');
+  await choice.click();
+  const menu = page.getByRole('listbox', { name: 'Follow-up action' });
+  await expect(menu).toBeVisible();
+  const box = await menu.boundingBox();
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(800);
+  await page.screenshot({ path: testInfo.outputPath('followup-menu.png') });
+  await page.keyboard.press('Escape');
+  await expect(menu).toBeHidden();
+  await expect(choice).toBeFocused();
+  expect(app.requests.filter(r => r.method === 'settings.set')).toEqual([]);
+  expect(app.pageErrors).toEqual([]);
+});

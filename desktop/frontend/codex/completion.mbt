@@ -328,6 +328,7 @@ pub fn State::composer_input(
     !missing_worktree
   let primary_action = if active_turn is Some(_) {
     @composer.Running(
+      queue_available=false,
       steer_available=can_edit,
       can_stop=true,
       submit=@composer.Steer,
@@ -364,6 +365,7 @@ pub fn State::composer_input(
     .bind(placement => placement.checkout_root()),
     installed_skills: self.installed_codex_skills(),
     context_generation: 0,
+    turn_id: active_turn,
     submission_sequence: self.submission_sequence,
     retirements: [],
     file_candidates: context.file_candidates,
@@ -504,6 +506,7 @@ fn State::apply_composer_action(
     | @composer.SelectMenuDismissed(..)
     | @composer.ApprovalAnswered(..)
     | @composer.ApiSetupRequested(..)
+    | @composer.FollowupSubmitted(..)
     | @composer.QueuedInputEditRequested(..)
     | @composer.QueuedInputSteerRequested(..)
     | @composer.QueuedInputDeleteRequested(..)

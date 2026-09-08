@@ -79,6 +79,9 @@ priv struct Entry {
   root : @common.Uri?
   installed_skills : Array[@skills.InstalledItem]
   context_generation : Int
+  turn_id : String?
+  followup_choice : FollowupChoice?
+  followup_menu_open : Bool
   pending_submission : PendingSubmission?
 } derive(Eq)
 
@@ -98,6 +101,9 @@ fn Entry::Entry(input : Input) -> Entry {
     root: input.root,
     installed_skills: input.installed_skills,
     context_generation: input.context_generation,
+    turn_id: input.turn_id,
+    followup_choice: None,
+    followup_menu_open: false,
     pending_submission: None,
   }
 }
@@ -137,6 +143,18 @@ fn Entry::file_completion_for(
 /// Reconcile root-authored recovery with local edits. Submission acknowledgement
 /// clears only the submitted editor: prompt and goal drafts are independent.
 fn Entry::reconciled(self : Entry, input : Input) -> Entry {
+  let self = if self.turn_id == input.turn_id &&
+    input.presentation.primary_action
+    is Running(queue_available=true, submit=Steer | Queue, ..) {
+    self
+  } else {
+    {
+      ..self,
+      turn_id: input.turn_id,
+      followup_choice: None,
+      followup_menu_open: false,
+    }
+  }
   let incoming = input.draft
   let incoming_goal = input.goal.draft
   let root_changed = input.root != self.root
@@ -167,6 +185,11 @@ fn Entry::reconciled(self : Entry, input : Input) -> Entry {
       root: input.root,
       installed_skills: input.installed_skills,
       context_generation: input.context_generation,
+      followup_choice: match self.pending_submission {
+        Some(PromptSubmission(_, ..)) => None
+        _ => self.followup_choice
+      },
+      followup_menu_open: false,
       pending_submission: None,
     }
   }
@@ -320,6 +343,9 @@ priv enum Msg {
   MentionJumped(Int)
   GoalCancelled
   SubmitRequested
+  FollowupMenuToggled
+  FollowupMenuDismissed
+  FollowupSelected(String)
   SymbolsLoaded(
     owner~ : @interop.ConversationKey,
     root~ : @common.Uri,
@@ -541,6 +567,54 @@ fn Model::update(
   let entry = self.active(input)
   let self = self.with_entry(entry)
   match msg {
+    FollowupMenuToggled => {
+      guard input.presentation.primary_action
+        is Running(
+          queue_available=true,
+          steer_available=true,
+          submit=Steer
+          | Queue,
+          ..
+        ) &&
+        input.goal.draft is None else {
+        return (self, @cmd.none)
+      }
+      (
+        self.with_entry({
+          ..entry,
+          followup_menu_open: !entry.followup_menu_open,
+        }),
+        @cmd.none,
+      )
+    }
+    FollowupMenuDismissed =>
+      (self.with_entry({ ..entry, followup_menu_open: false, }), @cmd.none)
+    FollowupSelected(value) => {
+      guard input.presentation.primary_action
+        is Running(
+          queue_available=true,
+          steer_available=true,
+          submit=Steer
+          | Queue,
+          ..
+        ) &&
+        input.goal.draft is None else {
+        return (self, @cmd.none)
+      }
+      let choice = match value {
+        "steer" => SteerNow
+        "queue" => QueueNext
+        _ => return (self, @cmd.none)
+      }
+      (
+        self.with_entry({
+          ..entry,
+          followup_choice: Some(choice),
+          followup_menu_open: false,
+        }),
+        @cmd.none,
+      )
+    }
     TextChanged(value) => {
       let (next, command) = entry.edited(input, value, action_emit)
       self.commit_entry_change(entry, next, command, action_emit)
@@ -649,7 +723,16 @@ fn Model::update(
             ),
           }),
           action_emit(
-            DraftSubmitted(identity=entry.identity(), draft=entry.draft),
+            match entry.submission_choice(input) {
+              Some(choice) =>
+                FollowupSubmitted(
+                  identity=entry.identity(),
+                  draft=entry.draft,
+                  choice~,
+                )
+              None =>
+                DraftSubmitted(identity=entry.identity(), draft=entry.draft)
+            },
           ),
         )
       }
