@@ -9,16 +9,27 @@ fn moon_mod_test_state() -> (State, Ctx, @pathx.Relative) raise {
 }
 
 ///|
-test "ordinary moon.mod defaults to one generation-fenced dependency request" {
+test "ordinary moon.mod defaults to source and requests its graph only when selected" {
   let (state, ctx, path) = moon_mod_test_state()
   assert_true(moon_mod_view_available(state, ctx))
+  assert_false(uses_package_diagram_surface(state, ctx))
+  assert_true(state.moon_mod_view_mode(path) is MoonModSource)
+
+  let (source, _) = sync(test_emit(), state, ctx)
+  assert_true(source.package_graphs.get(path) is None)
+  assert_eq(source.package_graph_generation, 0)
+  let (_, state) = update(
+    test_emit(),
+    MoonModViewModeSelected(MoonModDependencies),
+    source,
+    ctx,
+  )
   assert_true(uses_package_diagram_surface(state, ctx))
-  assert_true(state.moon_mod_view_mode(path) is MoonModDependencies)
 
   let (loading, _) = sync(test_emit(), state, ctx)
   guard loading.package_graphs.get(path)
     is Some(PackageGraphLoading(generation)) else {
-    fail("expected the default dependency graph request")
+    fail("expected the explicitly selected dependency graph request")
   }
   assert_eq(generation, 1)
   let (still_loading, _) = sync(test_emit(), loading, ctx)
@@ -32,6 +43,12 @@ test "ordinary moon.mod defaults to one generation-fenced dependency request" {
 ///|
 test "package graph replies accept only the current owner epoch path and generation" {
   let (state, ctx, path) = moon_mod_test_state()
+  let (_, state) = update(
+    test_emit(),
+    MoonModViewModeSelected(MoonModDependencies),
+    state,
+    ctx,
+  )
   let (loading, _) = sync(test_emit(), state, ctx)
   let stale = PackageGraphRequestLoaded(
     owner=ctx.owner,
@@ -97,6 +114,12 @@ test "package graph replies accept only the current owner epoch path and generat
 ///|
 test "source preserves a ready graph and failed dependency view retries explicitly" {
   let (state, ctx, path) = moon_mod_test_state()
+  let (_, state) = update(
+    test_emit(),
+    MoonModViewModeSelected(MoonModDependencies),
+    state,
+    ctx,
+  )
   let package_graphs = state.package_graphs.copy()
   package_graphs[path] = PackageGraphReady(4, "cached")
   let ready = { ..state, package_graphs, package_graph_generation: 4, }
@@ -156,6 +179,12 @@ test "source preserves a ready graph and failed dependency view retries explicit
 ///|
 test "positioned moon.mod opens source and close forgets all graph state" {
   let (state, ctx, path) = moon_mod_test_state()
+  let (_, state) = update(
+    test_emit(),
+    MoonModViewModeSelected(MoonModDependencies),
+    state,
+    ctx,
+  )
   let (_, positioned) = open_document(
     test_emit(),
     state,
@@ -180,12 +209,18 @@ test "positioned moon.mod opens source and close forgets all graph state" {
   )
   assert_true(closed.moon_mod_view_modes.get(path) is None)
   assert_true(closed.package_graphs.get(path) is None)
-  assert_true(closed.moon_mod_view_mode(path) is MoonModDependencies)
+  assert_true(closed.moon_mod_view_mode(path) is MoonModSource)
 }
 
 ///|
 test "reviewed and historical moon.mod views remain source-only" {
   let (state, ctx, path) = moon_mod_test_state()
+  let (_, state) = update(
+    test_emit(),
+    MoonModViewModeSelected(MoonModDependencies),
+    state,
+    ctx,
+  )
   let docs = state.docs.copy()
   docs[path] = {
     ..docs[path],

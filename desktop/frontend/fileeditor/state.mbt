@@ -544,7 +544,7 @@ pub(all) struct State {
   // source-bearing opens record `MbtiSource` while that tab remains open.
   mbti_view_modes : Map[@pathx.Relative, MbtiViewMode]
   // Per-tab moon.mod presentation and the Host-produced package graph JSON.
-  // Absence from `moon_mod_view_modes` defaults to the dependency graph;
+  // Absence from `moon_mod_view_modes` defaults to source;
   // absence from `package_graphs` means the next active rendered view starts
   // one request. The generation is page-lifetime state used to fence replies.
   moon_mod_view_modes : Map[@pathx.Relative, MoonModViewMode]
@@ -629,13 +629,13 @@ fn State::mbti_view_mode(self : State, path : @pathx.Relative) -> MbtiViewMode {
 }
 
 ///|
-/// An open `moon.mod` defaults to its dependency graph without storing a map
+/// An open `moon.mod` defaults to source without storing a map
 /// entry. Explicit source/graph selections live only for that tab's lifetime.
 fn State::moon_mod_view_mode(
   self : State,
   path : @pathx.Relative,
 ) -> MoonModViewMode {
-  self.moon_mod_view_modes.get(path).unwrap_or(MoonModDependencies)
+  self.moon_mod_view_modes.get(path).unwrap_or(MoonModSource)
 }
 
 ///|

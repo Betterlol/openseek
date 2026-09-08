@@ -344,7 +344,7 @@ test('ordinary MBTI files render as UML and reviews keep source surfaces', async
   expect(app.pageErrors).toEqual([]);
 });
 
-test('ordinary moon.mod defaults to its package graph and round-trips to source', async ({ page }) => {
+test('ordinary moon.mod defaults to source and loads its package graph on demand', async ({ page }) => {
   const app = new DesktopBrowserHarness(page);
   const path = 'moon.mod';
   const working = [
@@ -361,6 +361,20 @@ test('ordinary moon.mod defaults to its package graph and round-trips to source'
   await app.openQuickOpen();
   await page.getByRole('option', { name: /moon\.mod/ }).click();
 
+  const diagram = page.locator('#package-diagram-host');
+  const view = page.getByRole('group', { name: 'Moon module view' });
+  await expect(page.locator('#viewer-host')).toBeVisible();
+  await expect(page.locator('#viewer-host')).toContainText('example/app');
+  await expect(view.getByRole('button', { name: 'Source' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await expect(diagram).toBeHidden();
+  expect(app.requests.filter(
+    request => request.method === 'moon.package_graph',
+  )).toHaveLength(0);
+  await view.getByRole('button', { name: 'Dependency graph' }).click();
+
   await expect.poll(() => app.requests.find(
     request => request.method === 'moon.package_graph',
   )).toMatchObject({
@@ -370,7 +384,6 @@ test('ordinary moon.mod defaults to its package graph and round-trips to source'
       path: 'moon.mod',
     },
   });
-  const diagram = page.locator('#package-diagram-host');
   await expect(diagram).toBeVisible();
   await expect(diagram.locator('svg')).toBeVisible();
   await expect(diagram.locator('svg')).toContainText('main');
@@ -387,7 +400,6 @@ test('ordinary moon.mod defaults to its package graph and round-trips to source'
     diagram.getByRole('separator', { name: 'Resize diagram' }),
   ).toHaveCount(0);
 
-  const view = page.getByRole('group', { name: 'Moon module view' });
   await expect(view.getByRole('button')).toHaveText(['Dependency graph', 'Source']);
   await expect(
     view.getByRole('button', { name: 'Dependency graph' }),
