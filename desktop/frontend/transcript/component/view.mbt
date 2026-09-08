@@ -876,9 +876,8 @@ fn transcript_item_view(
 ///|
 /// The agent's prose. A bubble still `streaming` is the in-flight answer
 /// rendered live from the engine's deltas: the partial text is re-parsed as
-/// markdown on every delta, and an unterminated construct (an open code
-/// fence, say) simply renders as plain text until its closing marker streams
-/// in. The committed response replaces it.
+/// markdown on every delta. Diagram fences render only after their closing
+/// marker arrives; unclosed fences remain source in completed messages too.
 fn assistant_message_view(
   content : String,
   on_open : (String) -> @cmd.Cmd,
@@ -1001,7 +1000,15 @@ fn transcript_view(
     attrs=@html.Attrs::build()
       .id("transcript")
       .class("transcript")
-      .data_set("transcript-session", input.active_session),
+      .data_set("transcript-session", input.active_session)
+      .data_set(
+        "transcript-theme",
+        if input.dark_mode {
+          "dark"
+        } else {
+          "light"
+        },
+      ),
     children,
   )
 }
