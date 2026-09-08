@@ -1645,7 +1645,7 @@ fn apply_diagnostics(
 
 ///|
 /// The viewer language id for a file name. MoonBit source (`.mbt`, `.mbti`,
-/// `.mbt.md`), `.mbtx` scripts, MoonBit manifests, JavaScript, and JSON have
+/// `.mbt.md`), `.mbtx` scripts, MoonBit manifests, JavaScript, JSON, and JSONL have
 /// tokenizers; everything else falls back to unhighlighted plain text. A
 /// `.mbtx` script carries its own id but shares the MoonBit tokenizer, so its
 /// top-of-file `import` block highlights exactly as MoonBit source does.
@@ -1663,7 +1663,7 @@ fn language_id(name : String) -> String {
     lower.has_suffix(".mjs") ||
     lower.has_suffix(".cjs") {
     "javascript"
-  } else if lower.has_suffix(".json") {
+  } else if lower.has_suffix(".json") || lower.has_suffix(".jsonl") {
     "json"
   } else if lower.has_suffix(".md") {
     "markdown"
