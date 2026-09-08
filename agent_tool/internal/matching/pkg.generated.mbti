@@ -4,10 +4,6 @@ package "bobzhang/openseek/agent_tool/internal/matching"
 // Values
 pub fn find_quote_normalized_match(String, String) -> Int?
 
-pub fn has_crlf(String) -> Bool
-
-pub fn has_curly_quotes(String) -> Bool
-
 pub fn normalize_content_for_matching(String) -> (String, Array[Int])
 
 pub fn normalize_quotes(String) -> String
