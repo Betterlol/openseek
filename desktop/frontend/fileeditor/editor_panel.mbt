@@ -150,6 +150,7 @@ let viewer_state : ViewerHost = {
     layout=@viewer.SideBySide,
     automatic_inline=false,
     diff_word_wrap=@viewer.Off,
+    render_markdown_comments=false,
   ),
   point_range_highlight: None,
   search_match_highlights: None,
