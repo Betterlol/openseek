@@ -898,6 +898,7 @@ fn old_string_context(
   end_line : Int?,
 ) -> String {
   let result = StringBuilder()
+  result.write_string("\n\n")
   // Surrounding lines in a code block
   let context_before = 2
   let context_after = 2
@@ -959,12 +960,12 @@ fn old_string_context(
         } else if expected_char == "'" &&
           (actual_char == "\u{2018}" || actual_char == "\u{2019}") {
           result.write_string(
-            "\n— curly vs straight single-quote mismatch: the file uses curly quotes (`'`/`'`), but models can only output straight quotes (`'`); re-read the file to get the exact text",
+            "\n— curly vs straight single-quote mismatch: the file uses curly quotes (\\u{2018}/\\u{2019}), but models can only output straight quotes (`'`); re-read the file to get the exact text",
           )
         } else if expected_char == "\"" &&
           (actual_char == "\u{201C}" || actual_char == "\u{201D}") {
           result.write_string(
-            "\n— curly vs straight double-quote mismatch: the file uses curly quotes (`\"`/`\"`), but models can only output straight quotes (`\"`); re-read the file to get the exact text",
+            "\n— curly vs straight double-quote mismatch: the file uses curly quotes (\\u{201C}/\\u{201D}), but models can only output straight quotes (`\"`); re-read the file to get the exact text",
           )
         }
         result.write_char('\n')
