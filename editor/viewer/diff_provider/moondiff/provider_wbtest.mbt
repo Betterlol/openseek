@@ -183,3 +183,106 @@ test "fragment adapter does not merge away overlapping ignored hunks" {
     fragment_document_diff({ hunks: [hunk, hunk], }, "// old", "// new") is None,
   )
 }
+
+///|
+test "sparse fragments align ignored prefix middle and suffix at unchanged anchors" {
+  let hunks : Array[@mbtdiff.DiffHunk] = [
+    for
+      (old_index, new_index, old_text, new_text) in [
+        (1, 2, "old-a", "new-a"),
+        (5, 5, "old-b", "new-b"),
+      ] => {
+      {
+        old_start: old_index,
+        old_len: 1,
+        new_start: new_index,
+        new_len: 1,
+        blocks: [
+          ChangeBlock([
+            Paired(
+              changed_line(old_index, "", old_text, ""),
+              changed_line(new_index, "", new_text, ""),
+            ),
+          ]),
+        ],
+      }
+    }
+  ]
+  guard fragment_document_diff(
+      { hunks: hunks[:], },
+      "head\nold-a\nkeep-1\n// removed\nkeep-2\nold-b\ntail",
+      "// added\nhead\nnew-a\nkeep-1\nkeep-2\nnew-b\ntail\n// end",
+    )
+    is Some(result) else {
+    fail("expected a complete mapping for the sparse fragment")
+  }
+  assert_eq(
+    result.changes.map(change => {
+      (change.kind, change.mapping.original, change.mapping.modified)
+    }),
+    [
+      (Ignored, LineRange(1, 1), LineRange(1, 2)),
+      (Visible, LineRange(2, 3), LineRange(3, 4)),
+      (Ignored, LineRange(4, 5), LineRange(5, 5)),
+      (Visible, LineRange(6, 7), LineRange(6, 7)),
+      (Ignored, LineRange(8, 8), LineRange(8, 9)),
+    ],
+  )
+}
+
+///|
+test "sparse fragment hunks can share unchanged context" {
+  let shared : @mbtdiff.DiffBlock = ContextBlock([
+    { old_index: 2, new_index: 3, text: "shared", },
+  ])
+  let document : @mbtdiff.HunkDocument = {
+    hunks: [
+      {
+        old_start: 1,
+        old_len: 2,
+        new_start: 2,
+        new_len: 2,
+        blocks: [
+          ChangeBlock([
+            Paired(
+              changed_line(1, "", "old-a", ""),
+              changed_line(2, "", "new-a", ""),
+            ),
+          ]),
+          shared,
+        ],
+      },
+      {
+        old_start: 2,
+        old_len: 2,
+        new_start: 3,
+        new_len: 2,
+        blocks: [
+          shared,
+          ChangeBlock([
+            Paired(
+              changed_line(3, "", "old-b", ""),
+              changed_line(4, "", "new-b", ""),
+            ),
+          ]),
+        ],
+      },
+    ],
+  }
+  guard fragment_document_diff(
+      document, "// pre\nold-a\nshared\nold-b\ntail", "// pre\n// added\nnew-a\nshared\nnew-b\ntail",
+    )
+    is Some(result) else {
+    fail("expected overlapping context to remain valid")
+  }
+  assert_eq(
+    result.changes.map(change => {
+      (change.kind, change.mapping.original, change.mapping.modified)
+    }),
+    [
+      (Ignored, LineRange(2, 2), LineRange(2, 3)),
+      (Visible, LineRange(2, 3), LineRange(3, 4)),
+      (Visible, LineRange(4, 5), LineRange(5, 6)),
+    ],
+  )
+}

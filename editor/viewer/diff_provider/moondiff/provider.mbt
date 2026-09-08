@@ -268,15 +268,68 @@ fn append_fragment_rows(
 }
 
 ///|
+// MoonDiff hunks are sparse, but section models contain the complete source.
+// Text outside the returned hunks is not a visible semantic change. Preserve
+// its physical alignment as Ignored, matching unchanged lines within each gap
+// instead of assigning the entire line-count difference to a hunk boundary.
+fn append_ignored_gap(
+  original : ArrayView[String],
+  modified : ArrayView[String],
+  original_offset : Int,
+  modified_offset : Int,
+  changes : Array[@diff.DocumentDiffChange],
+) -> Unit {
+  for edit in @core_diff.Diff(old=original, new=modified).edits() {
+    let (old_start, old_len, new_start, new_len) = match edit {
+      Equal(..) => continue
+      Delete(old_index~, old_len~, new_index~) =>
+        (old_index, old_len, new_index, 0)
+      Insert(old_index~, new_index~, new_len~) =>
+        (old_index, 0, new_index, new_len)
+    }
+    append_change(
+      changes,
+      DetailedLineRangeMapping(
+        LineRange(
+          original_offset + old_start + 1,
+          original_offset + old_start + old_len + 1,
+        ),
+        LineRange(
+          modified_offset + new_start + 1,
+          modified_offset + new_start + new_len + 1,
+        ),
+        None,
+      ),
+      Ignored,
+    )
+  }
+}
+
+///|
 fn adapt_fragment_document(
   document : @mbtdiff.HunkDocument,
   original_lines : Array[String],
   modified_lines : Array[String],
 ) -> @diff.DocumentDiff? {
   let changes : Array[@diff.DocumentDiffChange] = []
+  let mut old_end = 0
+  let mut new_end = 0
   for hunk in document.hunks {
     if !valid_hunk_range(hunk.old_start, hunk.old_len, original_lines.length()) ||
       !valid_hunk_range(hunk.new_start, hunk.new_len, modified_lines.length()) {
+      return None
+    }
+    // Adjacent MoonDiff hunks may share context. Validate their rows as usual,
+    // but only diff source gaps outside the union of their covered ranges.
+    if hunk.old_start >= old_end && hunk.new_start >= new_end {
+      append_ignored_gap(
+        original_lines[old_end:hunk.old_start],
+        modified_lines[new_end:hunk.new_start],
+        old_end,
+        new_end,
+        changes,
+      )
+    } else if hunk.old_start > old_end || hunk.new_start > new_end {
       return None
     }
     let mut old_cursor = hunk.old_start
@@ -322,7 +375,16 @@ fn adapt_fragment_document(
       new_cursor != hunk.new_start + hunk.new_len {
       return None
     }
+    old_end = old_end.max(old_cursor)
+    new_end = new_end.max(new_cursor)
   }
+  append_ignored_gap(
+    original_lines[old_end:],
+    modified_lines[new_end:],
+    old_end,
+    new_end,
+    changes,
+  )
   Some({ changes, })
 }
 
