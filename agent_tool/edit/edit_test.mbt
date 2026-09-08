@@ -674,6 +674,7 @@ async test "edit gates .mbt results through moonc before writing" {
 /// THROUGH the link in a way that breaks the MoonBit source. Asserts the parse
 /// gate rejects it and the target is left byte-identical. The three symlink
 /// cases below differ only in how the two names are spelled.
+#warnings("-unused_value")
 async fn assert_link_edit_gated(
   prefix~ : String,
   target~ : String,
@@ -699,6 +700,7 @@ async fn assert_link_edit_gated(
 ///|
 /// alias.txt -> lib.mbt: the .txt spelling must not slip a broken result past
 /// the parse gate — the write lands in the .mbt target.
+#cfg(all(target="native", not(platform="windows")))
 async test "edit gates a breaking edit made through a non-mbt symlink" {
   assert_link_edit_gated(
     prefix="openseek-edit-gate-link-",
