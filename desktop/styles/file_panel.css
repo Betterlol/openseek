@@ -169,26 +169,46 @@ button.panel-toggle:not(:disabled):hover {
 .viewer-stack > .viewer-host {
   flex: 1 1 auto;
 }
-.viewer-host.mbti-diagram-host {
+.viewer-host.mbti-diagram-host,
+.viewer-host.package-diagram-host {
   box-sizing: border-box;
-  align-items: safe center;
-  justify-content: safe center;
-  padding: 24px;
-  overflow: auto;
+  align-items: stretch;
+  justify-content: stretch;
+  padding: 0;
+  overflow: hidden;
   color: var(--vscode-editor-foreground, var(--color-text-primary));
   background: var(--vscode-editor-background, var(--color-bg-surface));
   overscroll-behavior: contain;
 }
-.mbti-diagram-host:not(.moonbit-viewer-surface-hidden) {
+.mbti-diagram-host:not(.moonbit-viewer-surface-hidden),
+.package-diagram-host:not(.moonbit-viewer-surface-hidden) {
   display: flex;
 }
-.mbti-diagram-host > svg {
-  display: block;
-  flex: 0 0 auto;
-  margin: auto;
+.mbti-diagram-host > .moonbit-viewer-markdown-diagram,
+.package-diagram-host > .moonbit-viewer-markdown-diagram {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  border-radius: 0;
 }
-.mbti-diagram-error {
+/* The shared viewport must measure the generated SVG at its intrinsic size.
+   Its reusable Markdown rule caps SVG width before measurement, which turns a
+   very wide package graph into a few-pixel-tall viewport. The controller owns
+   fitting and clipping once mounted, so disable only that inherited cap here. */
+:is(.mbti-diagram-host, .package-diagram-host)
+  .moonbit-viewer-markdown-diagram-content
+  > svg {
+  max-width: none;
+}
+.mbti-diagram-error,
+.package-diagram-status {
+  box-sizing: border-box;
   max-width: 420px;
+  margin: auto;
+  padding: 24px;
   color: var(--color-text-secondary);
   font-size: var(--font-size-md);
   line-height: var(--line-height-relaxed);

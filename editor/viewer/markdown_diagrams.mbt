@@ -15,3 +15,11 @@ pub fn render_uml_diagram_svg(source : String) -> String? {
 pub fn render_mbti_diagram_svg(source : String) -> String? {
   @markdown_core.render_mbti_diagram_svg(source)
 }
+
+///|
+/// Compile the JSON emitted by `moon tree --package --json` to a theme-aware
+/// package dependency SVG. Invalid graph JSON returns `None` so hosts can keep
+/// the manifest source available as a fallback.
+pub fn render_package_dep_diagram_svg(source : String) -> String? {
+  @markdown_core.render_package_dep_diagram_svg(source)
+}

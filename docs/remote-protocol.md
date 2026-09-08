@@ -564,6 +564,25 @@ Notifications:
 | `terminal.output` | `{id, sequence, data}` — `data` is base64 of the raw PTY bytes |
 | `terminal.exit` | `{id, code}` |
 
+### moon.* — MoonBit project views
+
+`moon.package_graph` is an explicit Host operation because its input cannot be
+derived from the open manifest text alone. The Host verifies that `root` is the
+checkout owned by `session`, resolves the root-relative `path` with physical
+symlink containment, requires it to name `moon.mod`, and runs the selected
+toolchain's `moon` with argv exactly `tree --package --json` in that manifest's
+parent directory.
+
+The reply is tagged on both paths. A nonzero process exit first extracts the
+message from Moon's JSON `status`/`error` stdout when available, then falls back
+to stderr, stdout, and finally the exit code. Malformed output and JSON with a
+failure status also return `kind: "error"`; they are never passed to the UML
+renderer as package-graph source.
+
+| method | params | result |
+|---|---|---|
+| `moon.package_graph` | `{session, root, path}` (`root` absolute, `path` root-relative and naming `moon.mod`) | `{kind: "source", source}` where `source` is successful `moon tree` JSON, or `{kind: "error", message}` |
+
 ### lsp.*
 
 | method | params | result |

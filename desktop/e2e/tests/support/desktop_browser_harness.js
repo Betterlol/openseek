@@ -94,6 +94,40 @@ export class DesktopBrowserHarness {
       ].join('\n'),
     };
     this.searchFiles = ['src/main.mbt', 'README.md'];
+    // `moon.package_graph` returns the command's JSON verbatim. The default
+    // UML filter keeps branching nodes, so the fixture has one package with
+    // two source dependencies and exercises the real renderer path.
+    this.packageGraphSource = JSON.stringify({
+      version: 2,
+      status: 'success',
+      error: null,
+      root: [0],
+      nodes: [
+        {
+          module: 'example/app',
+          version: '0.1.0',
+          source: { kind: 'local', path: '/workspace/app' },
+          rel: 'main',
+        },
+        {
+          module: 'example/lib',
+          version: '0.1.0',
+          source: { kind: 'local', path: '/workspace/lib' },
+          rel: 'core',
+        },
+        {
+          module: 'example/lib',
+          version: '0.1.0',
+          source: { kind: 'local', path: '/workspace/lib' },
+          rel: 'util',
+        },
+      ],
+      edges: [
+        { from: 0, to: 1, alias: 'core', kinds: ['source'] },
+        { from: 0, to: 2, alias: 'util', kinds: ['source'] },
+      ],
+      logs: [],
+    });
     // Transcript images use the same fs.read_file RPC as text files, but the
     // real host returns bytes plus a verified media type. Tests opt into that
     // response per path instead of bypassing the product image loader.
@@ -767,6 +801,8 @@ export class DesktopBrowserHarness {
         };
       case 'git.original_file':
         return this.gitOriginalFile(request.params || {});
+      case 'moon.package_graph':
+        return { kind: 'source', source: this.packageGraphSource };
       case 'fs.read_directory':
         return { entries: this.directoryEntries[request.params?.path] || [] };
       case 'fs.read_file':

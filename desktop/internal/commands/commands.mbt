@@ -508,6 +508,17 @@ pub let terminal_close : Command[
 ] = Command("terminal.close")
 
 ///|
+pub let moon_package_graph : Command[
+  @protocol.MoonPackageGraphPayload,
+  @protocol.MoonPackageGraphReply,
+] = Command("moon.package_graph")
+
+///|
+test "package graph command keeps its remote wire name" {
+  assert_eq(moon_package_graph.name(), "moon.package_graph")
+}
+
+///|
 pub let lsp_open : Command[
   @protocol.LspOpenPayload,
   @protocol.LspDiagnosticsReply,

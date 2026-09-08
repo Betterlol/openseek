@@ -1418,6 +1418,31 @@ pub fn MoonIdeNavigationPayload::to_repr(Self) -> @debug.Repr
 pub impl ToJson for MoonIdeNavigationPayload
 pub impl @json.FromJson for MoonIdeNavigationPayload
 
+pub(all) struct MoonPackageGraphPayload {
+  session : String
+  root : String
+  path : String
+} derive(Eq, @debug.Debug)
+pub fn MoonPackageGraphPayload::equal(Self, Self) -> Bool
+pub fn MoonPackageGraphPayload::from_json(Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
+pub fn MoonPackageGraphPayload::not_equal(Self, Self) -> Bool
+pub fn MoonPackageGraphPayload::to_json(Self) -> Json
+pub fn MoonPackageGraphPayload::to_repr(Self) -> @debug.Repr
+pub impl ToJson for MoonPackageGraphPayload
+pub impl @json.FromJson for MoonPackageGraphPayload
+
+pub(all) enum MoonPackageGraphReply {
+  PackageGraphSource(source~ : String)
+  PackageGraphError(message~ : String)
+} derive(Eq, @debug.Debug)
+pub fn MoonPackageGraphReply::equal(Self, Self) -> Bool
+pub fn MoonPackageGraphReply::from_json(Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
+pub fn MoonPackageGraphReply::not_equal(Self, Self) -> Bool
+pub fn MoonPackageGraphReply::to_json(Self) -> Json
+pub fn MoonPackageGraphReply::to_repr(Self) -> @debug.Repr
+pub impl ToJson for MoonPackageGraphReply
+pub impl @json.FromJson for MoonPackageGraphReply
+
 pub(all) enum Notification {
   AgentConnected(ConnectedPayload)
   AgentStarted(StartedPayload)

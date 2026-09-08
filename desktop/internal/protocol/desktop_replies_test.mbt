@@ -905,6 +905,71 @@ test "language payload codecs require every routing coordinate" {
 }
 
 ///|
+test "Moon package-graph codecs keep routing and outcome explicit" {
+  let payload : @protocol.MoonPackageGraphPayload = @json.from_json({
+    "session": "thread-1",
+    "root": "/work/project",
+    "path": "nested/moon.mod",
+    "future_metadata": true,
+  })
+  @debug.assert_eq(payload.to_json(), {
+    "session": "thread-1",
+    "root": "/work/project",
+    "path": "nested/moon.mod",
+  })
+  let missing_path = try {
+    let _ : @protocol.MoonPackageGraphPayload = @json.from_json({
+      "session": "thread-1",
+      "root": "/work/project",
+    })
+    false
+  } catch {
+    _ => true
+  }
+  assert_true(missing_path)
+  let source : @protocol.MoonPackageGraphReply = PackageGraphSource(
+    source="{\"status\":\"success\"}",
+  )
+  @debug.assert_eq(source.to_json(), {
+    "kind": "source",
+    "source": "{\"status\":\"success\"}",
+  })
+  let decoded_source : @protocol.MoonPackageGraphReply = @json.from_json(
+    source.to_json(),
+  )
+  assert_eq(decoded_source, source)
+  let failure : @protocol.MoonPackageGraphReply = PackageGraphError(
+    message="moon tree failed",
+  )
+  @debug.assert_eq(failure.to_json(), {
+    "kind": "error",
+    "message": "moon tree failed",
+  })
+  let decoded_failure : @protocol.MoonPackageGraphReply = @json.from_json(
+    failure.to_json(),
+  )
+  assert_eq(decoded_failure, failure)
+  let missing_source = try {
+    let _ : @protocol.MoonPackageGraphReply = @json.from_json({
+      "kind": "source",
+    })
+    false
+  } catch {
+    _ => true
+  }
+  assert_true(missing_source)
+  let unknown_kind = try {
+    let _ : @protocol.MoonPackageGraphReply = @json.from_json({
+      "kind": "cancelled",
+    })
+    false
+  } catch {
+    _ => true
+  }
+  assert_true(unknown_kind)
+}
+
+///|
 test "worktree replies omit absent owners and reject ambiguous ownership" {
   let openseek : @protocol.WorktreeInfo = @json.from_json({
     "name": "wt-1",

@@ -426,6 +426,14 @@ pub fn open_document(
   } else {
     state
   }
+  let state = if uses_moon_mod_presentation(name) &&
+    (range is Some(_) || annotation is Some(_)) {
+    let moon_mod_view_modes = state.moon_mod_view_modes.copy()
+    moon_mod_view_modes[path] = MoonModSource
+    { ..state, moon_mod_view_modes, }
+  } else {
+    state
+  }
   let clear_review = if ctx.active_file == Some(path) {
     // Always clear the displayed resource, even when this path has no cached
     // `Doc`: a reviewed tab can be closed while another dock kind is active,
@@ -1096,7 +1104,11 @@ pub fn close_document(
   docs.remove(path)
   let mbti_view_modes = state.mbti_view_modes.copy()
   mbti_view_modes.remove(path)
-  let state = { ..state, mbti_view_modes, }
+  let moon_mod_view_modes = state.moon_mod_view_modes.copy()
+  moon_mod_view_modes.remove(path)
+  let package_graphs = state.package_graphs.copy()
+  package_graphs.remove(path)
+  let state = { ..state, mbti_view_modes, moon_mod_view_modes, package_graphs, }
   // Closing a tab is useful local state even while placement is parked, but
   // promoting its neighbor must not address the missing checkout. Recovery's
   // sync pass restores whichever surviving tab the dock made active.
@@ -1237,6 +1249,30 @@ fn FileChange::moonbit_relevant(self : FileChange) -> Bool {
     Modified(path) | Created(path) | Removed(path) => moonbit_check_input(path)
     Renamed(old~, new~) => moonbit_check_input(old) || moonbit_check_input(new)
   }
+}
+
+///|
+/// Whether this event can change the package graph produced by Moon. Source
+/// contents do not: package edges come from module/workspace/package manifests.
+fn FileChange::package_graph_relevant(self : FileChange) -> Bool {
+  match self {
+    Modified(path) | Created(path) | Removed(path) => package_graph_input(path)
+    Renamed(old~, new~) => package_graph_input(old) || package_graph_input(new)
+  }
+}
+
+///|
+fn package_graph_input(path : @pathx.Relative) -> Bool {
+  let text = path.0
+  for
+    name in [
+      "moon.pkg", "moon.mod", "moon.work", "moon.pkg.json", "moon.mod.json", "moon.lock",
+    ] {
+    if text == name || text.has_suffix("/" + name) {
+      return true
+    }
+  }
+  false
 }
 
 ///|
@@ -1762,6 +1798,55 @@ fn refresh_changes(
 }
 
 ///|
+/// Keep the active ordinary `moon.mod` paired with one Host-produced package
+/// graph. The post-dispatch sync is the common path for fresh opens, restored
+/// tabs, view-mode changes, invalidations, and replies, so the request remains
+/// idempotent without duplicating lifecycle logic in each transition.
+fn sync_package_graph(
+  dispatch : @cmd.Emit[Msg],
+  state : State,
+  ctx : Ctx,
+) -> (State, @cmd.Cmd) {
+  guard ctx.checkout_ready() &&
+    ctx.panel_open &&
+    ctx.active_history_diff is None &&
+    ctx.active_file is Some(path) &&
+    state.docs.get(path) is Some(doc) &&
+    doc.review is None &&
+    uses_moon_mod_presentation(doc.name) &&
+    doc.state is (TabLoading | TabLoaded(..)) else {
+    return (state, @cmd.none)
+  }
+  match state.moon_mod_view_mode(path) {
+    MoonModSource => (state, @cmd.none)
+    MoonModDependencies =>
+      match state.package_graphs.get(path) {
+        Some(graph) => (state, show_package_graph_in_viewer(graph))
+        None => {
+          let generation = state.package_graph_generation + 1
+          let graph = PackageGraphLoading(generation)
+          let package_graphs = state.package_graphs.copy()
+          package_graphs[path] = graph
+          (
+            { ..state, package_graphs, package_graph_generation: generation, },
+            @cmd.batch([
+              show_package_graph_in_viewer(graph),
+              read_package_graph(
+                dispatch,
+                ctx.owner,
+                ctx.request_epoch,
+                path,
+                generation,
+                root=ctx.root(),
+              ),
+            ]),
+          )
+        }
+      }
+  }
+}
+
+///|
 /// Reconcile the file subsystem with the active conversation after every
 /// message: rebuild the document table and drop the tree cache when the
 /// conversation changed (the dock parks/restores strip identities; this side
@@ -1936,6 +2021,7 @@ pub fn sync(
           state.file_link_generation
         },
         review_generation: state.review_generation,
+        package_graph_generation: state.package_graph_generation + 1,
         git_graph_generation: if owner_changed || placement_identity_changed {
           state.git_graph_generation + 1
         } else {
@@ -2007,6 +2093,8 @@ pub fn sync(
       git_commit_files: GitCommitFilesIdle,
       history_docs: Map([]),
       history_generation: state.history_generation + 1,
+      package_graphs: Map([]),
+      package_graph_generation: state.package_graph_generation + 1,
       placement: state.placement.reconcile(ctx.placement),
       request_epoch,
     }
@@ -2144,6 +2232,7 @@ pub fn sync(
     (@cmd.none, state)
   }
   let state = state.sync_semantic_review(ctx)
+  let (state, package_graph_cmd) = sync_package_graph(dispatch, state, ctx)
   let pending_cmd = @cmd.batch([
     retire_index_cmd,
     reroot_cmd,
@@ -2151,6 +2240,7 @@ pub fn sync(
     changes_cmd,
     graph_cmd,
     history_cmd,
+    package_graph_cmd,
     sync_semantic_review_editors(state),
   ])
   // A closed panel re-roots (above) and keeps the watcher placed, but the tree
@@ -2285,6 +2375,53 @@ pub fn update(
         { ..state, mbti_view_modes, },
       )
     }
+    MoonModViewModeSelected(mode) => {
+      guard ctx.active_history_diff is None &&
+        ctx.active_file is Some(path) &&
+        state.docs.get(path)
+        is Some({ name, state: TabLoaded(..), review: None, .. }) &&
+        uses_moon_mod_presentation(name) else {
+        return (@cmd.none, state)
+      }
+      let retry_failed = mode is MoonModDependencies &&
+        state.package_graphs.get(path) is Some(PackageGraphFailed(_, _))
+      if state.moon_mod_view_mode(path) == mode && !retry_failed {
+        return (@cmd.none, state)
+      }
+      let moon_mod_view_modes = state.moon_mod_view_modes.copy()
+      moon_mod_view_modes[path] = mode
+      let package_graphs = state.package_graphs.copy()
+      if mode is MoonModDependencies &&
+        package_graphs.get(path) is Some(PackageGraphFailed(_, _)) {
+        package_graphs.remove(path)
+      }
+      (
+        request_viewer_remeasure(),
+        { ..state, moon_mod_view_modes, package_graphs, },
+      )
+    }
+    PackageGraphRequestLoaded(owner~, epoch~, path~, generation~, source~) =>
+      if state.owner == Some(owner) &&
+        state.request_epoch == epoch &&
+        state.package_graphs.get(path) is Some(PackageGraphLoading(current)) &&
+        current == generation {
+        let package_graphs = state.package_graphs.copy()
+        package_graphs[path] = PackageGraphReady(generation, source)
+        (@cmd.none, { ..state, package_graphs, })
+      } else {
+        (@cmd.none, state)
+      }
+    PackageGraphRequestFailed(owner~, epoch~, path~, generation~, message~) =>
+      if state.owner == Some(owner) &&
+        state.request_epoch == epoch &&
+        state.package_graphs.get(path) is Some(PackageGraphLoading(current)) &&
+        current == generation {
+        let package_graphs = state.package_graphs.copy()
+        package_graphs[path] = PackageGraphFailed(generation, message)
+        (@cmd.none, { ..state, package_graphs, })
+      } else {
+        (@cmd.none, state)
+      }
     DiffLoadingDue(owner~, path~, generation~) =>
       if state.owner == Some(owner) &&
         ctx.active_file == Some(path) &&
@@ -3270,7 +3407,17 @@ pub fn update(
         } else {
           state.watching
         }
-        let state = { ..state, reviewed_changes: [], index, watching, }
+        let state = {
+          ..state,
+          reviewed_changes: [],
+          index,
+          watching,
+          // Agent runs can alter unopened package manifests outside the
+          // pruned watcher. Retire every cached graph at this settled boundary;
+          // post-dispatch sync immediately refreshes the visible dependency
+          // view while Source remains cheap.
+          package_graphs: Map([]),
+        }
         let index_cmd = if start_index_refresh {
           list_files(dispatch, owner, state.request_epoch, root=ctx.root())
         } else {
@@ -3332,10 +3479,14 @@ pub fn update(
         let relist : Array[@pathx.Relative] = []
         let mut refresh_index = false
         let mut moonbit_changed = false
+        let mut package_graph_changed = false
         if changes is Some(changes) {
           for change in changes {
             if change.moonbit_relevant() {
               moonbit_changed = true
+            }
+            if change.package_graph_relevant() {
+              package_graph_changed = true
             }
             for path in ctx.open_files {
               if change.touches(path) && !stat_paths.contains(path) {
@@ -3359,6 +3510,10 @@ pub fn update(
             }
           }
         } else {
+          // A watcher baseline closes the unobserved replacement gap. Any
+          // package manifest may have changed while the old watcher was gone,
+          // so a cached dependency graph cannot cross this boundary.
+          package_graph_changed = true
           for path in ctx.open_files {
             stat_paths.push(path)
           }
@@ -3439,7 +3594,18 @@ pub fn update(
             list_files(dispatch, owner, state.request_epoch, root=ctx.root()),
           )
         }
-        let next = { ..state, loading, reviewed_changes, index, }
+        let package_graphs = if package_graph_changed {
+          Map([])
+        } else {
+          state.package_graphs
+        }
+        let next = {
+          ..state,
+          loading,
+          reviewed_changes,
+          index,
+          package_graphs,
+        }
         // Any content event can change Git status, not just a structural one.
         // Refresh only after Changes has been requested and while its explorer
         // or a review is live; reopening performs its own full refresh. The
