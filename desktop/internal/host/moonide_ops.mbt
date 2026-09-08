@@ -42,19 +42,8 @@ fn MoonIdeQuery::args(
   path : String,
   line : Int,
   column : Int,
-  skip_check : Bool,
 ) -> Array[String] {
-  let args = [
-    "ide",
-    self.subcommand(),
-    "--loc",
-    "\{path}:\{line}:\{column}",
-    "--json",
-  ]
-  if skip_check {
-    args.push("--no-check")
-  }
-  args
+  ["ide", self.subcommand(), "--loc", "\{path}:\{line}:\{column}", "--json"]
 }
 
 ///|
@@ -120,49 +109,6 @@ async fn moonide_spawn_config(state : HostState) -> MoonIdeSpawnConfig {
     executable: toolchain.moon.to_string(),
     extra_env: Some(toolchain.tool_env()),
   }
-}
-
-///|
-/// Build Moon's semantic index when this checkout has never been checked.
-/// `moon ide` currently reports only the missing `packages.json` when its
-/// implicit check cannot prepare the workspace. Running that first check
-/// explicitly preserves the real stderr — notably an uninitialized submodule
-/// named by `moon.work` — for the JSON-RPC error returned to the frontend.
-/// `true` means the caller can pass `--no-check` to avoid checking twice.
-async fn MoonIdeSpawnConfig::ensure_index(
-  self : MoonIdeSpawnConfig,
-  workspace : @pathx.Absolute,
-) -> Bool {
-  let index = workspace.join("_build/packages.json")
-  if @fs.exists(index.to_string()) {
-    return false
-  }
-  let (code, stdout, stderr) = @processx.collect_output_no_stdin(
-    self.executable,
-    ["check"],
-    extra_env?=self.extra_env,
-    inherit_env=self.extra_env is None,
-    cwd=workspace.to_string(),
-  ) catch {
-    error if @async.is_being_cancelled() => raise error
-    error => raise HostError("could not run moon check: \{error}")
-  }
-  if code != 0 {
-    let stderr = (stderr.text() catch { _ => "" }).trim().to_owned()
-    let stdout = (stdout.text() catch { _ => "" }).trim().to_owned()
-    let detail = if !stderr.is_empty() { stderr } else { stdout }
-    raise HostError(
-      if detail.is_empty() {
-        "moon check exited with code \{code}"
-      } else {
-        detail
-      },
-    )
-  }
-  guard @fs.exists(index.to_string()) else {
-    raise HostError("moon check did not produce \{index}")
-  }
-  true
 }
 
 ///|
@@ -298,13 +244,7 @@ async fn moonide_navigation_op(
 ) -> MoonIdeLocationsReply {
   let request = resolve_moonide_request(payload)
   let config = moonide_spawn_config(state)
-  let indexed = config.ensure_index(request.physical_workspace)
-  let args = query.args(
-    request.relative_path,
-    request.line,
-    request.column,
-    indexed,
-  )
+  let args = query.args(request.relative_path, request.line, request.column)
   let (code, stdout, stderr) = @processx.collect_output_no_stdin(
     config.executable,
     args,
@@ -355,11 +295,11 @@ async fn moonide_references_op(
 
 ///|
 test "Moon IDE commands use relative one-based locations without a shell" {
-  assert_eq(Definition.args("src/main.mbt", 12, 5, false), [
+  assert_eq(Definition.args("src/main.mbt", 12, 5), [
     "ide", "peek-def", "--loc", "src/main.mbt:12:5", "--json",
   ])
-  assert_eq(References.args("src/main.mbt", 12, 5, true), [
-    "ide", "find-references", "--loc", "src/main.mbt:12:5", "--json", "--no-check",
+  assert_eq(References.args("src/main.mbt", 12, 5), [
+    "ide", "find-references", "--loc", "src/main.mbt:12:5", "--json",
   ])
 }
 
