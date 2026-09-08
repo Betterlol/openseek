@@ -249,21 +249,7 @@ async fn edit_file(
     None =>
       match @matching.find_quote_normalized_match(region.body, norm_old) {
         Some(start) => (start, true)
-        None => {
-          let file_hints = StringBuilder()
-          if @matching.has_crlf(content) {
-            file_hints.write_string(
-              "— the file uses CRLF line endings — re-read the file and copy the exact text",
-            )
-          }
-          if @matching.has_curly_quotes(content) {
-            if file_hints.to_string().length() > 0 {
-              file_hints.write_char('\n')
-            }
-            file_hints.write_string(
-              "— the file contains curly/smart quotes; models can only output straight quotes — re-read the file and copy the exact text from the file",
-            )
-          }
+        None =>
           return err(
             "old_string not found" +
             range_detail(input) +
@@ -272,10 +258,8 @@ async fn edit_file(
               input.old_string,
               input.start_line,
               input.end_line,
-              file_hints=file_hints.to_string(),
             ),
           )
-        }
       }
   }
   let norm_global = region.prefix.length() + match_start
@@ -912,14 +896,8 @@ fn old_string_context(
   old_string : String,
   start_line : Int,
   end_line : Int?,
-  file_hints? : String = "",
 ) -> String {
   let result = StringBuilder()
-  // File-level hints first, before the context
-  if file_hints.length() > 0 {
-    result.write_string(file_hints)
-    result.write_string("\n\n")
-  }
   // Surrounding lines in a code block
   let context_before = 2
   let context_after = 2
@@ -1303,16 +1281,3 @@ test "find_quote_normalized_match returns None for no match" {
 }
 
 ///|
-test "has_crlf detects CRLF content" {
-  assert_true(@matching.has_crlf("a\r\nb"))
-  assert_false(@matching.has_crlf("a\nb"))
-  assert_false(@matching.has_crlf(""))
-}
-
-///|
-test "has_curly_quotes detects curly quotes" {
-  assert_true(@matching.has_curly_quotes("\u{2018}hello\u{2019}"))
-  assert_true(@matching.has_curly_quotes("\u{201C}hello\u{201D}"))
-  assert_false(@matching.has_curly_quotes("'hello'"))
-  assert_false(@matching.has_curly_quotes(""))
-}

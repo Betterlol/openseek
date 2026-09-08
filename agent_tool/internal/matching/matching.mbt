@@ -49,18 +49,3 @@ pub fn find_quote_normalized_match(body : String, needle : String) -> Int? {
   let norm_needle = normalize_quotes(needle)
   norm_body.find(norm_needle)
 }
-
-///|
-/// Detect whether `content` uses CRLF line endings (contains `\r\n`).
-pub fn has_crlf(content : String) -> Bool {
-  content.contains("\r\n")
-}
-
-///|
-/// Detect whether `content` contains curly/smart quotes.
-pub fn has_curly_quotes(content : String) -> Bool {
-  content.contains("\u{2018}") ||
-  content.contains("\u{2019}") ||
-  content.contains("\u{201C}") ||
-  content.contains("\u{201D}")
-}
