@@ -895,10 +895,11 @@ fn validate_edit(
   let (norm_content, offset_map) = @matching.normalize_content_for_matching(
     content,
   )
+  let (norm_old, _) = @matching.normalize_content_for_matching(item.old_string)
   let region = select_edit_region(norm_content, item.start_line, item.end_line)
-  let match_offset = match region.body.find(item.old_string) {
+  let match_offset = match region.body.find(norm_old) {
     Some(offset) => Some(offset)
-    None => @matching.find_quote_normalized_match(region.body, item.old_string)
+    None => @matching.find_quote_normalized_match(region.body, norm_old)
   }
   guard match_offset is Some(offset) else {
     return Invalid({
@@ -908,7 +909,6 @@ fn validate_edit(
       message: "old_string not found",
     })
   }
-  let (norm_old, _) = @matching.normalize_content_for_matching(item.old_string)
   let norm_global = region.start_offset + offset
   let orig_start = offset_map[norm_global]
   let orig_end = if norm_global + norm_old.length() < offset_map.length() {

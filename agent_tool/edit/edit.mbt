@@ -242,18 +242,18 @@ async fn edit_file(
   let (norm_content, offset_map) = @matching.normalize_content_for_matching(
     content,
   )
+  let (norm_old, _) = @matching.normalize_content_for_matching(input.old_string)
   let region = select_edit_region(norm_content, input)
-  let (match_start, is_quote_match) = match region.body.find(input.old_string) {
+  let (match_start, is_quote_match) = match region.body.find(norm_old) {
     Some(start) => (start, false)
     None =>
-      match
-        @matching.find_quote_normalized_match(region.body, input.old_string) {
+      match @matching.find_quote_normalized_match(region.body, norm_old) {
         Some(start) => (start, true)
         None => {
           let file_hints = StringBuilder()
           if @matching.has_crlf(content) {
             file_hints.write_string(
-              "— the file uses CRLF line endings; old_string uses LF — re-read the file and copy the exact text",
+              "— the file uses CRLF line endings — re-read the file and copy the exact text",
             )
           }
           if @matching.has_curly_quotes(content) {
@@ -278,7 +278,6 @@ async fn edit_file(
         }
       }
   }
-  let (norm_old, _) = @matching.normalize_content_for_matching(input.old_string)
   let norm_global = region.prefix.length() + match_start
   let orig_global = offset_map[norm_global]
   let orig_end = if norm_global + norm_old.length() < offset_map.length() {
