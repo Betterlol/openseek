@@ -21,6 +21,7 @@
 /// and output stay folded by default, like every other call.
 fn assistant_view(
   on_open : (String) -> @cmd.Cmd,
+  wait_labels? : Map[Int, String] = Map([]),
   prose? : String,
   reasoning? : String,
   calls? : Array[@transcript.ToolCall] = [],
@@ -100,7 +101,7 @@ fn assistant_view(
     Some(
       @html.div(
         class="activity-work",
-        tool_run_views(calls, sequence?, subrun?),
+        tool_run_views(calls, sequence?, subrun?, wait_labels~),
       ),
     )
   }
@@ -176,6 +177,7 @@ fn tool_run_views(
   calls : Array[@transcript.ToolCall],
   sequence? : Int,
   subrun? : SubrunLink,
+  wait_labels? : Map[Int, String] = Map([]),
 ) -> Map[String, @html.Html] {
   let rows : Map[String, @html.Html] = Map([])
   let burst = calls.length() > 1 && calls.all(call => call.arguments is Some(_))
@@ -184,6 +186,7 @@ fn tool_run_views(
       rows[tool_run_row_key(call, index, "request")] = tool_request_view(
         call,
         sequence?,
+        wait_label?=wait_labels.get(index),
       )
     }
     for index, call in calls {
@@ -201,6 +204,7 @@ fn tool_run_views(
         rows[tool_run_row_key(call, index, "request")] = tool_request_view(
           call,
           sequence?,
+          wait_label?=wait_labels.get(index),
         )
       }
       if tool_result_row_is_visible(call) {
@@ -280,6 +284,7 @@ fn tool_result_row_is_visible(call : @transcript.ToolCall) -> Bool {
 fn tool_request_view(
   call : @transcript.ToolCall,
   sequence? : Int,
+  wait_label? : String,
 ) -> @html.Html {
   guard call.arguments is Some(arguments) else { return @html.nothing }
   let name = call.name
@@ -290,6 +295,8 @@ fn tool_request_view(
   }
   let label = if brief is Some(brief) && !brief.is_blank() {
     brief
+  } else if wait_label is Some(label) {
+    label
   } else if pending_job_wait_label(call) is Some(label) {
     label
   } else {
@@ -819,6 +826,7 @@ fn turn_rule_view(ts? : Double) -> @html.Html {
 fn transcript_item_view(
   item : @transcript.TranscriptItem,
   on_open : (String) -> @cmd.Cmd,
+  wait_labels? : Map[Int, String] = Map([]),
   anchor? : String,
   on_jump? : (@mention_context.Target) -> @cmd.Cmd,
   assistant_name? : String = "OpenSeek",
@@ -833,6 +841,7 @@ fn transcript_item_view(
         prose?,
         reasoning?,
         calls~,
+        wait_labels~,
         sequence?=item.sequence,
         ts?=item.ts,
         step_label?,

@@ -433,7 +433,8 @@ priv enum BlockContent {
     anchor~ : String?,
     step_label~ : String?,
     assistant_name~ : String,
-    subrun_parent~ : String?
+    subrun_parent~ : String?,
+    wait_labels~ : Map[Int, String]
   )
   /// The rule closing a user turn.
   TurnRule(ts~ : Double?)
@@ -475,6 +476,7 @@ fn stream_blocks(input : Input) -> @vector.Vector[Block] {
   let blocks : Array[Block] = []
   // OpenSeek numbers its model steps: every provider response that is not a
   // checkpoint replay is one. Codex and legacy items carry no ordinal.
+  let descriptions : Map[String, String] = Map([])
   let mut steps = 0
   for index, row in input.items {
     let item = row.item
@@ -499,6 +501,7 @@ fn stream_blocks(input : Input) -> @vector.Vector[Block] {
         step_label~,
         assistant_name~,
         subrun_parent~,
+        wait_labels=job_wait_labels(item, descriptions),
       ),
     })
     if item.kind is User(_) {
@@ -542,10 +545,18 @@ fn Block::render(self : Block, actions : Actions) -> @html.Html {
   let on_open = path => (actions.open)(path)
   match self.content {
     Empty(empty) => empty.render(actions)
-    Item(item~, anchor~, step_label~, assistant_name~, subrun_parent~) =>
+    Item(
+      item~,
+      anchor~,
+      step_label~,
+      assistant_name~,
+      subrun_parent~,
+      wait_labels~
+    ) =>
       transcript_item_view(
         item,
         on_open,
+        wait_labels~,
         anchor?,
         on_jump=target => (actions.jump)(target),
         assistant_name~,

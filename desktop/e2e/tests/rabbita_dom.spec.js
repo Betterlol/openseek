@@ -1981,3 +1981,33 @@ test('composer follow-up menu supports keyboard choice and a queue default', asy
   expect(app.requests.filter(r => r.method === 'settings.set')).toEqual([]);
   expect(app.pageErrors).toEqual([]);
 });
+
+test('pending job waits show descriptions from earlier tool rows', async ({ page }) => {
+  const app = new DesktopBrowserHarness(page);
+  app.sessionEvents = [
+    { sequence: 1, item: { kind: 'user', payload: { content: 'Show the browser fixture waiting for CI' } } },
+    { sequence: 2, item: { kind: 'assistant', payload: {
+      content: '', tool_calls: [{ id: 'start', name: 'mbtx',
+        arguments: JSON.stringify({ description: 'Watch CI on rebased PR 27' }) }],
+    } } },
+    { sequence: 3, item: { kind: 'tool_result', payload: {
+      tool_call_id: 'start', tool_name: 'mbtx', content: '',
+      is_error: false, brief: 'mbtx → bg bg-10',
+    } } },
+    { sequence: 4, item: { kind: 'assistant', payload: {
+      content: '', tool_calls: [{ id: 'wait', name: 'job_wait',
+        arguments: JSON.stringify({ job_ids: ['bg-10', 'bg-11'] }) },
+        { id: 'wait', name: 'job_wait', arguments: JSON.stringify({ job_ids: ['bg-11'] }) }],
+    } } },
+  ];
+  await app.install();
+  await app.goto();
+  await app.openSession();
+  const wait = page.locator('details.tool-call').filter({ hasText: 'Waiting for' });
+  await expect(wait.locator('.tool-call-text')).toHaveText(
+    ['Waiting for bg-10: Watch CI on rebased PR 27, bg-11', 'Waiting for bg-11']);
+  await expect(wait.first()).not.toHaveAttribute('open', '');
+  await wait.first().locator('summary').click();
+  await expect(wait.first()).toContainText('"job_ids"');
+  expect(app.pageErrors).toEqual([]);
+});
