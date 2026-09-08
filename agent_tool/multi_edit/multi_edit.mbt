@@ -908,10 +908,11 @@ fn validate_edit(
       message: "old_string not found",
     })
   }
+  let (norm_old, _) = @matching.normalize_content_for_matching(item.old_string)
   let norm_global = region.start_offset + offset
   let orig_start = offset_map[norm_global]
-  let orig_end = if norm_global + item.old_string.length() < offset_map.length() {
-    offset_map[norm_global + item.old_string.length()]
+  let orig_end = if norm_global + norm_old.length() < offset_map.length() {
+    offset_map[norm_global + norm_old.length()]
   } else {
     content.length()
   }

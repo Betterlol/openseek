@@ -278,11 +278,11 @@ async fn edit_file(
         }
       }
   }
+  let (norm_old, _) = @matching.normalize_content_for_matching(input.old_string)
   let norm_global = region.prefix.length() + match_start
   let orig_global = offset_map[norm_global]
-  let orig_end = if norm_global + input.old_string.length() <
-    offset_map.length() {
-    offset_map[norm_global + input.old_string.length()]
+  let orig_end = if norm_global + norm_old.length() < offset_map.length() {
+    offset_map[norm_global + norm_old.length()]
   } else {
     content.length()
   }
