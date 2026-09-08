@@ -3660,7 +3660,7 @@ fn update_msg(
             )
           }
           (
-            command,
+            @cmd.batch([command, @transcript_component.scroll_to_latest()]),
             {
               ..model.replace_conversation({
                 ..conv,
@@ -3743,7 +3743,12 @@ fn update_msg(
             workspace=conv.project(),
           )
         }
-        (start_cmd, model.replace_conversation(next))
+        // Re-pin now, before the durable User item arrives, so the early
+        // streamed work is visible even if the reader had scrolled up.
+        (
+          @cmd.batch([start_cmd, @transcript_component.scroll_to_latest()]),
+          model.replace_conversation(next),
+        )
       }
     }
     Stop => {
@@ -4588,6 +4593,14 @@ fn update_msg(
       )
     }
     CloseGitDetails => (@cmd.none, { ..model, git_details_open: false, })
+    TranscriptLeft(slot~, scroll~) =>
+      (
+        @cmd.none,
+        {
+          ..model,
+          transcript_scroll: model.transcript_scroll.add(slot, scroll),
+        },
+      )
     ToggleRightPanel => {
       let opening = !model.right_panel_open
       // A direct visibility toggle has no later semantic action to fence old
