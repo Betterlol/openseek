@@ -25,12 +25,13 @@ const MaxTextSearchPreviewUnits : Int = 400
 const TextSearchContextBeforeUnits : Int = 120
 
 ///|
-/// VS Code's default `files.exclude` plus `search.exclude`, and Claude metadata.
+/// VS Code's default `files.exclude` plus `search.exclude`, Claude metadata,
+/// and MoonBit build output.
 /// `getRgArgs` emits folder exclusions after every include, so an exclusion
 /// always wins.
 let default_text_search_excludes : Array[String] = [
   "**/.git", "**/.svn", "**/.hg", "**/.DS_Store", "**/Thumbs.db", "**/node_modules",
-  "**/bower_components", "**/*.code-search", "**/.claude",
+  "**/bower_components", "**/*.code-search", "**/.claude", "**/_build",
 ]
 
 ///|
@@ -1172,10 +1173,10 @@ test "text search arguments mirror VS Code regex, ignore, and glob defaults" {
     "-g", "**/src/**", "-g", "**/tests/*.{mbt,md}/**", "-g", "**/tests/*.{mbt,md}",
     "-g", "!**/.git", "-g", "!**/.svn", "-g", "!**/.hg", "-g", "!**/.DS_Store", "-g",
     "!**/Thumbs.db", "-g", "!**/node_modules", "-g", "!**/bower_components", "-g",
-    "!**/*.code-search", "-g", "!**/.claude", "-g", "!**/*.snap/**", "-g", "!**/*.snap",
-    "-g", "!**/generated/**", "--max-filesize", "17179869184", "--no-ignore-parent",
-    "--follow", "--crlf", "--engine", "auto", "--regexp", "\\bmoon.*bit\\b", "--no-config",
-    "--no-ignore-global", "--json", "--", ".",
+    "!**/*.code-search", "-g", "!**/.claude", "-g", "!**/_build", "-g", "!**/*.snap/**",
+    "-g", "!**/*.snap", "-g", "!**/generated/**", "--max-filesize", "17179869184",
+    "--no-ignore-parent", "--follow", "--crlf", "--engine", "auto", "--regexp", "\\bmoon.*bit\\b",
+    "--no-config", "--no-ignore-global", "--json", "--", ".",
   ])
   assert_eq(args, expected)
 }
