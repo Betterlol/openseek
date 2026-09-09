@@ -925,9 +925,6 @@ fn old_string_context(
     result.write_string("\{gutter} \{line_no} | \{line_text}\n")
   }
   result.write_string("```\n")
-  result.write_string(
-    "─── hint ───────────────────────────────────────\ncheck for CRLF vs LF line endings, tab vs space, full-width vs half-width characters, or a stray read-tool display separator (`|`) in old_string\n",
-  )
   result.to_string()
 }
 
@@ -1029,7 +1026,6 @@ test "old_string_context clamps last_line to end of file" {
   let ctx = old_string_context(content, 1, Some(999999))
   // Should not loop 1M times; last_line clamped to 5 (3 file lines + 2 context_after)
   assert_true(ctx.contains("─── file context"))
-  assert_true(ctx.contains("─── hint"))
   // All 3 file lines should appear; no error from past-EOF iteration
   assert_true(ctx.contains("1 | a"))
   assert_true(ctx.contains("2 | b"))
@@ -1044,8 +1040,6 @@ test "old_string_context shows context lines" {
   assert_true(ctx.contains("1 | alpha"))
   assert_true(ctx.contains("> 2 | beta"))
   assert_true(ctx.contains("3 | gamma"))
-  // Hint always present
-  assert_true(ctx.contains("CRLF vs LF"))
 }
 
 ///|
