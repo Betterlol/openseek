@@ -88,7 +88,7 @@ test "changed matched declarations carry only fragment-local DiffEditor data" {
   guard target.diff is Fragment(diff) else {
     fail("expected a MoonDiff fragment provider")
   }
-  guard diff.changes is [change] else {
+  guard diff.changes is [{ mapping: change, .. }] else {
     fail("expected one local changed range")
   }
   assert_eq(change.original, LineRange(2, 3))
@@ -183,4 +183,45 @@ test "default semantic filters return explicit empty plans for ignored-only chan
   assert_eq(test_only.status, IgnoredOnly)
   assert_true(test_only.main_sections.is_empty())
   assert_true(test_only.deleted_sections.is_empty())
+}
+
+///|
+test "comment filtering recomputes mixed-line highlights in both semantic modes" {
+  let original = "fn value() -> Int {\n  1 // old comment\n}"
+  let modified = "fn value() -> Int {\n  2 // new comment\n}"
+  for mode in [Token, Tree] {
+    for ignore_comments in [false, true, false] {
+      let plan = semantic_plan_or_fail(
+        original,
+        modified,
+        mode,
+        ignore_comments~,
+      )
+      guard plan.main_sections is [{ diff: Fragment(document), .. }] else {
+        fail("expected one changed function")
+      }
+      let mut saw_code = false
+      let mut saw_comment = false
+      for change in document.changes {
+        if change.kind is Ignored {
+          continue
+        }
+        guard change.mapping.inner_changes is Some(inner) else {
+          fail("expected character mappings")
+        }
+        for span in inner {
+          if span.original.start_line_number == 2 {
+            if span.original.start_column <= 3 && span.original.end_column > 3 {
+              saw_code = true
+            }
+            if span.original.end_column > 5 {
+              saw_comment = true
+            }
+          }
+        }
+      }
+      assert_true(saw_code)
+      assert_eq(saw_comment, !ignore_comments)
+    }
+  }
 }

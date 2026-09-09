@@ -12,8 +12,11 @@ impl @diff.DocumentDiffProvider for ExternalDocumentDiffProvider with fn compute
   let modified = @base_common.LineRange(1, 2)
   let inner = @diff.RangeMapping(Range(1, 1, 1, 2), Range(1, 1, 1, 3))
   {
-    changes: [DetailedLineRangeMapping(original, modified, Some([inner]))],
-    additional_alignments: [LineRangeMapping(original, modified)],
+    changes: [
+      DocumentDiffChange(
+        DetailedLineRangeMapping(original, modified, Some([inner])),
+      ),
+    ],
   }
 }
 
@@ -34,8 +37,11 @@ test "an external package can implement the provider and construct mappings" {
     { ignore_trim_whitespace: false, },
   )
   assert_eq(result.changes.length(), 1)
-  assert_eq(result.additional_alignments.length(), 1)
-  assert_eq(result.changes[0].inner_changes.unwrap()[0].modified.end_column, 3)
+  assert_true(result.changes[0].kind is Visible)
+  assert_eq(
+    result.changes[0].mapping.inner_changes.unwrap()[0].modified.end_column,
+    3,
+  )
 }
 
 ///|
@@ -78,7 +84,8 @@ test "line provider keeps EOF inner changes inside their line hunks" {
       TextSnapshot(modified),
       { ignore_trim_whitespace: false, },
     )
-    guard result.changes is [change] && change.inner_changes is Some([inner]) else {
+    guard result.changes is [{ mapping: change, .. }] &&
+      change.inner_changes is Some([inner]) else {
       fail("expected one refined EOF change")
     }
     assert_eq(change.original, original_lines)

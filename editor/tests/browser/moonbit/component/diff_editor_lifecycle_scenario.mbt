@@ -75,13 +75,62 @@ impl @diff.DocumentDiffProvider for InvalidDiffLifecycleProvider with fn compute
 ) {
   self.marker |> ignore
   {
-    changes: [DetailedLineRangeMapping(LineRange(0, 2), LineRange(1, 2), None)],
-    additional_alignments: [],
+    changes: [
+      DocumentDiffChange(
+        DetailedLineRangeMapping(LineRange(0, 2), LineRange(1, 2), None),
+      ),
+    ],
   }
 }
 
 ///|
 impl @diff.DocumentDiffProvider for InvalidDiffLifecycleProvider with fn on_did_change(
+  _self,
+  _listener,
+) {
+  @base_common.Disposable::from(() => ())
+}
+
+///|
+priv struct IgnoredDiffLifecycleProvider {
+  marker : Unit
+}
+
+///|
+impl @diff.DocumentDiffProvider for IgnoredDiffLifecycleProvider with fn compute_diff(
+  self,
+  _original,
+  _modified,
+  _options,
+) {
+  ignore(self.marker)
+  {
+    changes: [
+      DocumentDiffChange(
+        DetailedLineRangeMapping(LineRange(1, 2), LineRange(1, 1), None),
+        kind=Ignored,
+      ),
+      DocumentDiffChange(
+        DetailedLineRangeMapping(LineRange(3, 5), LineRange(2, 2), None),
+        kind=Ignored,
+      ),
+      DocumentDiffChange(
+        DetailedLineRangeMapping(LineRange(5, 6), LineRange(2, 3), None),
+      ),
+      DocumentDiffChange(
+        DetailedLineRangeMapping(LineRange(6, 6), LineRange(3, 4), None),
+        kind=Ignored,
+      ),
+      DocumentDiffChange(
+        DetailedLineRangeMapping(LineRange(7, 8), LineRange(5, 6), None),
+        kind=Ignored,
+      ),
+    ],
+  }
+}
+
+///|
+impl @diff.DocumentDiffProvider for IgnoredDiffLifecycleProvider with fn on_did_change(
   _self,
   _listener,
 ) {
@@ -104,6 +153,8 @@ pub fn run_diff_editor_lifecycle_test() -> Unit {
   let failing_provider_object : &@diff.DocumentDiffProvider = failing_provider
   let invalid_provider = InvalidDiffLifecycleProvider::InvalidDiffLifecycleProvider()
   let invalid_provider_object : &@diff.DocumentDiffProvider = invalid_provider
+  let ignored_provider = IgnoredDiffLifecycleProvider::{ marker: (), }
+  let ignored_provider_object : &@diff.DocumentDiffProvider = ignored_provider
   let widget = @diff_editor.DiffEditorWidget::create(
     host,
     provider_object,
@@ -135,6 +186,12 @@ pub fn run_diff_editor_lifecycle_test() -> Unit {
   )
   let indicator_modified = diff_editor_lifecycle_model(
     "indicator-modified", "shared head\nnew value\nshared tail",
+  )
+  let ignored_original = diff_editor_lifecycle_model(
+    "ignored-original", "// removed\nkeep\n// before value one\n// before value two\nold value\nlast\n// tail old\nend",
+  )
+  let ignored_modified = diff_editor_lifecycle_model(
+    "ignored-modified", "keep\nnew value\n// inserted\nlast\n// tail new\nend",
   )
   let late_prefix = diff_editor_lifecycle_numbered_lines(1, 121) + "\n"
   let late_middle = "\n" + diff_editor_lifecycle_numbered_lines(122, 190) + "\n"
@@ -177,6 +234,7 @@ pub fn run_diff_editor_lifecycle_test() -> Unit {
   install_diff_editor_lifecycle_controls(
     fixture => {
       let pair : @diff_editor.DiffEditorModelData = match fixture {
+        "ignored" => { original: ignored_original, modified: ignored_modified, }
         "digits" => { original: digit_original, modified: digit_modified, }
         "indicators" =>
           { original: indicator_original, modified: indicator_modified, }
@@ -209,6 +267,7 @@ pub fn run_diff_editor_lifecycle_test() -> Unit {
     },
     provider_kind => {
       match provider_kind {
+        "ignored" => widget.set_diff_provider(ignored_provider_object)
         "provider" => widget.set_diff_provider(failing_provider_object)
         "validator" => widget.set_diff_provider(invalid_provider_object)
         _ => widget.set_diff_provider(provider_object)
@@ -228,6 +287,8 @@ pub fn run_diff_editor_lifecycle_test() -> Unit {
     () => widget.reveal_last_diff(),
     () => widget.dispose(),
     () => {
+      ignored_original.dispose()
+      ignored_modified.dispose()
       original.dispose()
       modified.dispose()
       digit_original.dispose()

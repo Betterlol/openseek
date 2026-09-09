@@ -30,5 +30,5 @@ pub fn compute_changes(
     TextSnapshot(original_lines.join("\n")),
     TextSnapshot(modified_lines.join("\n")),
     { ignore_trim_whitespace, },
-  ).changes
+  ).changes.map(change => change.mapping)
 }

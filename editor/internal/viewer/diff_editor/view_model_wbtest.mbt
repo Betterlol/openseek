@@ -122,59 +122,64 @@ impl @diff.DocumentDiffProvider for FakeDocumentDiffProvider with fn compute_dif
     None => ()
   }
   match self.result.val {
-    Empty => { changes: [], additional_alignments: [], }
+    Empty => { changes: [], }
     OneChange => {
       let original_range = @base_common.LineRange(1, 2)
       let modified_range = @base_common.LineRange(1, 2)
       {
         changes: [
-          DetailedLineRangeMapping(original_range, modified_range, None),
+          DocumentDiffChange(
+            DetailedLineRangeMapping(original_range, modified_range, None),
+          ),
         ],
-        additional_alignments: [],
       }
     }
     InvalidLineMapping =>
       {
         changes: [
-          DetailedLineRangeMapping(LineRange(0, 2), LineRange(1, 2), None),
+          DocumentDiffChange(
+            DetailedLineRangeMapping(LineRange(0, 2), LineRange(1, 2), None),
+          ),
         ],
-        additional_alignments: [],
       }
     InvalidInnerMapping =>
       {
         changes: [
-          DetailedLineRangeMapping(
-            LineRange(1, 2),
-            LineRange(1, 2),
-            Some([RangeMapping(Range(1, 1, 1, 99), Range(1, 1, 1, 2))]),
+          DocumentDiffChange(
+            DetailedLineRangeMapping(
+              LineRange(1, 2),
+              LineRange(1, 2),
+              Some([RangeMapping(Range(1, 1, 1, 99), Range(1, 1, 1, 2))]),
+            ),
           ),
         ],
-        additional_alignments: [],
       }
     InnerOutsideParent =>
       {
         changes: [
-          DetailedLineRangeMapping(
-            LineRange(1, 2),
-            LineRange(1, 2),
-            Some([RangeMapping(Range(2, 1, 2, 2), Range(1, 1, 1, 2))]),
+          DocumentDiffChange(
+            DetailedLineRangeMapping(
+              LineRange(1, 2),
+              LineRange(1, 2),
+              Some([RangeMapping(Range(2, 1, 2, 2), Range(1, 1, 1, 2))]),
+            ),
           ),
         ],
-        additional_alignments: [],
       }
     OverlappingInnerMappings =>
       {
         changes: [
-          DetailedLineRangeMapping(
-            LineRange(1, 2),
-            LineRange(1, 2),
-            Some([
-              RangeMapping(Range(1, 1, 1, 3), Range(1, 1, 1, 3)),
-              RangeMapping(Range(1, 2, 1, 3), Range(1, 2, 1, 3)),
-            ]),
+          DocumentDiffChange(
+            DetailedLineRangeMapping(
+              LineRange(1, 2),
+              LineRange(1, 2),
+              Some([
+                RangeMapping(Range(1, 1, 1, 3), Range(1, 1, 1, 3)),
+                RangeMapping(Range(1, 2, 1, 3), Range(1, 2, 1, 3)),
+              ]),
+            ),
           ),
         ],
-        additional_alignments: [],
       }
     Failure => raise FakeDocumentDiffProviderError::ComputeFailed
   }
@@ -406,8 +411,8 @@ test "validator accepts Line inner anchors on empty hunk sides" {
     ignore_trim_whitespace: true,
   })
   assert_eq(result.changes.length(), 2)
-  assert_true(result.changes[0].modified.is_empty())
-  assert_true(result.changes[1].original.is_empty())
+  assert_true(result.changes[0].mapping.modified.is_empty())
+  assert_true(result.changes[1].mapping.original.is_empty())
   assert_true(
     @diff.normalize_and_validate_document_diff(result, original, modified)
     is Some(_),
@@ -458,7 +463,7 @@ test "ViewModel accepts pinned newline mapping for a pure deletion" {
 
   assert_true(view_model.get_state() == Ready)
   assert_true(view_model.get_failure_diagnostic() is None)
-  guard view_model.get_diff() is Some({ changes: [change], .. }) &&
+  guard view_model.get_diff() is Some({ changes: [{ mapping: change, .. }], }) &&
     change.inner_changes is Some([inner]) else {
     fail("expected one normalized pure-deletion mapping")
   }
@@ -489,7 +494,7 @@ test "ViewModel accepts pinned newline mapping for a pure insertion" {
 
   assert_true(view_model.get_state() == Ready)
   assert_true(view_model.get_failure_diagnostic() is None)
-  guard view_model.get_diff() is Some({ changes: [change], .. }) &&
+  guard view_model.get_diff() is Some({ changes: [{ mapping: change, .. }], }) &&
     change.inner_changes is Some([inner]) else {
     fail("expected one normalized pure-insertion mapping")
   }
@@ -509,13 +514,14 @@ test "validator rejects newline anchor over non-empty empty-hunk line" {
   let modified = @model.TextSnapshot("not empty\nkeep")
   let invalid : @diff.DocumentDiff = {
     changes: [
-      DetailedLineRangeMapping(
-        LineRange(1, 2),
-        LineRange(1, 1),
-        Some([RangeMapping(Range(1, 1, 2, 1), Range(1, 1, 2, 1))]),
+      DocumentDiffChange(
+        DetailedLineRangeMapping(
+          LineRange(1, 2),
+          LineRange(1, 1),
+          Some([RangeMapping(Range(1, 1, 2, 1), Range(1, 1, 2, 1))]),
+        ),
       ),
     ],
-    additional_alignments: [],
   }
 
   assert_true(
@@ -530,19 +536,20 @@ test "ViewModel normalizes full-line inner mappings like VS Code" {
   let modified = @model.TextSnapshot("new\nkeep")
   let result : @diff.DocumentDiff = {
     changes: [
-      DetailedLineRangeMapping(
-        LineRange(1, 2),
-        LineRange(1, 2),
-        Some([RangeMapping(Range(1, 1, 1, 4), Range(1, 1, 1, 4))]),
+      DocumentDiffChange(
+        DetailedLineRangeMapping(
+          LineRange(1, 2),
+          LineRange(1, 2),
+          Some([RangeMapping(Range(1, 1, 1, 4), Range(1, 1, 1, 4))]),
+        ),
       ),
     ],
-    additional_alignments: [],
   }
   guard @diff.normalize_and_validate_document_diff(result, original, modified)
     is Some(normalized) else {
     fail("expected a valid normalized document diff")
   }
-  guard normalized.changes[0].inner_changes is Some([inner]) else {
+  guard normalized.changes[0].mapping.inner_changes is Some([inner]) else {
     fail("expected normalized inner mapping")
   }
   assert_eq(inner.original, Range(1, 1, 2, 1))
@@ -559,19 +566,20 @@ test "normalization extends an empty-line anchor only with its full-line peer" {
   let modified = @model.TextSnapshot("\nkeep")
   let raw : @diff.DocumentDiff = {
     changes: [
-      DetailedLineRangeMapping(
-        LineRange(1, 2),
-        LineRange(1, 1),
-        Some([RangeMapping(Range(1, 1, 1, 8), Range(1, 1, 1, 1))]),
+      DocumentDiffChange(
+        DetailedLineRangeMapping(
+          LineRange(1, 2),
+          LineRange(1, 1),
+          Some([RangeMapping(Range(1, 1, 1, 8), Range(1, 1, 1, 1))]),
+        ),
       ),
     ],
-    additional_alignments: [],
   }
   guard @diff.normalize_and_validate_document_diff(raw, original, modified)
     is Some(normalized) else {
     fail("expected a valid normalized deletion mapping")
   }
-  guard normalized.changes[0].inner_changes is Some([inner]) else {
+  guard normalized.changes[0].mapping.inner_changes is Some([inner]) else {
     fail("expected normalized deletion mapping")
   }
   assert_eq(inner.original, Range(1, 1, 2, 1))
@@ -588,18 +596,24 @@ test "ViewModel rejects touching provider rows that were not grouped" {
   let modified = @model.TextSnapshot("new one\nnew two\nkeep")
   let fragmented : @diff.DocumentDiff = {
     changes: [
-      DetailedLineRangeMapping(LineRange(1, 2), LineRange(1, 2), None),
-      DetailedLineRangeMapping(LineRange(2, 3), LineRange(2, 3), None),
+      DocumentDiffChange(
+        DetailedLineRangeMapping(LineRange(1, 2), LineRange(1, 2), None),
+      ),
+      DocumentDiffChange(
+        DetailedLineRangeMapping(LineRange(2, 3), LineRange(2, 3), None),
+      ),
     ],
-    additional_alignments: [],
   }
   assert_true(
     @diff.normalize_and_validate_document_diff(fragmented, original, modified)
     is None,
   )
   let grouped : @diff.DocumentDiff = {
-    changes: [DetailedLineRangeMapping(LineRange(1, 3), LineRange(1, 3), None)],
-    additional_alignments: [],
+    changes: [
+      DocumentDiffChange(
+        DetailedLineRangeMapping(LineRange(1, 3), LineRange(1, 3), None),
+      ),
+    ],
   }
   assert_true(
     @diff.normalize_and_validate_document_diff(grouped, original, modified)
@@ -613,13 +627,14 @@ test "normalization leaves invalid provider coordinates for validation" {
   let modified = @model.TextSnapshot("new\nkeep")
   let invalid : @diff.DocumentDiff = {
     changes: [
-      DetailedLineRangeMapping(
-        LineRange(1, 2),
-        LineRange(1, 2),
-        Some([RangeMapping(Range(1, 1, 99, 1), Range(1, 1, 99, 1))]),
+      DocumentDiffChange(
+        DetailedLineRangeMapping(
+          LineRange(1, 2),
+          LineRange(1, 2),
+          Some([RangeMapping(Range(1, 1, 99, 1), Range(1, 1, 99, 1))]),
+        ),
       ),
     ],
-    additional_alignments: [],
   }
   assert_true(
     @diff.normalize_and_validate_document_diff(invalid, original, modified)

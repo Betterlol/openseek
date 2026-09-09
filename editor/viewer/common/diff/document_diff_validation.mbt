@@ -80,17 +80,17 @@ fn normalize_document_diff(
 ) -> DocumentDiff {
   {
     changes: result.changes.map(change => {
-      DetailedLineRangeMapping(
-        change.original,
-        change.modified,
-        change.inner_changes.map(inner_changes => {
+      ..change,
+      mapping: DetailedLineRangeMapping(
+        change.mapping.original,
+        change.mapping.modified,
+        change.mapping.inner_changes.map(inner_changes => {
           inner_changes.map(inner => {
             normalize_document_range_mapping(inner, original, modified)
           })
         }),
-      )
+      ),
     }),
-    additional_alignments: result.additional_alignments.copy(),
   }
 }
 
@@ -185,62 +185,21 @@ fn valid_document_inner_changes(
 }
 
 ///|
-priv struct IndexedDocumentValidationAlignment {
-  source_index : Int
-  mapping : LineRangeMapping
-  is_change : Bool
-}
-
-///|
-fn compare_document_validation_alignment(
-  left : IndexedDocumentValidationAlignment,
-  right : IndexedDocumentValidationAlignment,
-) -> Int {
-  if left.mapping.original.start_line_number !=
-    right.mapping.original.start_line_number {
-    return left.mapping.original.start_line_number -
-      right.mapping.original.start_line_number
-  }
-  if left.mapping.modified.start_line_number !=
-    right.mapping.modified.start_line_number {
-    return left.mapping.modified.start_line_number -
-      right.mapping.modified.start_line_number
-  }
-  left.source_index - right.source_index
-}
-
-///|
-fn valid_combined_document_alignment_sequence(
+fn valid_document_alignment_sequence(
   result : DocumentDiff,
   original_line_count : Int,
   modified_line_count : Int,
 ) -> Bool {
-  let indexed : Array[IndexedDocumentValidationAlignment] = []
-  for change in result.changes {
-    indexed.push({
-      source_index: indexed.length(),
-      mapping: change.line_mapping(),
-      is_change: true,
-    })
-  }
-  for alignment in result.additional_alignments {
-    indexed.push({
-      source_index: indexed.length(),
-      mapping: alignment,
-      is_change: false,
-    })
-  }
-  indexed.sort_by(compare_document_validation_alignment)
-  if indexed.is_empty() {
+  if result.changes.is_empty() {
     return original_line_count == modified_line_count
   }
-  let first = indexed[0].mapping
+  let first = result.changes[0].mapping
   if first.original.start_line_number != first.modified.start_line_number {
     return false
   }
-  for index in 1..<indexed.length() {
-    let previous = indexed[index - 1]
-    let current = indexed[index]
+  for index in 1..<result.changes.length() {
+    let previous = result.changes[index - 1]
+    let current = result.changes[index]
     let original_gap = current.mapping.original.start_line_number -
       previous.mapping.original.end_line_number_exclusive
     let modified_gap = current.mapping.modified.start_line_number -
@@ -248,11 +207,11 @@ fn valid_combined_document_alignment_sequence(
     if original_gap < 0 ||
       modified_gap < 0 ||
       original_gap != modified_gap ||
-      (previous.is_change && current.is_change && original_gap == 0) {
+      (previous.kind == current.kind && original_gap == 0) {
       return false
     }
   }
-  let last = indexed[indexed.length() - 1].mapping
+  let last = result.changes[result.changes.length() - 1].mapping
   original_line_count - last.original.end_line_number_exclusive ==
   modified_line_count - last.modified.end_line_number_exclusive
 }
@@ -265,7 +224,8 @@ fn valid_document_diff(
 ) -> Bool {
   let mut original_end = 1
   let mut modified_end = 1
-  for change in result.changes {
+  for entry in result.changes {
+    let change = entry.mapping
     if !valid_document_line_range(change.original, original.line_count()) ||
       !valid_document_line_range(change.modified, modified.line_count()) ||
       change.original.start_line_number < original_end ||
@@ -288,19 +248,7 @@ fn valid_document_diff(
       None => ()
     }
   }
-  original_end = 1
-  modified_end = 1
-  for alignment in result.additional_alignments {
-    if !valid_document_line_range(alignment.original, original.line_count()) ||
-      !valid_document_line_range(alignment.modified, modified.line_count()) ||
-      alignment.original.start_line_number < original_end ||
-      alignment.modified.start_line_number < modified_end {
-      return false
-    }
-    original_end = alignment.original.end_line_number_exclusive
-    modified_end = alignment.modified.end_line_number_exclusive
-  }
-  valid_combined_document_alignment_sequence(
+  valid_document_alignment_sequence(
     result,
     original.line_count(),
     modified.line_count(),

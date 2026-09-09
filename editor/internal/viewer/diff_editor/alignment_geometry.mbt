@@ -289,14 +289,14 @@ priv struct LineRangeAlignment {
   original_height_in_px : Double
   modified_height_in_px : Double
   /// The canonical diff that produced this alignment. Geometry-only
-  /// alignments (wrapping, foreign ViewZones, and additional alignments) keep
+  /// alignments (wrapping, foreign ViewZones, and ignored changes) keep
   /// this empty so Inline projection never mistakes them for deleted code.
   diff : @diff.DetailedLineRangeMapping?
 }
 
 ///|
 // Direct port of VS Code's computeRangeAlignment. The only addition is that
-// DiffState::alignments also yields geometry-only `additional_alignments` with
+// DiffState::alignments also yields Ignored changes with
 // `diff=None`; the algorithm itself is otherwise shared.
 fn compute_range_alignments(
   diff_state : DiffState,

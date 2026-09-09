@@ -4,10 +4,10 @@ fn test_change(
   modified : Array[String],
 ) -> @diff.DetailedLineRangeMapping raise {
   let changes = @diff.LineDocumentDiffProvider().compute_diff(
-      TextSnapshot(original.join("\n")),
-      TextSnapshot(modified.join("\n")),
-      { ignore_trim_whitespace: false, },
-    ).changes
+    TextSnapshot(original.join("\n")),
+    TextSnapshot(modified.join("\n")),
+    { ignore_trim_whitespace: false, },
+  ).changes.map(change => change.mapping)
   assert_eq(changes.length(), 1)
   changes[0]
 }

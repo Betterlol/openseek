@@ -4,19 +4,20 @@ test "document diff validation canonicalizes newline anchors idempotently" {
   let modified = @model.TextSnapshot("\nkeep")
   let raw : DocumentDiff = {
     changes: [
-      DetailedLineRangeMapping(
-        LineRange(1, 2),
-        LineRange(1, 1),
-        Some([RangeMapping(Range(1, 1, 1, 8), Range(1, 1, 1, 1))]),
+      DocumentDiffChange(
+        DetailedLineRangeMapping(
+          LineRange(1, 2),
+          LineRange(1, 1),
+          Some([RangeMapping(Range(1, 1, 1, 8), Range(1, 1, 1, 1))]),
+        ),
       ),
     ],
-    additional_alignments: [],
   }
   guard normalize_and_validate_document_diff(raw, original, modified)
     is Some(canonical) else {
     fail("expected canonical pure-deletion mapping")
   }
-  guard canonical.changes[0].inner_changes is Some([inner]) else {
+  guard canonical.changes[0].mapping.inner_changes is Some([inner]) else {
     fail("expected one canonical inner mapping")
   }
   assert_eq(inner.original, Range(1, 1, 2, 1))
@@ -28,14 +29,21 @@ test "document diff validation canonicalizes newline anchors idempotently" {
 }
 
 ///|
-test "document diff validation rejects overlapping changes and alignments" {
+test "document diff validation rejects overlapping visible and ignored changes" {
   let original = @model.TextSnapshot("fn stable() {}")
   let modified = @model.TextSnapshot(
     "/// ignored before\nfn inserted() {}\n/// ignored after\nfn stable() {}",
   )
   let invalid : DocumentDiff = {
-    changes: [DetailedLineRangeMapping(LineRange(1, 1), LineRange(2, 3), None)],
-    additional_alignments: [LineRangeMapping(LineRange(1, 1), LineRange(1, 4))],
+    changes: [
+      DocumentDiffChange(
+        DetailedLineRangeMapping(LineRange(1, 1), LineRange(1, 4), None),
+        kind=Ignored,
+      ),
+      DocumentDiffChange(
+        DetailedLineRangeMapping(LineRange(1, 1), LineRange(2, 3), None),
+      ),
+    ],
   }
   assert_true(
     normalize_and_validate_document_diff(invalid, original, modified) is None,
@@ -43,16 +51,24 @@ test "document diff validation rejects overlapping changes and alignments" {
 }
 
 ///|
-test "document diff validation accepts separated ignored-row alignments" {
+test "document diff validation accepts interleaved visible and ignored changes" {
   let original = @model.TextSnapshot("fn stable() {}")
   let modified = @model.TextSnapshot(
     "/// ignored before\nfn inserted() {}\n/// ignored after\nfn stable() {}",
   )
   let valid : DocumentDiff = {
-    changes: [DetailedLineRangeMapping(LineRange(1, 1), LineRange(2, 3), None)],
-    additional_alignments: [
-      LineRangeMapping(LineRange(1, 1), LineRange(1, 2)),
-      LineRangeMapping(LineRange(1, 1), LineRange(3, 4)),
+    changes: [
+      DocumentDiffChange(
+        DetailedLineRangeMapping(LineRange(1, 1), LineRange(1, 2), None),
+        kind=Ignored,
+      ),
+      DocumentDiffChange(
+        DetailedLineRangeMapping(LineRange(1, 1), LineRange(2, 3), None),
+      ),
+      DocumentDiffChange(
+        DetailedLineRangeMapping(LineRange(1, 1), LineRange(3, 4), None),
+        kind=Ignored,
+      ),
     ],
   }
   assert_eq(
@@ -67,15 +83,81 @@ test "document diff validation rejects invalid provider coordinates" {
   let modified = @model.TextSnapshot("new\nkeep")
   let invalid : DocumentDiff = {
     changes: [
-      DetailedLineRangeMapping(
-        LineRange(1, 2),
-        LineRange(1, 2),
-        Some([RangeMapping(Range(1, 1, 99, 1), Range(1, 1, 99, 1))]),
+      DocumentDiffChange(
+        DetailedLineRangeMapping(
+          LineRange(1, 2),
+          LineRange(1, 2),
+          Some([RangeMapping(Range(1, 1, 99, 1), Range(1, 1, 99, 1))]),
+        ),
       ),
     ],
-    additional_alignments: [],
   }
   assert_true(
     normalize_and_validate_document_diff(invalid, original, modified) is None,
+  )
+}
+
+///|
+test "visibility never bypasses document mapping validation" {
+  let source = @model.TextSnapshot("a\nb\nc")
+  for kind in [Visible, Ignored] {
+    let adjacent : DocumentDiff = {
+      changes: [
+        DocumentDiffChange(
+          DetailedLineRangeMapping(LineRange(1, 2), LineRange(1, 2), None),
+          kind~,
+        ),
+        DocumentDiffChange(
+          DetailedLineRangeMapping(LineRange(2, 3), LineRange(2, 3), None),
+          kind~,
+        ),
+      ],
+    }
+    assert_true(
+      normalize_and_validate_document_diff(adjacent, source, source) is None,
+    )
+    let invalid : DocumentDiff = {
+      changes: [
+        DocumentDiffChange(
+          DetailedLineRangeMapping(
+            LineRange(1, 2),
+            LineRange(1, 2),
+            Some([RangeMapping(Range(1, 1, 1, 99), Range(1, 1, 1, 2))]),
+          ),
+          kind~,
+        ),
+      ],
+    }
+    assert_true(
+      normalize_and_validate_document_diff(invalid, source, source) is None,
+    )
+  }
+  let unordered : DocumentDiff = {
+    changes: [
+      DocumentDiffChange(
+        DetailedLineRangeMapping(LineRange(2, 3), LineRange(2, 3), None),
+        kind=Ignored,
+      ),
+      DocumentDiffChange(
+        DetailedLineRangeMapping(LineRange(1, 2), LineRange(1, 2), None),
+      ),
+    ],
+  }
+  assert_true(
+    normalize_and_validate_document_diff(unordered, source, source) is None,
+  )
+  let unequal_gap : DocumentDiff = {
+    changes: [
+      DocumentDiffChange(
+        DetailedLineRangeMapping(LineRange(1, 2), LineRange(1, 2), None),
+        kind=Ignored,
+      ),
+      DocumentDiffChange(
+        DetailedLineRangeMapping(LineRange(3, 4), LineRange(2, 3), None),
+      ),
+    ],
+  }
+  assert_true(
+    normalize_and_validate_document_diff(unequal_gap, source, source) is None,
   )
 }

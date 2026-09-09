@@ -182,12 +182,12 @@ pub fn DiffEditorWidget::set_scroll_left(Self, Double) -> Unit
 pub fn DiffEditorWidget::update_options(Self, @code_editor_widget.CodeEditorOptions, DiffEditorOptions) -> Unit
 
 pub struct DiffMapping {
+  kind : @diff.DocumentDiffChangeKind
   line_range_mapping : @diff.DetailedLineRangeMapping
 }
 
 pub struct DiffState {
   mappings : Array[DiffMapping]
-  additional_alignments : Array[@diff.LineRangeMapping]
 }
 
 pub(all) enum DiffWordWrap {

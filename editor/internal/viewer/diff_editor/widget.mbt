@@ -813,7 +813,7 @@ fn DiffEditorWidget::apply_diff_state_decorations(
   let modified_snapshot = model.modified.snapshot()
   let original_decorations : Array[@model.ModelDeltaDecoration] = []
   let modified_decorations : Array[@model.ModelDeltaDecoration] = []
-  for mapping in diff_state.mappings {
+  for mapping in diff_state.visible_mappings() {
     let change = mapping.line_range_mapping
     let original_range = changed_line_range(change.original, original_snapshot)
     let modified_range = changed_line_range(change.modified, modified_snapshot)
@@ -1673,9 +1673,10 @@ fn DiffEditorWidget::try_reveal_first_diff(self : DiffEditorWidget) -> Unit {
   }
   guard self.diff_state is Some(diff_state) else { return }
   self.pending_reveal_first_diff_generation = None
-  if !diff_state.mappings.is_empty() {
+  let visible = diff_state.visible_mappings()
+  if !visible.is_empty() {
     self.reveal_change(
-      diff_state.mappings[0].line_range_mapping,
+      visible[0].line_range_mapping,
       source="diffEditor.revealFirstDiff",
     )
     |> ignore
@@ -1725,9 +1726,10 @@ fn DiffEditorWidget::try_reveal_last_diff(self : DiffEditorWidget) -> Unit {
   }
   guard self.diff_state is Some(diff_state) else { return }
   self.pending_reveal_last_diff_generation = None
-  guard !diff_state.mappings.is_empty() else { return }
+  let visible = diff_state.visible_mappings()
+  guard !visible.is_empty() else { return }
   self.reveal_change(
-    diff_state.mappings[diff_state.mappings.length() - 1].line_range_mapping,
+    visible[visible.length() - 1].line_range_mapping,
     source="diffEditor.revealLastDiff",
   )
   |> ignore

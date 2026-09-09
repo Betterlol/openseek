@@ -1,13 +1,32 @@
 ///|
 fn alignment_test_state(
   changes : Array[@diff.DetailedLineRangeMapping],
-  additional_alignments : Array[@diff.LineRangeMapping],
+  ignored_mappings : Array[@diff.LineRangeMapping],
   original_line_count : Int,
   modified_line_count : Int,
 ) -> DiffState {
   ignore(original_line_count)
   ignore(modified_line_count)
-  DiffState::from_diff_result({ changes, additional_alignments, })
+  let entries = changes.map(mapping => @diff.DocumentDiffChange(mapping))
+  entries.append(
+    ignored_mappings.map(mapping => {
+      DocumentDiffChange(
+        DetailedLineRangeMapping(mapping.original, mapping.modified, None),
+        kind=Ignored,
+      )
+    }),
+  )
+  entries.sort_by((left, right) => {
+    let old_order = left.mapping.original.start_line_number -
+      right.mapping.original.start_line_number
+    if old_order != 0 {
+      old_order
+    } else {
+      left.mapping.modified.start_line_number -
+      right.mapping.modified.start_line_number
+    }
+  })
+  DiffState::from_diff_result({ changes: entries, })
 }
 
 ///|
@@ -160,10 +179,10 @@ test "SideBySide replacement aligns rich comment zones instead of hidden source 
 }
 
 ///|
-test "additional alignment can align omitted geometry without a real change" {
+test "ignored changes align omitted geometry without visible differences" {
   let additional = @diff.LineRangeMapping(LineRange(2, 2), LineRange(2, 3))
   let diff_state = alignment_test_state([], [additional], 3, 4)
-  assert_eq(diff_state.mappings.length(), 0)
+  assert_eq(diff_state.visible_mappings().length(), 0)
   let spacers = compute_managed_alignment_spacers(
     diff_state,
     PaneGeometrySnapshot(3, 20.0),
