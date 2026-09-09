@@ -8,6 +8,9 @@ const KimiDefaultApiUrl : String = "https://api.moonshot.cn/v1/chat/completions"
 const GlmDefaultApiUrl : String = "https://api.z.ai/api/paas/v4/chat/completions"
 
 ///|
+const OpenRouterChatCompletionsUrl : String = "https://openrouter.ai/api/v1/chat/completions"
+
+///|
 let default_model : @deepseek.Model = Deepseek(V4Pro)
 
 ///|
@@ -16,6 +19,39 @@ fn default_api_url_for_model(model : @deepseek.Model) -> String {
     Kimi(_) => KimiDefaultApiUrl
     Glm(_) => GlmDefaultApiUrl
     Deepseek(_) => DeepSeekDefaultApiUrl
+  }
+}
+
+///|
+/// Route OpenRouter DeepSeek requests to their dedicated encoder for model ids
+/// and reasoning fields. Other endpoints and model families use native encoding.
+fn encode_chat_request_for_endpoint(
+  api_url~ : String,
+  model~ : @deepseek.Model,
+  tools~ : Array[@deepseek.ToolDefinition],
+  thinking~ : @deepseek.ThinkingMode,
+  stream~ : Bool,
+  response_format? : @deepseek.ResponseFormat,
+  messages : Array[@deepseek.ChatMessage],
+) -> Json {
+  if api_url is OpenRouterChatCompletionsUrl && model is Deepseek(variant) {
+    @deepseek.openrouter_encode_chat_request(
+      model=variant,
+      tools~,
+      thinking~,
+      stream~,
+      response_format?,
+      messages,
+    )
+  } else {
+    @deepseek.encode_chat_request(
+      model~,
+      tools~,
+      thinking~,
+      stream~,
+      response_format?,
+      messages,
+    )
   }
 }
 
@@ -232,7 +268,8 @@ pub async fn Client::chat(
   stream? : StreamHandler,
 ) -> @deepseek.ChatResponse {
   let is_streaming = stream is Some(_)
-  let body = @deepseek.encode_chat_request(
+  let body = encode_chat_request_for_endpoint(
+    api_url=self.api_url,
     model=self.model,
     tools~,
     thinking=self.thinking,

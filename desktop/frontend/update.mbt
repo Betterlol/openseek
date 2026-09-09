@@ -3112,12 +3112,18 @@ fn update_msg(
       let push = push_host_settings(
         dispatch,
         model.focused,
-        provider_settings_patch(provider),
+        provider_settings_patch(provider, model.custom_api_url),
         model.focused_connection_generation(),
       )
       let next = {
         ..model,
         api_provider: provider,
+        custom_api_url: if provider is Custom &&
+          model.custom_api_url == OpenRouterChatCompletionsUrl {
+          ""
+        } else {
+          model.custom_api_url
+        },
         setup_api_key: "",
         settings_saves: model.settings_saves + 1,
         select_menu: None,
@@ -3565,13 +3571,14 @@ fn update_msg(
           // modal optimistically; one that leaves it incomplete (Custom
           // with no URL yet) keeps the modal up mid-setup. A failed save
           // comes back as a toast.
-          Deepseek | Glm | Custom as provider => {
+          Deepseek | Glm | OpenRouter | Custom as provider => {
             let next = {
               ..model,
               deepseek_key_saved: model.deepseek_key_saved ||
               provider is Deepseek,
               glm_key_saved: model.glm_key_saved || provider is Glm,
-              custom_key_saved: model.custom_key_saved || provider is Custom,
+              custom_key_saved: model.custom_key_saved ||
+              provider is (OpenRouter | Custom),
               setup_api_key: "",
               settings_saves: model.settings_saves + 1,
             }
@@ -13012,6 +13019,22 @@ test "the official endpoint requires a key, a custom endpoint a URL" {
 }
 
 ///|
+test "OpenRouter setup requires only its stored custom key" {
+  let openrouter = {
+    ..test_model(),
+    api_provider: OpenRouter,
+    deepseek_key_saved: true,
+    custom_key_saved: false,
+  }
+  assert_false(openrouter.api_ready())
+  assert_true({ ..openrouter, custom_key_saved: true, }.api_ready())
+  // Model choice belongs to the chat, just as with the official endpoint.
+  assert_true(
+    { ..openrouter, custom_key_saved: true, default_model: DsPro, }.api_ready(),
+  )
+}
+
+///|
 test "loaded UI preferences parse their wire names" {
   let dispatch = test_dispatch()
   let (_, restored) = update(
@@ -13494,6 +13517,7 @@ fn host_settings(
   revision? : Int = 0,
   has_deepseek_key? : Bool = false,
   has_glm_key? : Bool = false,
+  has_custom_key? : Bool = false,
   custom_api_url? : String = "",
 ) -> HostSettings {
   {
@@ -13502,9 +13526,22 @@ fn host_settings(
     custom_api_url,
     has_deepseek_key,
     has_glm_key,
-    has_custom_key: false,
+    has_custom_key,
     followup_behavior: "steer",
   }
+}
+
+///|
+test "the OpenRouter custom preset restores as OpenRouter" {
+  let restored = test_model().apply_host_settings(
+    host_settings(
+      provider="custom",
+      custom_api_url=OpenRouterChatCompletionsUrl,
+      has_custom_key=true,
+    ),
+  )
+  assert_true(restored.api_provider is OpenRouter)
+  assert_true(restored.api_ready())
 }
 
 ///|
@@ -14186,6 +14223,17 @@ test "saving a key marks the active provider credential only" {
   assert_false(saved_glm.deepseek_key_saved)
   assert_false(saved_glm.custom_key_saved)
   assert_true(saved_glm.screen is Settings)
+  let openrouter = {
+    ..test_model(),
+    api_provider: OpenRouter,
+    deepseek_key_saved: false,
+    custom_key_saved: false,
+    setup_api_key: "  sk-openrouter-new  ",
+    screen: Settings,
+  }
+  let (_, saved_openrouter) = update(dispatch, SaveApiKey, openrouter)
+  assert_true(saved_openrouter.custom_key_saved)
+  assert_false(saved_openrouter.deepseek_key_saved)
 }
 
 ///|

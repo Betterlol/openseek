@@ -920,6 +920,7 @@ fn provider_hint(provider : ApiProvider) -> String {
   match provider {
     Deepseek => "Requests go straight to api.deepseek.com with your key."
     Glm => "Requests go straight to api.z.ai with your key."
+    OpenRouter => "DeepSeek requests go through OpenRouter with your key."
     Custom => "Any OpenAI-compatible chat-completions URL; key optional."
   }
 }
@@ -949,6 +950,11 @@ fn byok_setup_guide(provider : ApiProvider) -> @html.Html {
         step(1, "Open z.ai and sign in."),
         step(2, "Create an API key under API Keys."),
         step(3, "Paste it into the GLM API key field below and save."),
+      ]
+    OpenRouter =>
+      [
+        step(1, "Open openrouter.ai and create an API key."),
+        step(2, "Paste the OpenRouter API key and save."),
       ]
     Custom =>
       [
@@ -1021,6 +1027,7 @@ fn api_settings_rows(
           options=[
             { value: "deepseek", label: "DeepSeek official (your API key)", },
             { value: "glm", label: "Z.AI GLM (your API key)", },
+            { value: "openrouter", label: "OpenRouter", },
             { value: "custom", label: "Custom URL", },
           ],
           selected=model.api_provider.wire(),
@@ -1058,6 +1065,7 @@ fn api_settings_rows(
     let (key_label, key_saved) = match model.api_provider {
       Deepseek => ("DeepSeek API key", model.deepseek_key_saved)
       Glm => ("GLM API key", model.glm_key_saved)
+      OpenRouter => ("OpenRouter API key", model.custom_key_saved)
       Custom => ("Custom API key", model.custom_key_saved)
     }
     rows.push(
@@ -1105,8 +1113,8 @@ fn api_settings_rows(
 fn settings_page(dispatch : @cmd.Emit[Msg], model : Model) -> @html.Html {
   let settings_loaded = model.host_settings_loaded()
   let ready = model.api_ready()
-  // The model is not here: it belongs to a conversation, not to the app, and
-  // is picked on the composer's chip.
+  // All providers use the composer's model selector; API setup only chooses
+  // the endpoint and credentials.
   let engine_rows : Array[@html.Html] = [
     @settings.row(
       "Max steps",
@@ -1313,6 +1321,7 @@ fn settings_page(dispatch : @cmd.Emit[Msg], model : Model) -> @html.Html {
             match model.api_provider {
               Deepseek => "Enter a DeepSeek API key to start."
               Glm => "Enter a GLM API key to start."
+              OpenRouter => "Enter an OpenRouter API key to start."
               Custom => "Enter a chat-completions endpoint URL to start."
             }
           },
@@ -1906,6 +1915,7 @@ fn api_setup_modal(dispatch : @cmd.Emit[Msg], model : Model) -> @html.Html {
   let title = match model.api_provider {
     Deepseek => "Set up your DeepSeek API key"
     Glm => "Set up your GLM API key"
+    OpenRouter => "Set up OpenRouter"
     Custom => "Set your endpoint URL"
   }
   @html.div(class="modal-backdrop", on_click=dispatch(DismissApiSetup), [
