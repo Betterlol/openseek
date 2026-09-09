@@ -153,6 +153,24 @@ The public terminology is `SideBySide` and `Inline`. The implementation keeps
 no legacy single-column renderer, tail-height compensation, diff-owned
 correction scheduler, or compatibility alias.
 
+MultiDiff hosts use `get_max_scroll_left` and `set_scroll_left` for one outer
+horizontal scrollbar. The offset drives the pane with the larger horizontal
+overflow (Original on a tie); its normal scroll synchronization updates the
+other pane, which clamps at its own limit without feeding that clamp back.
+Repeating the host offset, including during vertical host scrolling, leaves
+both horizontal positions unchanged.
+
+This is a behavior port of VS Code
+[`DiffEditorItemTemplate.setScrollLeft` at `07c20d96`](https://github.com/microsoft/vscode/blob/07c20d96cf3f2cbc8142ac7079ba9048cf7f6134/src/vs/editor/browser/widget/multiDiffEditor/diffEditorItemTemplate.ts#L234-L240).
+The concrete `DiffEditor` API owns pane selection so hosts do not need child
+editor handles. The scope is shared horizontal projection; upstream item
+virtualization and vertical scrolling are outside this port.
+
+| Behavior | Evidence |
+| --- | --- |
+| Either pane may have the larger overflow; equal ranges stay synchronized | `shared horizontal scroll preserves each pane's limit` in `diff_editor_lifecycle.spec.js` (original, modified, equal) |
+| Local clamping, repeated host offsets, overshoot, and reverse scrolling | The same component cases exercise each transition after rendered scroll events |
+
 ## Public surfaces
 
 `Viewer` retains the readonly code API: model/options lifecycle, cursor and
