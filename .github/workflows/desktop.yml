@@ -18,6 +18,7 @@ on:
       - "moon.mod"
       - "moon.work"
       - ".github/workflows/desktop.yml"
+      - ".github/workflows/desktop-release.yml"
   pull_request:
     paths:
       - "desktop/**"
@@ -30,6 +31,7 @@ on:
       - "moon.mod"
       - "moon.work"
       - ".github/workflows/desktop.yml"
+      - ".github/workflows/desktop-release.yml"
 
 # A newer PR head supersedes its older run. Keep main runs complete so every
 # relevant merged commit still receives Desktop E2E and packaging results.
@@ -39,7 +41,7 @@ concurrency:
 
 jobs:
   desktop-package-windows:
-    name: desktop package (Windows ZIP)
+    name: desktop package (Windows app)
     runs-on: windows-latest
     timeout-minutes: 60
     permissions:
@@ -95,14 +97,17 @@ jobs:
           }
           moonx "moonbit-community/proton_cli@$($Matches[1])" cef setup
 
-      - name: Build Windows ZIP
-        run: moon run ./desktop/package/windows --target native -- --target zip
+      - name: Build Windows app
+        env:
+          CL: /bigobj
+        run: moon run ./desktop/package/windows --target native -- --release --target app
 
-      - name: Upload Windows ZIP
+      - name: Upload Windows app
         uses: actions/upload-artifact@v4
         with:
           name: SeekMoon-windows-x64
-          path: desktop/dist/*.zip
+          path: desktop/dist/seekmoon/
+          include-hidden-files: true
           if-no-files-found: error
           compression-level: 0
           retention-days: 7
