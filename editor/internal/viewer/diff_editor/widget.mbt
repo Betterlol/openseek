@@ -1451,6 +1451,7 @@ pub fn DiffEditorWidget::update_options(
       editor_options,
       options.diff_word_wrap,
       self.layout_state.actual_layout,
+      options.render_markdown_comments,
       options.handle_mouse_wheel,
     )
     self.apply_layout_dom()
@@ -2001,6 +2002,7 @@ pub fn DiffEditorWidget::layout(self : DiffEditorWidget) -> Unit {
     self.editor_options,
     self.options.diff_word_wrap,
     self.layout_state.actual_layout,
+    self.options.render_markdown_comments,
     self.options.handle_mouse_wheel,
   )
   self.apply_layout_dom()

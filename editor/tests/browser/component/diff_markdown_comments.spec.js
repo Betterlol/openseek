@@ -210,6 +210,59 @@ test('keeps diff controls independent of host folding settings', async ({ page }
   await expectDecorationsLane(modified, 44);
 });
 
+test('reclaims the Markdown gutter in source mode while keeping feedback usable', async ({ page }) => {
+  const root = await openFixture(page);
+  const original = root.locator('.moonbit-diff-editor-original');
+  const modified = root.locator('.moonbit-diff-editor-modified');
+  const expectSourceLane = async (pane, width) => {
+    await expect(pane.locator(commentSelector)).toHaveCount(0);
+    await expect.poll(() => pane.evaluate((node) => {
+      const margin = node.querySelector('.margin');
+      const lineNumber = node.querySelector('.line-numbers');
+      return margin && lineNumber
+        ? margin.getBoundingClientRect().right - lineNumber.getBoundingClientRect().right
+        : null;
+    })).toBe(width);
+  };
+
+  await control(page, 'set_render_markdown_comments', false);
+  await expectSourceLane(modified, 10);
+  await control(page, 'set_feedback_enabled', true);
+  await expectSourceLane(modified, 28);
+
+  // Layout and host-option replay must not restore the obsolete 16px reserve
+  // or lose the live feedback reservation.
+  await control(page, 'resize', 620);
+  await control(page, 'set_folding_mode', 'disabled');
+  await control(page, 'set_layout', 'split');
+  await expectSourceLane(original, 28);
+  await expectSourceLane(modified, 28);
+  await control(page, 'set_layout', 'inline');
+  await expectSourceLane(modified, 28);
+
+  await modified.locator('.view-line', { hasText: 'let before = 1' }).hover();
+  const glyph = modified.locator('.margin-view-overlays .cldr.agent-feedback-glyph.line-hover');
+  await expect(glyph).toBeVisible();
+  const geometry = await glyph.evaluate((element) => {
+    const margin = element.closest('.margin').getBoundingClientRect();
+    const rect = element.getBoundingClientRect();
+    const before = getComputedStyle(element, '::before');
+    const left = rect.left + Number.parseFloat(before.left);
+    return { left, right: left + Number.parseFloat(before.width), marginLeft: margin.left, marginRight: margin.right };
+  });
+  expect(geometry.left).toBeGreaterThanOrEqual(geometry.marginLeft);
+  expect(geometry.right).toBeLessThanOrEqual(geometry.marginRight);
+  await glyph.click();
+  await expect(modified.locator('.agent-feedback-input-widget textarea')).toBeVisible();
+  await page.keyboard.press('Escape');
+
+  await control(page, 'set_render_markdown_comments', true);
+  await expectDecorationsLane(modified, 44);
+  await control(page, 'set_render_markdown_comments', false);
+  await control(page, 'set_feedback_enabled', false);
+  await expectSourceLane(modified, 10);
+});
+
 test('keeps rich comments in both split panes and only the modified inline pane', async ({ page }) => {
   const root = await openFixture(page);
   const original = root.locator('.moonbit-diff-editor-original');
