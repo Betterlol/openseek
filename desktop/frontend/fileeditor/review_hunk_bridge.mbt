@@ -89,15 +89,21 @@ fn projected_review_hunk(
 }
 
 ///|
-fn projected_review_file_changes(
-  hunks : Array[@viewer.DiffHunk],
-) -> ReviewHunk? {
-  let mut file_changes = ReviewHunk(old_ranges=[], new_ranges=[])
-  for hunk in hunks {
-    file_changes = file_changes.union(
-      ReviewHunk::from_diff_hunk(hunk, Some(0), Some(0)),
-    )
+fn projected_review_file_changes(editor : @viewer.DiffEditor) -> ReviewHunk? {
+  // The parked Line editor may never have been laid out for this file, so its
+  // visual hunks can be empty even after the logical diff is ready. Only use
+  // the current model pair's changes, excluding geometry-only alignments.
+  guard editor.is_diff_up_to_date() && editor.get_diff() is Some(diff) else {
+    return None
   }
+  let old_ranges : Array[@common.LineRange] = []
+  let new_ranges : Array[@common.LineRange] = []
+  for change in diff.changes {
+    guard change.kind is Visible else { continue }
+    old_ranges.push(change.mapping.original)
+    new_ranges.push(change.mapping.modified)
+  }
+  let file_changes = ReviewHunk(old_ranges~, new_ranges~)
   if file_changes.is_empty() {
     None
   } else {
@@ -145,7 +151,7 @@ fn publish_review_active_hunk(
 fn publish_line_review_hunk_context(editor : @viewer.DiffEditor) -> Unit {
   guard review_hunk_bridge_target.val is Some(target) else { return }
   let hunks = editor.get_hunks()
-  let file_changes = projected_review_file_changes(hunks)
+  let file_changes = projected_review_file_changes(editor)
   match target.surface {
     ReviewLineSurface => {
       let active_index = editor.get_active_hunk_index()
@@ -181,9 +187,7 @@ fn publish_semantic_review_active_hunk(
     return
   }
   let hunks = editor.get_hunks()
-  let file_changes = mounted_diff_editor().bind(line_editor => {
-    projected_review_file_changes(line_editor.get_hunks())
-  })
+  let file_changes = mounted_diff_editor().bind(projected_review_file_changes)
   publish_review_active_hunk(
     ReviewSemanticSurface,
     projected_review_hunk(

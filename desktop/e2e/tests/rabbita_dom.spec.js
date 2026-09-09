@@ -320,6 +320,36 @@ test('Review links hunk and file progress and reports the active hunk', async ({
   expect(app.pageErrors).toEqual([]);
 });
 
+for (const mode of ['Token', 'Tree']) {
+  test(`${mode} review links file progress after opening another file`, async ({ page }) => {
+    const app = new DesktopBrowserHarness(page);
+    await app.install();
+    await app.goto();
+    await app.openSession();
+    await app.openReview();
+    const changes = page.locator('#review-changes-body');
+    await changes.getByRole('button', { name: /View diff: src\/main\.mbt/ }).click();
+    const modeButton = page.getByRole('button', { name: `${mode} diff`, exact: true });
+    await modeButton.click();
+    await changes.getByRole('button', { name: /View diff: src\/lib\.mbt/ }).click();
+    await expect(modeButton).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('.review-hunk-position')).toHaveText('1 of 1');
+
+    await page.getByRole('button', { name: 'Mark hunk viewed', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Mark file unreviewed' }))
+      .toHaveAttribute('aria-pressed', 'true');
+
+    await page.getByRole('button', { name: 'Mark file unreviewed' }).click();
+    await page.getByRole('button', { name: 'Mark file reviewed', exact: true }).click();
+    const unmarkHunk = page.getByRole('button', { name: 'Unmark hunk viewed' });
+    await expect(unmarkHunk).toBeEnabled();
+    await unmarkHunk.click();
+    await expect(page.getByRole('button', { name: 'Mark file reviewed', exact: true }))
+      .toHaveAttribute('aria-pressed', 'false');
+    expect(app.pageErrors).toEqual([]);
+  });
+}
+
 test('Review routes Markdown source and keeps non-MoonBit comparisons on Line diff', async ({ page }) => {
   const app = new DesktopBrowserHarness(page);
   const path = 'docs/Guide.MD';
