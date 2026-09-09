@@ -2451,7 +2451,9 @@ button.git-history-file.selected {
   color: var(--vscode-editor-foreground, var(--color-text-primary));
   background: var(--vscode-editor-background, var(--color-bg-surface));
   font-family: var(--font-family-mono);
-  overscroll-behavior: contain;
+  /* `contain` still permits native rubber-banding. Keep horizontal boundary
+     gestures from visually shifting the shared diff container. */
+  overscroll-behavior: none contain;
 }
 
 .semantic-review-host .semantic-review {
