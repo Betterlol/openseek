@@ -437,3 +437,15 @@
   align-items: center;
   justify-content: center;
 }
+
+.moonbit-diff-hunk-action {
+  position: absolute;
+  right: 34px;
+  z-index: 15;
+  border-radius: 12px;
+  background: var(--vscode-editor-background);
+}
+
+.moonbit-diff-hunk-action[hidden] {
+  display: none;
+}

@@ -2194,3 +2194,72 @@ test('pending job waits show descriptions from earlier tool rows', async ({ page
   await expect(wait.first()).toContainText('"job_ids"');
   expect(app.pageErrors).toEqual([]);
 });
+
+for (const mode of ['Line', 'Token', 'Tree']) {
+  test(`${mode} hunk actions and navigation follow manual scrolling`, async ({ page }) => {
+    const app = new DesktopBrowserHarness(page);
+    const block = (name) => [`fn ${name} {`, ...Array.from({ length: 70 }, (_, i) => `  println("${name} ${i}")`), '}', ''];
+    const baseline = [...block('first'), ...block('second')].join('\n');
+    app.gitFilesByRevision[app.gitBaseline]['src/main.mbt'] = baseline;
+    app.workingFiles['src/main.mbt'] = baseline.replace('first 5', 'first changed').replace('second 60', 'second changed');
+    await app.install();
+    await app.goto();
+    await app.openSession();
+    await app.openReview();
+    await page.locator('#review-changes-body').getByRole('button', { name: /View diff: src\/main\.mbt/ }).click();
+    const toolbar = page.getByRole('toolbar', { name: 'Review mode' });
+    await toolbar.getByRole('button', { name: `${mode} diff` }).click();
+    const position = page.locator('.review-hunk-position');
+    await expect(position).toHaveText('1 of 2');
+    // Wheel input must update the counter without moving the cursor or marking
+    // coverage. The last hunk's action must then affect exactly that hunk.
+    const visibleEditor = page.locator('.moonbit-diff-editor:visible').last();
+    await visibleEditor.hover();
+    await page.mouse.wheel(0, 10000);
+    await expect(position).toHaveText('2 of 2');
+    await expect(page.getByRole('button', { name: 'Mark hunk viewed', exact: true })).toHaveAttribute('aria-pressed', 'false');
+    const localAction = page.locator('.moonbit-diff-hunk-action:visible button').last();
+    await localAction.click();
+    await expect(localAction).toBeFocused();
+    await expect(page.getByRole('button', { name: 'Unmark hunk viewed', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByRole('button', { name: 'Mark file reviewed', exact: true })).toHaveAttribute('aria-pressed', 'mixed');
+    await page.mouse.wheel(0, -10000);
+    await expect(position).toHaveText('1 of 2');
+    await expect(page.getByRole('button', { name: 'Mark hunk viewed', exact: true })).toHaveAttribute('aria-pressed', 'false');
+    await page.getByRole('button', { name: 'Next change', exact: true }).click();
+    await expect(position).toHaveText('2 of 2');
+    await expect(page.getByRole('button', { name: 'Unmark hunk viewed', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await page.locator('.moonbit-diff-hunk-action:visible button').last().click();
+    await expect(page.getByRole('button', { name: 'Mark file reviewed', exact: true })).toHaveAttribute('aria-pressed', 'false');
+    expect(app.pageErrors).toEqual([]);
+  });
+}
+
+for (const layout of ['Split', 'Unified']) {
+  test(`${layout} pure deletion has a local hunk action at its deleted line`, async ({ page }) => {
+    const app = new DesktopBrowserHarness(page);
+    const before = ['fn main {', '  println("keep")', '  println("delete me")', '  println("keep too")', '}', ''].join('\n');
+    app.gitFilesByRevision[app.gitBaseline]['src/main.mbt'] = before;
+    app.workingFiles['src/main.mbt'] = before.replace('  println("delete me")\n', '');
+    await app.install();
+    await app.goto();
+    await app.openSession();
+    await app.openReview();
+    await page.locator('#review-changes-body').getByRole('button', { name: /View diff: src\/main\.mbt/ }).click();
+    await page.getByRole('button', { name: `${layout} diff layout`, exact: true }).click();
+    const action = page.locator('.moonbit-diff-hunk-action:visible button');
+    await expect(action).toBeVisible();
+    const deleted = page.locator(layout === 'Split' ? '.moonbit-diff-editor-original .view-line' : '.diff-editor-inline-deleted-line').filter({ hasText: 'delete me' });
+    await expect(deleted).toHaveCount(1);
+    await expect.poll(async () => {
+      const [button, line] = await Promise.all([action.boundingBox(), deleted.boundingBox()]);
+      return Math.abs(button.y - line.y);
+    }).toBeLessThan(3);
+    await action.click();
+    await expect(page.getByRole('button', { name: 'Mark file unreviewed', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await action.click();
+    await expect(page.getByRole('button', { name: 'Mark file reviewed', exact: true })).toHaveAttribute('aria-pressed', 'false');
+    await page.screenshot({ path: `/tmp/hunk-ux-${layout.toLowerCase()}.png` });
+    expect(app.pageErrors).toEqual([]);
+  });
+}

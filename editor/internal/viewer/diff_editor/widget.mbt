@@ -52,6 +52,9 @@ pub struct DiffEditorWidget {
   mut original_alignment_geometry : PaneGeometrySnapshot?
   mut modified_alignment_geometry : PaneGeometrySnapshot?
   mut diff_state : DiffState?
+  priv mut hunk_action_renderer : ((Int) -> @rdom.Element?)?
+  priv hunk_actions : Array[(Int, @rdom.Element)]
+  priv mut navigate_from_active_hunk : Bool
   priv mut active_hunk_index : Int?
   priv did_change_active_hunk : @base_common.Emitter[Int?]
   /// The section-host contract is published only after one complete geometry
@@ -229,6 +232,9 @@ pub fn DiffEditorWidget::create(
     original_alignment_geometry: None,
     modified_alignment_geometry: None,
     diff_state: None,
+    hunk_action_renderer: None,
+    hunk_actions: [],
+    navigate_from_active_hunk: false,
     active_hunk_index: None,
     did_change_active_hunk: Emitter(),
     did_change_content_height: Emitter(),
@@ -354,6 +360,15 @@ fn DiffEditorWidget::layout_editors_after_render(
 
 ///|
 fn DiffEditorWidget::install_event_bridges(self : DiffEditorWidget) -> Unit {
+  // Explicit cursor movement restores cursor-relative navigation after a
+  // viewport selection; hunk reveals retain their own selected group.
+  self.lifetime.push(
+    self.editors.modified.on_did_change_cursor_position(event => {
+      if event.source == "mouse" || event.source == "keyboard" {
+        self.navigate_from_active_hunk = false
+      }
+    }),
+  )
   self.lifetime.push(
     self.view_model.on_did_change_model(() => {
       self.editors.set_model(self.view_model.get_model())
@@ -431,6 +446,7 @@ fn DiffEditorWidget::install_event_bridges(self : DiffEditorWidget) -> Unit {
   self.lifetime.push(
     self.editors.modified.on_did_scroll_change(event => {
       self.refresh_overview_viewport()
+      self.layout_hunk_actions()
       let scroll_top_echo = self.consume_scroll_top_echo(
         ModifiedScrollPane,
         event.scroll_top,
@@ -447,6 +463,11 @@ fn DiffEditorWidget::install_event_bridges(self : DiffEditorWidget) -> Unit {
         if !scroll_top_echo {
           self.pending_layout_modified_viewport = None
           self.sync_scroll_top_to(OriginalScrollPane, event.scroll_top)
+        }
+        if self.options.handle_mouse_wheel {
+          self.track_hunk_at_viewport_offset(
+            self.editors.modified.get_layout_info().height * 0.5,
+          )
         }
       }
       if event.scroll_left_changed {
@@ -1293,6 +1314,7 @@ fn DiffEditorWidget::reconcile_view_model(self : DiffEditorWidget) -> Unit {
     // `commit_diff_state` has now replaced both sides' alignment zones. A
     // section host can synchronously adopt this height without observing the
     // one-pane Markdown/ViewZone intermediate state.
+    self.render_hunk_actions()
     self.publish_content_height_if_changed()
   }
   self.reconciling_generation += 1
@@ -1346,6 +1368,8 @@ pub fn DiffEditorWidget::set_model(
   self.pending_reveal_last_diff_generation = None
   self.pending_layout_modified_viewport = None
   self.set_active_hunk_index(None)
+  self.navigate_from_active_hunk = false
+  self.clear_hunk_actions()
   self.clear_pending_scroll_echoes()
   self.clear_diff_features_for_transition()
   self.layout_editors_after_render()
@@ -1812,6 +1836,9 @@ pub fn DiffEditorWidget::reveal_last_diff(self : DiffEditorWidget) -> Unit {
 ///|
 pub fn DiffEditorWidget::reveal_next_change(self : DiffEditorWidget) -> Bool {
   guard self.view_model.get_model() is Some(model) else { return false }
+  if self.navigate_from_active_hunk {
+    return self.navigate_active_hunk(1, true)
+  }
   let current_line = self.editors.modified
     .get_position()
     .map_or(1, position => position.line_number)
@@ -1832,6 +1859,9 @@ pub fn DiffEditorWidget::reveal_next_change(self : DiffEditorWidget) -> Bool {
 pub fn DiffEditorWidget::reveal_next_change_without_wrap(
   self : DiffEditorWidget,
 ) -> Bool {
+  if self.navigate_from_active_hunk {
+    return self.navigate_active_hunk(1, false)
+  }
   let current_line = self.editors.modified
     .get_position()
     .map_or(1, position => position.line_number)
@@ -1847,6 +1877,9 @@ pub fn DiffEditorWidget::reveal_next_change_without_wrap(
 pub fn DiffEditorWidget::reveal_previous_change(
   self : DiffEditorWidget,
 ) -> Bool {
+  if self.navigate_from_active_hunk {
+    return self.navigate_active_hunk(-1, true)
+  }
   let current_line = self.editors.modified
     .get_position()
     .map_or(1, position => position.line_number)
@@ -1862,6 +1895,9 @@ pub fn DiffEditorWidget::reveal_previous_change(
 pub fn DiffEditorWidget::reveal_previous_change_without_wrap(
   self : DiffEditorWidget,
 ) -> Bool {
+  if self.navigate_from_active_hunk {
+    return self.navigate_active_hunk(-1, false)
+  }
   let current_line = self.editors.modified
     .get_position()
     .map_or(1, position => position.line_number)
@@ -2020,6 +2056,8 @@ pub fn DiffEditorWidget::dispose(self : DiffEditorWidget) -> Unit {
   self.has_valid_layout_box = false
   self.inline_original_strip_width = -1.0
   self.clear_pending_scroll_echoes()
+  self.clear_hunk_actions()
+  self.hunk_action_renderer = None
   self.did_change_active_hunk.dispose()
   self.did_change_content_height.dispose()
   self.did_reveal_change.dispose()

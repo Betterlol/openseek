@@ -283,6 +283,7 @@ pub(all) enum Msg {
   PackageGraphRequestFailed(owner~ : @interop.ConversationKey, epoch~ : Int, path~ : @pathx.Relative, generation~ : Int, message~ : String)
   ReviewActiveHunkChanged(change~ : ChangedFile, review_generation~ : Int, surface_generation~ : Int, hunk~ : ReviewHunk?, file_changes~ : ReviewHunk?, position~ : ReviewHunkPosition?)
   ToggleActiveReviewHunk
+  ToggleReviewHunk(change~ : ChangedFile, review_generation~ : Int, surface_generation~ : Int, hunk~ : ReviewHunk, file_changes~ : ReviewHunk?, position~ : ReviewHunkPosition?)
   GitOriginalLoaded(owner~ : @interop.ConversationKey, path~ : @pathx.Relative, generation~ : Int, background~ : Bool, original~ : @protocol.GitOriginalFileReply)
   GitOriginalFailed(owner~ : @interop.ConversationKey, path~ : @pathx.Relative, generation~ : Int, background~ : Bool, message~ : String)
   HistoryBlobLoaded(owner~ : @interop.ConversationKey, key~ : String, generation~ : Int, side~ : HistoryDiffSide, blob~ : @protocol.GitOriginalFileReply)

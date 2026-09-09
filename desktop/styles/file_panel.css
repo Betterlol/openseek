@@ -2836,3 +2836,10 @@ button.git-history-file.selected {
 .workflow-row-detail:empty {
   display: none;
 }
+
+.moonbit-diff-hunk-action .review-progress {
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-xs);
+  line-height: 16px;
+  padding: 1px 6px;
+}

@@ -414,3 +414,29 @@ pub extend DiffWordWrap with Eq::{equal, not_equal}
 
 ///|
 pub extend DiffWordWrap with Debug::{to_repr}
+
+///|
+/// Attach host-owned controls to each hunk. Replaces previous controls; passing
+/// None removes them. The callback receives the current zero-based hunk index.
+pub fn DiffEditor::set_hunk_action_renderer(
+  self : DiffEditor,
+  renderer : ((Int) -> @rdom.Element?)?,
+) -> Unit {
+  self.widget.set_hunk_action_renderer(renderer)
+}
+
+///|
+/// Current hunk bounds in viewport pixels, including pure deletion space.
+pub fn DiffEditor::get_hunk_viewport_bounds(
+  self : DiffEditor,
+  index : Int,
+) -> (Double, Double)? {
+  self.widget.get_hunk_viewport_bounds(index)
+}
+
+///|
+/// Select a hunk without moving focus, cursor, or scroll. Navigation continues
+/// from this hunk. Outer-scroll hosts use this to track the reading position.
+pub fn DiffEditor::select_hunk(self : DiffEditor, index : Int) -> Unit {
+  self.widget.select_hunk(index)
+}

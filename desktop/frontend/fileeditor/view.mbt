@@ -437,6 +437,7 @@ pub fn body_view(
           return @cmd.none
         }
         sync_semantic_review_scroll_left(element.get_scroll_left())
+        track_semantic_review_scroll(element)
         @cmd.none
       }),
     semantic_review,

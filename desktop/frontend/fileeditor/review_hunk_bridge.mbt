@@ -200,3 +200,190 @@ fn publish_semantic_review_active_hunk(
     semantic_review_hunk_position(key, active_index),
   )
 }
+
+///|
+fn sync_review_hunk_actions(state : State) -> Unit {
+  let target = review_hunk_bridge_target.val
+  if mounted_diff_editor() is Some(editor) {
+    if target is Some(target) && target.surface is ReviewLineSurface {
+      install_review_hunk_actions(state, target, editor, None)
+    } else {
+      editor.set_hunk_action_renderer(None)
+    }
+  }
+  if target is Some(target) && target.surface is ReviewSemanticSurface {
+    for key, entry in semantic_review_editors {
+      install_review_hunk_actions(
+        state,
+        target,
+        entry.editor,
+        Some((key, entry.section)),
+      )
+    }
+  }
+}
+
+///|
+fn install_review_hunk_actions(
+  state : State,
+  target : ReviewHunkBridgeTarget,
+  editor : @viewer.DiffEditor,
+  section : (String, @moon_diff_provider.SemanticReviewSection)?,
+) -> Unit {
+  editor.set_hunk_action_renderer(
+    Some(index => {
+      let (old_offset, new_offset) = match section {
+        None => (Some(0), Some(0))
+        Some((_, section)) =>
+          (
+            semantic_feedback_line_offset(section, SemanticReviewOriginal),
+            semantic_feedback_line_offset(section, SemanticReviewModified),
+          )
+      }
+      guard projected_review_hunk(
+          editor.get_hunks(),
+          Some(index),
+          old_offset,
+          new_offset,
+        )
+        is Some(hunk) else {
+        return None
+      }
+      let status = state.review_hunk_state(target.change, hunk)
+      let viewed = status is ReviewHunkViewed
+      let button = @dom.document().create_element("button")
+      button.set_attribute("type", "button")
+      if state.is_change_reviewed(target.change) &&
+        mounted_diff_editor().bind(projected_review_file_changes) is None {
+        button.set_attribute("disabled", "")
+      }
+      button.set_attribute(
+        "class",
+        if viewed {
+          "review-badge review-progress reviewed"
+        } else {
+          "review-badge review-progress"
+        },
+      )
+      button.set_attribute(
+        "aria-label",
+        if viewed {
+          "Unmark hunk \{index + 1} viewed"
+        } else {
+          "Mark hunk \{index + 1} viewed"
+        },
+      )
+      button.set_attribute(
+        "aria-pressed",
+        match status {
+          ReviewHunkViewed => "true"
+          ReviewHunkPartial => "mixed"
+          ReviewHunkUnviewed => "false"
+        },
+      )
+      button.set_attribute(
+        "title",
+        if viewed {
+          "Mark this hunk unviewed"
+        } else {
+          "Mark this hunk viewed"
+        },
+      )
+      button.append_child(
+        @dom.document()
+        .create_text_node(
+          match status {
+            ReviewHunkViewed => "✓ Viewed"
+            ReviewHunkPartial => "◐ Mark viewed"
+            ReviewHunkUnviewed => "Mark viewed"
+          },
+        )
+        .as_node(),
+      )
+      // Restoring a button's focus after a state refresh must not let the
+      // section's editor-focus bridge replace the outer scroll selection.
+      button.add_event_listener("focusin", event => event.stop_propagation())
+      button.add_event_listener("click", event => {
+        event.stop_propagation()
+        guard review_hunk_bridge_target.val is Some(current) &&
+          current.change == target.change &&
+          current.review_generation == target.review_generation &&
+          current.surface_generation == target.surface_generation else {
+          return
+        }
+        if section is Some((key, _)) {
+          semantic_review_active_key.val = Some(key)
+        }
+        editor.select_hunk(index)
+        let position = match section {
+          None =>
+            ReviewHunkPosition::from_zero_based(
+              Some(index),
+              editor.get_hunks().length(),
+            )
+          Some((key, _)) => semantic_review_hunk_position(key, Some(index))
+        }
+        (current.dispatch)(
+          ToggleReviewHunk(
+            change=current.change,
+            review_generation=current.review_generation,
+            surface_generation=current.surface_generation,
+            hunk~,
+            file_changes=mounted_diff_editor().bind(
+              projected_review_file_changes,
+            ),
+            position~,
+          ),
+        )
+      })
+      Some(button)
+    }),
+  )
+}
+
+///|
+/// Semantic editors expand to their full height; the outer scroll plane owns
+/// reading position. Pick one global hunk using its actual rendered geometry.
+fn track_semantic_review_scroll(host : @dom.Element) -> Unit {
+  guard review_hunk_bridge_target.val is Some(target) &&
+    target.surface is ReviewSemanticSurface else {
+    return
+  }
+  let offset = host.get_bounding_client_rect().get_top() +
+    host.get_client_height() * 0.5
+  let mut nearest : (String, Int, Double)? = None
+  for key in semantic_review_order {
+    guard semantic_review_editors.get(key) is Some(entry) &&
+      entry.host.get_client_height() > 0.0 else {
+      continue
+    }
+    let origin = entry.host.get_bounding_client_rect().get_top()
+    for index, _ in entry.editor.get_hunks() {
+      if entry.editor.get_hunk_viewport_bounds(index) is Some((top, bottom)) {
+        let distance = if offset < origin + top {
+          origin + top - offset
+        } else {
+          (offset - origin - bottom).max(0.0)
+        }
+        if nearest is None ||
+          (nearest is Some((_, _, previous)) && distance < previous) {
+          nearest = Some((key, index, distance))
+        }
+      }
+    }
+  }
+  if nearest is Some((key, index, _)) &&
+    semantic_review_editors.get(key) is Some(entry) {
+    semantic_review_active_key.val = Some(key)
+    entry.editor.select_hunk(index)
+    if target.semantic_input is Some(input) {
+      publish_semantic_review_active_hunk(
+        input,
+        key,
+        entry.editor,
+        entry.section,
+        Some(index),
+      )
+    }
+  }
+}

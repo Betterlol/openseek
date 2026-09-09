@@ -956,6 +956,14 @@ pub(all) enum Msg {
     position~ : ReviewHunkPosition?
   )
   ToggleActiveReviewHunk
+  ToggleReviewHunk(
+    change~ : ChangedFile,
+    review_generation~ : Int,
+    surface_generation~ : Int,
+    hunk~ : ReviewHunk,
+    file_changes~ : ReviewHunk?,
+    position~ : ReviewHunkPosition?
+  )
   // One `git.original_file` request settled. `path` is always the current
   // changed path (the dock/document key), even when the host read its rename
   // source from `original_path`.

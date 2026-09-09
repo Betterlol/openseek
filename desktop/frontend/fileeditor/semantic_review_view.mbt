@@ -1527,6 +1527,7 @@ fn sync_semantic_review_editors(
       })
       guard state.semantic_review_input is Some(input) else {
         clear_semantic_review_editors()
+        sync_review_hunk_actions(state)
         return
       }
       let desired = semantic_sections(state.semantic_review_plan)
@@ -1608,6 +1609,7 @@ fn sync_semantic_review_editors(
           entry.editor.get_active_hunk_index(),
         )
       }
+      sync_review_hunk_actions(state)
       update_semantic_review_scroll_width()
       schedule_semantic_review_scroll_width_update()
     },

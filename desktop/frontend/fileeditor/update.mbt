@@ -2638,6 +2638,30 @@ pub fn update(
           ctx.active_file,
         ),
       )
+    ToggleReviewHunk(
+      change~,
+      review_generation~,
+      surface_generation~,
+      hunk~,
+      file_changes~,
+      position~
+    ) => {
+      guard state.current_review_generation(change, ctx.active_file) ==
+        Some(review_generation) &&
+        state.review_hunk_surface_generation == surface_generation else {
+        return (@cmd.none, state)
+      }
+      let next = state.accept_active_review_hunk(
+        change,
+        review_generation,
+        surface_generation,
+        Some(hunk),
+        file_changes,
+        position,
+        ctx.active_file,
+      )
+      (@cmd.none, next.toggle_active_review_hunk(ctx.active_file))
+    }
     ToggleActiveReviewHunk =>
       (@cmd.none, state.toggle_active_review_hunk(ctx.active_file))
     Search(msg) => {

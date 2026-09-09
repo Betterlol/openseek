@@ -188,6 +188,16 @@ the widget.
 state, update event, paired content-height event, and next/previous change
 navigation. The height event is published only after both panes' alignment
 zones commit, so a stacked host never consumes a one-pane intermediate height.
+Hunk actions are host-owned DOM elements installed with
+`set_hunk_action_renderer`; the widget positions them using both panes' changed
+ranges, including pure deletions, and forwards wheel input to the scroll owner.
+The renderer returns a focusable action root and must tolerate being called
+again after diff or layout changes. Review coverage remains host policy.
+Manual scrolling selects the hunk nearest the viewport center without moving
+the cursor. Outer-scroll hosts use `get_hunk_viewport_bounds` and `select_hunk`
+to maintain one global selection. Navigation continues from that selection;
+explicit cursor movement restores cursor-relative navigation.
+
 It is readonly; moves, hide-unchanged, revert, editing, and the full accessible
 diff viewer are outside the current scope.
 
