@@ -2837,9 +2837,28 @@ button.git-history-file.selected {
   display: none;
 }
 
-.moonbit-diff-hunk-action .review-progress {
+.moonbit-diff-hunk-action .review-hunk-marker {
   font-family: var(--font-family-sans);
-  font-size: var(--font-size-xs);
+  font-size: 13px;
   line-height: 16px;
-  padding: 1px 6px;
+  color: var(--color-text-muted);
+  border-color: var(--color-text-muted);
+}
+
+.moonbit-diff-hunk-action .review-hunk-marker:hover {
+  color: var(--color-text-primary);
+  border-color: var(--color-text-primary);
+  background: var(--color-control-surface);
+}
+
+.moonbit-diff-hunk-action .review-hunk-marker[aria-pressed="true"],
+.moonbit-diff-hunk-action .review-hunk-marker[aria-pressed="mixed"] {
+  color: var(--color-success);
+  border-color: var(--color-success);
+  background: color-mix(in srgb, var(--color-success) 10%, var(--color-bg-surface));
+}
+
+.moonbit-diff-hunk-action .review-hunk-marker:disabled {
+  cursor: default;
+  opacity: 0.5;
 }

@@ -257,14 +257,7 @@ fn install_review_hunk_actions(
         mounted_diff_editor().bind(projected_review_file_changes) is None {
         button.set_attribute("disabled", "")
       }
-      button.set_attribute(
-        "class",
-        if viewed {
-          "review-badge review-progress reviewed"
-        } else {
-          "review-badge review-progress"
-        },
-      )
+      button.set_attribute("class", "review-hunk-marker")
       button.set_attribute(
         "aria-label",
         if viewed {
@@ -293,9 +286,9 @@ fn install_review_hunk_actions(
         @dom.document()
         .create_text_node(
           match status {
-            ReviewHunkViewed => "✓ Viewed"
-            ReviewHunkPartial => "◐ Mark viewed"
-            ReviewHunkUnviewed => "Mark viewed"
+            ReviewHunkViewed => "✓"
+            ReviewHunkPartial => "−"
+            ReviewHunkUnviewed => ""
           },
         )
         .as_node(),

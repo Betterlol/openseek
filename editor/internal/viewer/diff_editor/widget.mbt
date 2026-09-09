@@ -746,7 +746,9 @@ fn DiffEditorWidget::inline_original_width(
   decorations_left : Double,
 ) -> Double {
   let overview_width = if self.options.overview_ruler { 30.0 } else { 0.0 }
-  let panes_width = (self.layout_state.width - overview_width).max(0.0)
+  let panes_width = (self.layout_state.width -
+  overview_width -
+  self.hunk_action_gutter_width()).max(0.0)
   decorations_left.max(5.0).min(panes_width)
 }
 
@@ -1954,7 +1956,9 @@ fn DiffEditorWidget::apply_layout_dom(self : DiffEditorWidget) -> Unit {
       self.sash.remove_attribute("tabindex")
       self.modified_host.set_attribute("aria-label", "Modified file")
       let overview_width = if self.options.overview_ruler { 30.0 } else { 0.0 }
-      let panes_width = (self.layout_state.width - overview_width).max(0.0)
+      let panes_width = (self.layout_state.width -
+      overview_width -
+      self.hunk_action_gutter_width()).max(0.0)
       let original_width = self.inline_original_width(
         self.editors.original.get_layout_info().decorations_left,
       )

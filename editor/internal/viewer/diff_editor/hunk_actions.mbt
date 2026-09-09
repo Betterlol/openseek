@@ -1,11 +1,35 @@
 ///|
+const DiffHunkActionGutterWidth = 24.0
+
+///|
+fn DiffEditorWidget::hunk_action_gutter_width(
+  self : DiffEditorWidget,
+) -> Double {
+  if self.hunk_action_renderer is Some(_) {
+    DiffHunkActionGutterWidth
+  } else {
+    0.0
+  }
+}
+
+///|
 /// Host-owned actions share the hunk's rendered position, including deletion
 /// space. The widget owns their attachment and lifetime, but not their policy.
 pub fn DiffEditorWidget::set_hunk_action_renderer(
   self : DiffEditorWidget,
   renderer : ((Int) -> @rdom.Element?)?,
 ) -> Unit {
+  let previous_width = self.hunk_action_gutter_width()
   self.hunk_action_renderer = renderer
+  let width = self.hunk_action_gutter_width()
+  @base_browser.set_style_property(
+    self.root,
+    "--diff-hunk-action-gutter-width",
+    "\{width}px",
+  )
+  if width != previous_width {
+    self.layout()
+  }
   self.render_hunk_actions()
 }
 

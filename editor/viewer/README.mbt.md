@@ -189,7 +189,8 @@ state, update event, paired content-height event, and next/previous change
 navigation. The height event is published only after both panes' alignment
 zones commit, so a stacked host never consumes a one-pane intermediate height.
 Hunk actions are host-owned DOM elements installed with
-`set_hunk_action_renderer`; the widget positions them using both panes' changed
+`set_hunk_action_renderer`; the widget reserves a 24px gutter before both panes'
+line numbers and positions compact actions using both panes' changed
 ranges, including pure deletions, and forwards wheel input to the scroll owner.
 The renderer returns a focusable action root and must tolerate being called
 again after diff or layout changes. Review coverage remains host policy.

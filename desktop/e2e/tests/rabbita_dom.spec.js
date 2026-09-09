@@ -2255,11 +2255,21 @@ for (const layout of ['Split', 'Unified']) {
       const [button, line] = await Promise.all([action.boundingBox(), deleted.boundingBox()]);
       return Math.abs(button.y - line.y);
     }).toBeLessThan(3);
+    // The marker has its own gutter, before even the original line numbers.
+    // Check actual rendered boxes: moving an overlay left would fail this.
+    await expect.poll(() => action.evaluate(button => {
+      const panes = button.closest('.moonbit-diff-editor').querySelector('.moonbit-diff-editor-panes');
+      return button.getBoundingClientRect().right <= panes.getBoundingClientRect().left;
+    })).toBe(true);
     await action.click();
+    await expect(action).toHaveText('✓');
+    const panelBox = await page.locator('.editor').boundingBox();
+    const clip = { ...panelBox, height: Math.min(panelBox.height, 320) };
+    await page.screenshot({ path: `/tmp/hunk-gutter-${layout.toLowerCase()}-viewed.png`, clip });
     await expect(page.getByRole('button', { name: 'Mark file unreviewed', exact: true })).toHaveAttribute('aria-pressed', 'true');
     await action.click();
     await expect(page.getByRole('button', { name: 'Mark file reviewed', exact: true })).toHaveAttribute('aria-pressed', 'false');
-    await page.screenshot({ path: `/tmp/hunk-ux-${layout.toLowerCase()}.png` });
+    await page.screenshot({ path: `/tmp/hunk-gutter-${layout.toLowerCase()}.png`, clip });
     expect(app.pageErrors).toEqual([]);
   });
 }
