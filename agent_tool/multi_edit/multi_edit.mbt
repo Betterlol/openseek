@@ -27,7 +27,9 @@ pub fn definition(
       #|optional end_line}: `file` is the path to change; `start_line` (1-based) anchors
       #|the search and `end_line` bounds it, so old_string can be the small exact span
       #|instead of a large context block; each edit replaces the first matching span in
-      #|its range. Make old_string uniquely identify the flagged code — include the
+      #|its range. Matching normalizes CRLF (`\r\n`) to LF and curly/smart quotes to
+      #|straight quotes, so old_string with LF matches `\r\n` in the file and straight
+      #|quotes match curly quotes. Make old_string uniquely identify the flagged code — include the
       #|receiver, e.g. `args.length()` — so a rename cannot stray onto a same-named call
       #|elsewhere on the line. List all edits for a given file contiguously. To INSERT
       #|instead of replace, set old_string to the empty string: new_string is inserted at

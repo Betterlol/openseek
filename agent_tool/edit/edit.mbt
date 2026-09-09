@@ -52,7 +52,10 @@ pub fn definition(
       #|Replace the first exact text span at or after arguments.start_line in
       #|arguments.path with arguments.new_string. Optional end_line restricts the search
       #|to a 1-based inclusive line range. Because start_line anchors the location,
-      #|old_string can be a small exact span instead of a large context block. To INSERT
+      #|old_string can be a small exact span instead of a large context block. Matching
+      #|normalizes CRLF (`\r\n`) to LF and curly/smart quotes to straight quotes, so
+      #|old_string with LF matches `\r\n` in the file and straight quotes match curly
+      #|quotes. To INSERT
       #|new code instead of replacing, set old_string to the empty string: new_string is
       #|inserted at the start of start_line. To APPEND at end of file, pass any start_line
       #|past the last line (e.g. 999999) — no need to know the file's length; the result
@@ -185,7 +188,7 @@ async fn edit_file(
   if input.old_string == input.new_string {
     let content = @fs.read_file(path).text()
     return err(
-      "old_string and new_string are identical\{old_string_context(content, input.old_string, input.start_line, input.end_line)}\n(old_string matches new_string exactly — the file at that location may already contain this text; re-read the file and adjust the edit)",
+      "old_string and new_string are identical\{old_string_context(content, input.start_line, input.end_line)}\n(old_string matches new_string exactly — the file at that location may already contain this text; re-read the file and adjust the edit)",
     )
   }
   if input.replace_all_preview {
@@ -253,12 +256,7 @@ async fn edit_file(
           return err(
             "old_string not found" +
             range_detail(input) +
-            old_string_context(
-              content,
-              input.old_string,
-              input.start_line,
-              input.end_line,
-            ),
+            old_string_context(content, input.start_line, input.end_line),
           )
       }
   }
@@ -893,7 +891,6 @@ fn range_detail(input : @decode.EditInput) -> String {
 /// character difference with a specific mismatch hint.
 fn old_string_context(
   content : String,
-  old_string : String,
   start_line : Int,
   end_line : Int?,
 ) -> String {
@@ -928,56 +925,6 @@ fn old_string_context(
     result.write_string("\{gutter} \{line_no} | \{line_text}\n")
   }
   result.write_string("```\n")
-  // First character difference
-  let anchor_offset = @line_offset.line_start_offset(content, start_line)
-  let compare_len = old_string.length().min(content.length() - anchor_offset)
-  if compare_len > 0 {
-    let actual = content.unsafe_substring(
-      start=anchor_offset,
-      end=anchor_offset + compare_len,
-    )
-    let diff_info = first_diff_info(old_string, actual)
-    match diff_info {
-      Some((pos, expected_char, actual_char)) => {
-        let diff_pos = pos + 1
-        result.write_string(
-          "─── first difference ───────────────────────────\n",
-        )
-        result.write_string(
-          "at character \{diff_pos}: expected `\{expected_char}`, got `\{actual_char}`",
-        )
-        // Specific diagnostics for common mismatch patterns
-        if expected_char == "\n" && actual_char == "\r" {
-          result.write_string(
-            "\n— CRLF vs LF line-ending mismatch: the file uses `\\r\\n` (CRLF) but old_string uses `\\n` (LF); re-read the file to get the exact text",
-          )
-        } else if actual_char == "\r" &&
-          pos + 1 < actual.length() &&
-          actual[pos + 1] == '\n' {
-          result.write_string(
-            "\n— CRLF vs LF line-ending mismatch near this position; re-read the file to get the exact text",
-          )
-        } else if expected_char == "'" &&
-          (actual_char == "\u{2018}" || actual_char == "\u{2019}") {
-          result.write_string(
-            "\n— curly vs straight single-quote mismatch: the file uses curly quotes (\\u{2018}/\\u{2019}), but models can only output straight quotes (`'`); re-read the file to get the exact text",
-          )
-        } else if expected_char == "\"" &&
-          (actual_char == "\u{201C}" || actual_char == "\u{201D}") {
-          result.write_string(
-            "\n— curly vs straight double-quote mismatch: the file uses curly quotes (\\u{201C}/\\u{201D}), but models can only output straight quotes (`\"`); re-read the file to get the exact text",
-          )
-        }
-        result.write_char('\n')
-      }
-      None => ()
-    }
-  } else {
-    result.write_string(
-      "─── first difference ───────────────────────────\n",
-    )
-    result.write_string("old_string extends past the end of the file\n")
-  }
   result.write_string(
     "─── hint ───────────────────────────────────────\ncheck for CRLF vs LF line endings, tab vs space, full-width vs half-width characters, or a stray read-tool display separator (`|`) in old_string\n",
   )
@@ -986,33 +933,6 @@ fn old_string_context(
 
 ///|
 /// Find the first character where `expected` and `actual` differ.
-/// Returns the position, the expected character, and the actual character.
-fn first_diff_info(
-  expected : String,
-  actual : String,
-) -> (Int, String, String)? {
-  // The code unit at `pos`, or `∅` when `s` has already ended there.
-  fn unit_at(s : String, pos : Int) -> String {
-    if pos < s.length() {
-      s.unsafe_substring(start=pos, end=pos + 1)
-    } else {
-      "∅"
-    }
-  }
-
-  let len = expected.length().min(actual.length())
-  for i in 0..<len {
-    if expected[i] != actual[i] {
-      return Some((i, unit_at(expected, i), unit_at(actual, i)))
-    }
-  }
-  if expected.length() != actual.length() {
-    return Some((len, unit_at(expected, len), unit_at(actual, len)))
-  }
-  None
-}
-
-///|
 test "inserted_line_span counts the lines the insert occupies" {
   // Newline-terminated: one line per newline.
   assert_eq(inserted_line_span("a\n"), 1)
@@ -1104,64 +1024,9 @@ test "preview_display_line truncates on a character boundary" {
 }
 
 ///|
-test "first_diff_info returns None for identical strings" {
-  assert_eq(first_diff_info("hello", "hello"), None)
-  assert_eq(first_diff_info("", ""), None)
-  assert_eq(first_diff_info("a\nb", "a\nb"), None)
-}
-
-///|
-test "first_diff_info finds first character difference" {
-  guard first_diff_info("abc", "abd") is Some((pos, expected, actual)) else {
-    fail("expected Some")
-  }
-  assert_eq(pos, 2)
-  assert_eq(expected, "c")
-  assert_eq(actual, "d")
-}
-
-///|
-test "first_diff_info detects length mismatch" {
-  // expected longer
-  guard first_diff_info("abcd", "ab") is Some((pos, expected, actual)) else {
-    fail("expected Some")
-  }
-  assert_eq(pos, 2)
-  assert_eq(expected, "c")
-  assert_eq(actual, "∅")
-  // actual longer
-  guard first_diff_info("ab", "abcd") is Some((pos2, expected2, actual2)) else {
-    fail("expected Some")
-  }
-  assert_eq(pos2, 2)
-  assert_eq(expected2, "∅")
-  assert_eq(actual2, "c")
-}
-
-///|
-test "first_diff_info detects tab vs space" {
-  guard first_diff_info("\tindent", "  indent") is Some((pos, expected, actual)) else {
-    fail("expected Some")
-  }
-  assert_eq(pos, 0)
-  assert_eq(expected, "\t")
-  assert_eq(actual, " ")
-}
-
-///|
-test "first_diff_info detects CRLF vs LF" {
-  guard first_diff_info("a\nb", "a\r\nb") is Some((pos, expected, actual)) else {
-    fail("expected Some")
-  }
-  assert_eq(pos, 1)
-  assert_eq(expected, "\n")
-  assert_eq(actual, "\r")
-}
-
-///|
 test "old_string_context clamps last_line to end of file" {
   let content = "a\nb\nc\n"
-  let ctx = old_string_context(content, "x", 1, Some(999999))
+  let ctx = old_string_context(content, 1, Some(999999))
   // Should not loop 1M times; last_line clamped to 5 (3 file lines + 2 context_after)
   assert_true(ctx.contains("─── file context"))
   assert_true(ctx.contains("─── hint"))
@@ -1172,16 +1037,13 @@ test "old_string_context clamps last_line to end of file" {
 }
 
 ///|
-test "old_string_context shows context lines and first difference" {
+test "old_string_context shows context lines" {
   let content = "alpha\nbeta\ngamma\n"
-  let ctx = old_string_context(content, "delta", 2, None)
+  let ctx = old_string_context(content, 2, None)
   // Shows surrounding lines
   assert_true(ctx.contains("1 | alpha"))
   assert_true(ctx.contains("> 2 | beta"))
   assert_true(ctx.contains("3 | gamma"))
-  // First difference at char 1: expected 'd', got 'b'
-  assert_true(ctx.contains("expected `d`"))
-  assert_true(ctx.contains("got `b`"))
   // Hint always present
   assert_true(ctx.contains("CRLF vs LF"))
 }
@@ -1189,7 +1051,7 @@ test "old_string_context shows context lines and first difference" {
 ///|
 test "old_string_context shows empty suffix for past-EOF context" {
   let content = "single\n"
-  let ctx = old_string_context(content, "x", 1, None)
+  let ctx = old_string_context(content, 1, None)
   // Line 2 and 3 exist as past-EOF context (empty lines)
   assert_true(ctx.contains("1 | single"))
   assert_true(ctx.contains("2 |"))
