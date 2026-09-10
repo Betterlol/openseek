@@ -496,12 +496,13 @@ fn semantic_review_navigation_sub_loader(
           @dom.document().get_element_by_id(SemanticReviewHostId).to_option()
           is Some(host) &&
           @base_browser.event_target_has_matching_ancestor(
-            event, host, ".semantic-diff-editor-host",
+            event, host, ".semantic-diff-entry",
           ) else {
           return
         }
-        // Capture runs before the child DiffEditor performs its own cyclic F7
-        // command, so exactly one aggregate MultiDiff navigation is emitted.
+        // Include section headers so F7 still works after collapsing the last
+        // editor. Capture precedes the child's cyclic F7 command, so exactly
+        // one aggregate MultiDiff navigation is emitted.
         event.prevent_default()
         event.stop_propagation()
         scheduler.add(
@@ -1384,10 +1385,9 @@ fn clear_semantic_review_editors() -> Unit {
 }
 
 ///|
-fn semantic_review_navigation_index(current : String?) -> Int {
-  guard current is Some(current) else { return 0 }
-  let index = semantic_review_order.search(current)
-  index.unwrap_or(0)
+fn semantic_review_navigation_index(current : String?) -> Int? {
+  guard current is Some(current) else { return None }
+  semantic_review_order.search(current)
 }
 
 ///|
@@ -1448,7 +1448,24 @@ fn navigate_semantic_review_change(
 ) -> @cmd.Cmd {
   @cmd.custom_cmd(scheduler => {
     guard !semantic_review_order.is_empty() else { return }
-    let index = semantic_review_navigation_index(semantic_review_active_key.val)
+    guard semantic_review_navigation_index(semantic_review_active_key.val)
+      is Some(index) else {
+      // With every section collapsed there is no active editor. Enter at the
+      // boundary instead of treating the first section as already visited.
+      let target_index = match direction {
+        SemanticReviewPrevious => semantic_review_order.length() - 1
+        SemanticReviewNext => 0
+      }
+      scheduler.add(
+        dispatch(
+          RevealSemanticReviewSectionChange(
+            semantic_review_order[target_index],
+            direction is SemanticReviewPrevious,
+          ),
+        ),
+      )
+      return
+    }
     let current = semantic_review_order[index]
     if !collapsed.contains(current) &&
       semantic_review_editors.get(current) is Some(entry) {

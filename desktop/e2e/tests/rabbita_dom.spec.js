@@ -2235,6 +2235,46 @@ for (const mode of ['Line', 'Token', 'Tree']) {
   });
 }
 
+for (const mode of ['Token', 'Tree']) {
+  test(`${mode} navigation enters the boundary after every section is collapsed`, async ({ page }) => {
+    const app = new DesktopBrowserHarness(page);
+    const baseline = ['fn first() -> Int { 1 }', '', 'fn second() -> Int { 2 }', ''].join('\n');
+    app.gitFilesByRevision[app.gitBaseline]['src/main.mbt'] = baseline;
+    app.workingFiles['src/main.mbt'] = baseline.replace('{ 1 }', '{ 10 }').replace('{ 2 }', '{ 20 }');
+    await app.install();
+    await app.goto();
+    await app.openSession();
+    await app.openReview();
+    await page.locator('#review-changes-body').getByRole('button', { name: /View diff: src\/main\.mbt/ }).click();
+    await page.getByRole('toolbar', { name: 'Review mode' }).getByRole('button', { name: `${mode} diff` }).click();
+    const sections = page.locator('.semantic-diff-entry');
+    const headers = sections.locator('.semantic-entry-header-content');
+    await expect(sections).toHaveCount(2);
+    for (const header of await headers.all()) {
+      await header.click();
+      await expect(header).toHaveAttribute('aria-expanded', 'false');
+    }
+    const position = page.locator('.review-hunk-position');
+    for (const next of ['button', 'F7']) {
+      if (next === 'button') {
+        await page.getByRole('button', { name: 'Next change', exact: true }).click();
+      } else {
+        await page.keyboard.press('F7');
+      }
+      await expect(headers.nth(0)).toHaveAttribute('aria-expanded', 'true');
+      await expect(headers.nth(1)).toHaveAttribute('aria-expanded', 'false');
+      await expect(position).toHaveText('1 of 2');
+      await headers.nth(0).click();
+      await expect(headers.nth(0)).toHaveAttribute('aria-expanded', 'false');
+    }
+    await page.keyboard.press('Shift+F7');
+    await expect(headers.nth(0)).toHaveAttribute('aria-expanded', 'false');
+    await expect(headers.nth(1)).toHaveAttribute('aria-expanded', 'true');
+    await expect(position).toHaveText('2 of 2');
+    expect(app.pageErrors).toEqual([]);
+  });
+}
+
 for (const layout of ['Split', 'Unified']) {
   test(`${layout} pure deletion has a local hunk action at its deleted line`, async ({ page }) => {
     const app = new DesktopBrowserHarness(page);
@@ -2250,11 +2290,15 @@ for (const layout of ['Split', 'Unified']) {
     const action = page.locator('.moonbit-diff-hunk-action:visible button');
     await expect(action).toBeVisible();
     const deleted = page.locator(layout === 'Split' ? '.moonbit-diff-editor-original .view-line' : '.diff-editor-inline-deleted-line').filter({ hasText: 'delete me' });
-    await expect(deleted).toHaveCount(1);
-    await expect.poll(async () => {
+    // Layout switching can leave the original pane mounted but hidden for a
+    // frame. Retry the complete geometry assertion until both boxes exist.
+    await expect(deleted).toBeVisible();
+    await expect(async () => {
       const [button, line] = await Promise.all([action.boundingBox(), deleted.boundingBox()]);
-      return Math.abs(button.y - line.y);
-    }).toBeLessThan(3);
+      expect(button).not.toBeNull();
+      expect(line).not.toBeNull();
+      expect(Math.abs(button.y - line.y)).toBeLessThan(3);
+    }).toPass({ timeout: 5_000 });
     // The marker has its own gutter, before even the original line numbers.
     // Check actual rendered boxes: moving an overlay left would fail this.
     await expect.poll(() => action.evaluate(button => {
