@@ -1156,14 +1156,37 @@ fn State::with_open_draft(
     value is Object(fields) &&
     @jsonx.json_text(fields, "draftId") is Some(reply_draft_id) &&
     reply_draft_id == draft_id &&
+    @jsonx.json_text(fields, "cwd") is Some(cwd) &&
     @jsonx.json_text(fields, "projectRoot") is Some(project_root) else {
     return { ..self, notice: "Malformed Codex draft workspace reply", }
   }
   {
     ..self,
-    selection: CodexDraftTask({ ..draft, project_root: Some(project_root), }),
+    selection: CodexDraftTask({
+      ..draft,
+      cwd,
+      project_root: Some(project_root),
+    }),
     notice: "",
   }
+}
+
+///|
+test "Codex draft adopts the host-confirmed resource path" {
+  let draft = State().select_draft("desktop-windows", "/c:/work/project")
+  let opened = draft.with_open_draft("desktop-windows", {
+    "draftId": "desktop-windows",
+    "cwd": "/C:/work/canonical-project",
+    "projectRoot": "/C:/work/canonical-project",
+  })
+  guard opened.active_draft() is Some(draft) else { fail("expected a draft") }
+  assert_eq(draft.cwd, "/C:/work/canonical-project")
+  assert_eq(draft.project_root, Some("/C:/work/canonical-project"))
+  let channel = @interop.ChannelId::Local
+  assert_eq(
+    opened.worktree_launch_workspace(channel),
+    @resource.of_path(channel, "/c:/work/canonical-project"),
+  )
 }
 
 ///|

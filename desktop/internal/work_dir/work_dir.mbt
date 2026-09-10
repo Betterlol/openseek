@@ -8,7 +8,7 @@
 /// a web client cannot turn an arbitrary workspace hint into filesystem access.
 priv struct HostWorkspaceAuthorizations {
   lock : @async.Mutex
-  paths : Map[String, String]
+  paths : Map[String, @pathx.Absolute]
 }
 
 ///|
@@ -27,11 +27,13 @@ async fn HostWorkspaceAuthorizations::authorize(
   workspace : String,
 ) -> Unit {
   let trimmed = workspace.trim().to_owned()
-  let candidate = @pathx.Path(trimmed).normalize().to_absolute()
+  let candidate = @pathx.Path(trimmed)
+    .to_absolute()
+    .map(path => path.normalize())
   self.lock.acquire()
   defer self.lock.release()
   if @session_store.safe_session_id(session) && candidate is Some(candidate) {
-    self.paths[session] = candidate.0
+    self.paths[session] = candidate
   } else {
     self.paths.remove(session)
   }
@@ -59,8 +61,12 @@ async fn HostWorkspaceAuthorizations::resolve(
   let normalized = hint.normalize()
   self.lock.acquire()
   defer self.lock.release()
-  if self.paths.get(session) is Some(stored) && stored == normalized.0 {
-    Some(normalized.to_path())
+  // The host path library owns equality: Windows drive/component case may
+  // differ after a frontend URI roundtrip, while POSIX stays case-sensitive.
+  if self.paths.get(session) is Some(stored) &&
+    normalized.relative_to(root=stored) is Some(relative) &&
+    relative.is_root() {
+    Some(stored.to_path())
   } else {
     None
   }
@@ -89,6 +95,7 @@ pub async fn revoke_host_workspace(session : String) -> Unit {
 /// native subsystem. Unlike `resolve_in_workspace`, this does not let a safe
 /// session id select any registered OpenSeek project; draft and turn mutation
 /// endpoints use it to verify the cwd they previously authorized themselves.
+/// `workspace` is a frontend resource URI path, decoded on its owning host.
 pub async fn resolve_host_workspace_authorization(
   session : String,
   workspace : String,
@@ -337,23 +344,39 @@ async test "host-authorized workspaces are exact and session-scoped" {
   let session = "codex-authorized-workspace-test"
   revoke_host_workspace(session)
   authorize_host_workspace(session, root)
-  let exact = resolve_host_workspace_authorization(session, root)
-  let authorized = resolve_in_workspace(session, "src/main.mbt", workspace=root)
+  guard @pathx.Path(root).to_absolute().bind(path => path.to_uri_path())
+    is Some(resource) else {
+    fail("expected a resource path")
+  }
+  let resource = match resource {
+    ['/', drive, ':', '/', .. rest] =>
+      "/" + drive.to_ascii_lowercase().to_string() + ":/" + rest.to_owned()
+    _ => resource
+  }
+  let exact = resolve_host_workspace_authorization(session, resource)
+  let authorized = resolve_in_workspace(
+    session,
+    "src/main.mbt",
+    workspace=resource,
+  )
   let other_session = resolve_in_workspace(
     "codex-other-workspace-test",
     "src/main.mbt",
-    workspace=root,
+    workspace=resource,
   )
-  let escape = resolve_in_workspace(session, "../outside", workspace=root)
+  let escape = resolve_in_workspace(session, "../outside", workspace=resource)
   revoke_host_workspace(session)
-  let revoked = resolve_in_workspace(session, "", workspace=root)
-  let exact_revoked = resolve_host_workspace_authorization(session, root)
+  let revoked = resolve_in_workspace(session, "", workspace=resource)
+  let exact_revoked = resolve_host_workspace_authorization(session, resource)
   @fs.rmdir(root, recursive=true) catch {
     _ => ()
   }
-  assert_true(
-    authorized is Some(path) &&
-    @pathx.Path(root).join(Relative("src/main.mbt")).to_absolute() == Some(path),
+  assert_eq(
+    authorized,
+    @pathx.Path(root)
+    .join(Relative("src/main.mbt"))
+    .to_absolute()
+    .map(path => path.normalize()),
   )
   assert_true(other_session is None)
   assert_true(exact is Some(_))
