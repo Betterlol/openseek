@@ -17,9 +17,10 @@ for (const language of ['', 'mbt']) {
     });
     const content = `\`\`\`${language}\nlet answer = 42\n\`\`\``;
     app.notify('agent.event', { ...run, event: { event: 'reasoning_delta', content } });
-    const thought = page.locator('#transcript .work-thinking');
-    await thought.locator(':scope > summary').click();
-    const body = thought.locator('.work-thinking-body');
+    const thought = page.locator('#transcript details.activity');
+    // Live reasoning starts expanded in the restored per-step presentation.
+    await expect(thought).toHaveAttribute('open', '');
+    const body = thought.locator('.activity-thinking');
     // Even a closed fence stays raw while more reasoning can arrive.
     await expect(body).toHaveText(content);
     await expect(body.locator('pre, code, [class^="mtk"]')).toHaveCount(0);
@@ -51,7 +52,9 @@ test('saved reasoning and answers default unlabelled code to MoonBit', async ({ 
   await app.install();
   await app.goto();
   await app.openSession();
-  for (const selector of ['.work-thinking-body', '.msg .msg-content']) {
+  // Saved reasoning starts folded; open it before checking rendered code.
+  await page.locator('#transcript details.activity > summary').click();
+  for (const selector of ['.activity-thinking', '.msg .msg-content']) {
     const body = page.locator('#transcript').locator(selector);
     await expect(body.locator('pre.moonbit-source')).toHaveCount(2);
     await expect(body.locator('pre.moonbit-source').first().locator('span[class^="mtk"]').first()).toHaveText('let');
