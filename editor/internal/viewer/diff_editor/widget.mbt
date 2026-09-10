@@ -52,6 +52,11 @@ pub struct DiffEditorWidget {
   mut original_alignment_geometry : PaneGeometrySnapshot?
   mut modified_alignment_geometry : PaneGeometrySnapshot?
   mut diff_state : DiffState?
+  priv mut hunk_action_renderer : ((Int) -> @rdom.Element?)?
+  priv hunk_actions : Array[(Int, @rdom.Element)]
+  priv mut navigate_from_active_hunk : Bool
+  priv mut active_hunk_index : Int?
+  priv did_change_active_hunk : @base_common.Emitter[Int?]
   /// The section-host contract is published only after one complete geometry
   /// reconcile has committed both panes' owned alignment zones. Retaining the
   /// last value prevents a host height write followed by `layout()` from
@@ -227,6 +232,11 @@ pub fn DiffEditorWidget::create(
     original_alignment_geometry: None,
     modified_alignment_geometry: None,
     diff_state: None,
+    hunk_action_renderer: None,
+    hunk_actions: [],
+    navigate_from_active_hunk: false,
+    active_hunk_index: None,
+    did_change_active_hunk: Emitter(),
     did_change_content_height: Emitter(),
     did_reveal_change: Emitter(),
     last_published_content_height: None,
@@ -350,13 +360,34 @@ fn DiffEditorWidget::layout_editors_after_render(
 
 ///|
 fn DiffEditorWidget::install_event_bridges(self : DiffEditorWidget) -> Unit {
+  // Explicit cursor movement restores cursor-relative navigation after a
+  // viewport selection; hunk reveals retain their own selected group.
+  self.lifetime.push(
+    self.editors.modified.on_did_change_cursor_position(event => {
+      if event.source == "mouse" || event.source == "keyboard" {
+        self.navigate_from_active_hunk = false
+      }
+    }),
+  )
   self.lifetime.push(
     self.view_model.on_did_change_model(() => {
       self.editors.set_model(self.view_model.get_model())
     }),
   )
   self.lifetime.push(
-    self.view_model.on_did_update_diff(() => self.reconcile_view_model()),
+    self.view_model.on_did_update_diff(() => {
+      // Diff computation may settle while geometry reconciliation is blocked
+      // on a render. Invalidate the logical navigation state immediately so a
+      // retained index can never identify a hunk from the next result.
+      match self.view_model.get_state() {
+        Ready => ()
+        NoModel | Pending | Failed => {
+          self.diff_state = None
+          self.set_active_hunk_index(None)
+        }
+      }
+      self.reconcile_view_model()
+    }),
   )
   // A stable layout anchor is valid across presentation/geometry churn, but
   // not across edits to the model it names. Content changes retain the model
@@ -415,6 +446,7 @@ fn DiffEditorWidget::install_event_bridges(self : DiffEditorWidget) -> Unit {
   self.lifetime.push(
     self.editors.modified.on_did_scroll_change(event => {
       self.refresh_overview_viewport()
+      self.layout_hunk_actions()
       let scroll_top_echo = self.consume_scroll_top_echo(
         ModifiedScrollPane,
         event.scroll_top,
@@ -431,6 +463,11 @@ fn DiffEditorWidget::install_event_bridges(self : DiffEditorWidget) -> Unit {
         if !scroll_top_echo {
           self.pending_layout_modified_viewport = None
           self.sync_scroll_top_to(OriginalScrollPane, event.scroll_top)
+        }
+        if self.options.handle_mouse_wheel {
+          self.track_hunk_at_viewport_offset(
+            self.editors.modified.get_layout_info().height * 0.5,
+          )
         }
       }
       if event.scroll_left_changed {
@@ -709,7 +746,9 @@ fn DiffEditorWidget::inline_original_width(
   decorations_left : Double,
 ) -> Double {
   let overview_width = if self.options.overview_ruler { 30.0 } else { 0.0 }
-  let panes_width = (self.layout_state.width - overview_width).max(0.0)
+  let panes_width = (self.layout_state.width -
+  overview_width -
+  self.hunk_action_gutter_width()).max(0.0)
   decorations_left.max(5.0).min(panes_width)
 }
 
@@ -1122,6 +1161,7 @@ fn DiffEditorWidget::commit_empty_diff_features(
   self.original_alignment_geometry = None
   self.modified_alignment_geometry = None
   self.diff_state = None
+  self.set_active_hunk_index(None)
   self.sync_failure_diagnostic()
 }
 
@@ -1276,6 +1316,7 @@ fn DiffEditorWidget::reconcile_view_model(self : DiffEditorWidget) -> Unit {
     // `commit_diff_state` has now replaced both sides' alignment zones. A
     // section host can synchronously adopt this height without observing the
     // one-pane Markdown/ViewZone intermediate state.
+    self.render_hunk_actions()
     self.publish_content_height_if_changed()
   }
   self.reconciling_generation += 1
@@ -1328,6 +1369,9 @@ pub fn DiffEditorWidget::set_model(
   self.pending_reveal_first_diff_generation = None
   self.pending_reveal_last_diff_generation = None
   self.pending_layout_modified_viewport = None
+  self.set_active_hunk_index(None)
+  self.navigate_from_active_hunk = false
+  self.clear_hunk_actions()
   self.clear_pending_scroll_echoes()
   self.clear_diff_features_for_transition()
   self.layout_editors_after_render()
@@ -1407,6 +1451,7 @@ pub fn DiffEditorWidget::update_options(
       editor_options,
       options.diff_word_wrap,
       self.layout_state.actual_layout,
+      options.render_markdown_comments,
       options.handle_mouse_wheel,
     )
     self.apply_layout_dom()
@@ -1528,6 +1573,38 @@ pub fn DiffEditorWidget::on_did_update_diff(
 }
 
 ///|
+pub fn DiffEditorWidget::get_hunks(self : DiffEditorWidget) -> Array[DiffHunk] {
+  match self.diff_state {
+    Some(diff_state) => diff_state.hunks()
+    None => []
+  }
+}
+
+///|
+pub fn DiffEditorWidget::get_active_hunk_index(self : DiffEditorWidget) -> Int? {
+  self.active_hunk_index
+}
+
+///|
+pub fn DiffEditorWidget::on_did_change_active_hunk(
+  self : DiffEditorWidget,
+  listener : (Int?) -> Unit,
+) -> @base_common.Disposable {
+  self.did_change_active_hunk.event(listener)
+}
+
+///|
+fn DiffEditorWidget::set_active_hunk_index(
+  self : DiffEditorWidget,
+  index : Int?,
+) -> Unit {
+  if self.active_hunk_index != index {
+    self.active_hunk_index = index
+    self.did_change_active_hunk.fire(index)
+  }
+}
+
+///|
 priv enum DiffNavigationPane {
   ModifiedNavigationPane
 }
@@ -1616,6 +1693,7 @@ fn DiffEditorWidget::reveal_navigation_target(
   ) else {
     return false
   }
+  self.set_active_hunk_index(Some(target.change_index))
   self.announce_navigation_target(target)
   true
 }
@@ -1681,11 +1759,12 @@ fn DiffEditorWidget::try_reveal_first_diff(self : DiffEditorWidget) -> Unit {
   self.pending_reveal_first_diff_generation = None
   let visible = diff_state.visible_mappings()
   if !visible.is_empty() {
-    self.reveal_change(
-      visible[0].line_range_mapping,
-      source="diffEditor.revealFirstDiff",
-    )
-    |> ignore
+    if self.reveal_change(
+        visible[0].line_range_mapping,
+        source="diffEditor.revealFirstDiff",
+      ) {
+      self.set_active_hunk_index(Some(0))
+    }
   }
 }
 
@@ -1734,11 +1813,13 @@ fn DiffEditorWidget::try_reveal_last_diff(self : DiffEditorWidget) -> Unit {
   self.pending_reveal_last_diff_generation = None
   let visible = diff_state.visible_mappings()
   guard !visible.is_empty() else { return }
-  self.reveal_change(
-    visible[visible.length() - 1].line_range_mapping,
-    source="diffEditor.revealLastDiff",
-  )
-  |> ignore
+  let hunks = diff_state.hunks()
+  if self.reveal_change(
+      visible[visible.length() - 1].line_range_mapping,
+      source="diffEditor.revealLastDiff",
+    ) {
+    self.set_active_hunk_index(Some(hunks.length() - 1))
+  }
 }
 
 ///|
@@ -1758,6 +1839,9 @@ pub fn DiffEditorWidget::reveal_last_diff(self : DiffEditorWidget) -> Unit {
 ///|
 pub fn DiffEditorWidget::reveal_next_change(self : DiffEditorWidget) -> Bool {
   guard self.view_model.get_model() is Some(model) else { return false }
+  if self.navigate_from_active_hunk {
+    return self.navigate_active_hunk(1, true)
+  }
   let current_line = self.editors.modified
     .get_position()
     .map_or(1, position => position.line_number)
@@ -1778,6 +1862,9 @@ pub fn DiffEditorWidget::reveal_next_change(self : DiffEditorWidget) -> Bool {
 pub fn DiffEditorWidget::reveal_next_change_without_wrap(
   self : DiffEditorWidget,
 ) -> Bool {
+  if self.navigate_from_active_hunk {
+    return self.navigate_active_hunk(1, false)
+  }
   let current_line = self.editors.modified
     .get_position()
     .map_or(1, position => position.line_number)
@@ -1793,6 +1880,9 @@ pub fn DiffEditorWidget::reveal_next_change_without_wrap(
 pub fn DiffEditorWidget::reveal_previous_change(
   self : DiffEditorWidget,
 ) -> Bool {
+  if self.navigate_from_active_hunk {
+    return self.navigate_active_hunk(-1, true)
+  }
   let current_line = self.editors.modified
     .get_position()
     .map_or(1, position => position.line_number)
@@ -1808,6 +1898,9 @@ pub fn DiffEditorWidget::reveal_previous_change(
 pub fn DiffEditorWidget::reveal_previous_change_without_wrap(
   self : DiffEditorWidget,
 ) -> Bool {
+  if self.navigate_from_active_hunk {
+    return self.navigate_active_hunk(-1, false)
+  }
   let current_line = self.editors.modified
     .get_position()
     .map_or(1, position => position.line_number)
@@ -1864,7 +1957,9 @@ fn DiffEditorWidget::apply_layout_dom(self : DiffEditorWidget) -> Unit {
       self.sash.remove_attribute("tabindex")
       self.modified_host.set_attribute("aria-label", "Modified file")
       let overview_width = if self.options.overview_ruler { 30.0 } else { 0.0 }
-      let panes_width = (self.layout_state.width - overview_width).max(0.0)
+      let panes_width = (self.layout_state.width -
+      overview_width -
+      self.hunk_action_gutter_width()).max(0.0)
       let original_width = self.inline_original_width(
         self.editors.original.get_layout_info().decorations_left,
       )
@@ -1907,6 +2002,7 @@ pub fn DiffEditorWidget::layout(self : DiffEditorWidget) -> Unit {
     self.editor_options,
     self.options.diff_word_wrap,
     self.layout_state.actual_layout,
+    self.options.render_markdown_comments,
     self.options.handle_mouse_wheel,
   )
   self.apply_layout_dom()
@@ -1966,6 +2062,9 @@ pub fn DiffEditorWidget::dispose(self : DiffEditorWidget) -> Unit {
   self.has_valid_layout_box = false
   self.inline_original_strip_width = -1.0
   self.clear_pending_scroll_echoes()
+  self.clear_hunk_actions()
+  self.hunk_action_renderer = None
+  self.did_change_active_hunk.dispose()
   self.did_change_content_height.dispose()
   self.did_reveal_change.dispose()
   self.host.remove_child(self.root.as_node())

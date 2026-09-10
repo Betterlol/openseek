@@ -22,15 +22,16 @@ struct DiffEditorModelPairCommitBarrier {
 }
 
 ///|
-let diff_control_lane_reserved_px : Int = 16
+let diff_markdown_comment_lane_reserved_px : Int = 16
 
 ///|
-/// Diff panes never install the folding contribution, but Markdown-comment
-/// and feedback controls still need the ordinary editor's 16px control lane.
-/// Add that lane explicitly so caller folding settings cannot remove it.
+/// Diff panes never install the folding contribution. Reserve its 16px lane
+/// only for rich Markdown-comment controls; source-only panes need no reserve.
+/// Feedback independently adds its own lane when enabled.
 fn diff_pane_options(
   editor_options : @code_widget.CodeEditorOptions,
   diff_word_wrap : DiffWordWrap,
+  render_markdown_comments : Bool,
   handle_mouse_wheel : Bool,
 ) -> @code_widget.CodeEditorOptions {
   (match diff_word_wrap {
@@ -38,7 +39,13 @@ fn diff_pane_options(
     Off => editor_options.with_soft_wrap(false)
   })
   .with_folding(false)
-  .with_additional_line_decorations_width(diff_control_lane_reserved_px)
+  .with_additional_line_decorations_width(
+    if render_markdown_comments {
+      diff_markdown_comment_lane_reserved_px
+    } else {
+      0
+    },
+  )
   .with_handle_mouse_wheel(handle_mouse_wheel)
 }
 
@@ -66,7 +73,7 @@ fn DiffEditorEditors::create(
     }
   }
   let pane_options = diff_pane_options(
-    editor_options, diff_word_wrap, handle_mouse_wheel,
+    editor_options, diff_word_wrap, render_markdown_comments, handle_mouse_wheel,
   )
   let editors : DiffEditorEditors = {
     original: @code_widget.CodeEditorWidget::create(
@@ -188,13 +195,14 @@ fn DiffEditorEditors::update_options(
   editor_options : @code_widget.CodeEditorOptions,
   diff_word_wrap : DiffWordWrap,
   layout : DiffEditorLayout,
+  render_markdown_comments : Bool,
   handle_mouse_wheel : Bool,
 ) -> Unit {
   if self.disposed {
     return
   }
   let pane_options = diff_pane_options(
-    editor_options, diff_word_wrap, handle_mouse_wheel,
+    editor_options, diff_word_wrap, render_markdown_comments, handle_mouse_wheel,
   )
   // Pinned DiffEditorEditors always updates both kernels. Inline's clipped
   // original must never wrap: deleted text wraps with the modified editor and

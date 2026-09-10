@@ -194,12 +194,14 @@ pub fn run_diff_markdown_comments_test() -> Unit {
   )
   let editor_options = Ref(diff_markdown_comment_editor_options("default"))
   let layout : Ref[@viewer.DiffEditorLayout] = Ref(Inline)
+  let render_markdown_comments = Ref(true)
   let diff_editor = @viewer.DiffEditor::create(
     host,
     services~,
     options=DiffEditorOptions(
       editor_options=editor_options.val,
       layout=layout.val,
+      render_markdown_comments=render_markdown_comments.val,
       automatic_inline=false,
     ),
   )
@@ -270,6 +272,7 @@ pub fn run_diff_markdown_comments_test() -> Unit {
         DiffEditorOptions(
           editor_options=editor_options.val,
           layout=layout.val,
+          render_markdown_comments=render_markdown_comments.val,
           automatic_inline=false,
         ),
       )
@@ -288,6 +291,18 @@ pub fn run_diff_markdown_comments_test() -> Unit {
         DiffEditorOptions(
           editor_options=editor_options.val,
           layout=layout.val,
+          render_markdown_comments=render_markdown_comments.val,
+          automatic_inline=false,
+        ),
+      )
+    },
+    enabled => {
+      render_markdown_comments.val = enabled
+      diff_editor.update_options(
+        DiffEditorOptions(
+          editor_options=editor_options.val,
+          layout=layout.val,
+          render_markdown_comments=enabled,
           automatic_inline=false,
         ),
       )
@@ -308,17 +323,19 @@ extern "js" fn install_diff_markdown_comments_controls(
   resize : (Int) -> Unit,
   set_feedback_enabled : (Bool) -> Unit,
   set_folding_mode : (String) -> Unit,
+  set_render_markdown_comments : (Bool) -> Unit,
   enable_auto_height : () -> Unit,
   content_height_event_count : () -> Int,
   content_height : () -> Double,
 ) -> Unit =
-  #| (setFixture, setLayout, resize, setFeedbackEnabled, setFoldingMode, enableAutoHeight, contentHeightEventCount, contentHeight) => {
+  #| (setFixture, setLayout, resize, setFeedbackEnabled, setFoldingMode, setRenderMarkdownComments, enableAutoHeight, contentHeightEventCount, contentHeight) => {
   #|   globalThis.__diffMarkdownCommentsControls = Object.freeze({
   #|     set_fixture: setFixture,
   #|     set_layout: setLayout,
   #|     resize,
   #|     set_feedback_enabled: setFeedbackEnabled,
   #|     set_folding_mode: setFoldingMode,
+  #|     set_render_markdown_comments: setRenderMarkdownComments,
   #|     enable_auto_height: enableAutoHeight,
   #|     content_height_event_count: contentHeightEventCount,
   #|     content_height: contentHeight,

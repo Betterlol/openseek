@@ -106,6 +106,7 @@ fn State::sync_semantic_review(self : State, ctx : Ctx) -> State {
   if input == self.semantic_review_input {
     return self
   }
+  let self = self.invalidate_review_hunk_surface()
   let plan = input.bind(input => {
     @moon_diff_provider.compute_sectioned_semantic_review_plan(
       input.old_source,
@@ -448,6 +449,7 @@ priv struct SemanticReviewEditorHost {
   editor : @viewer.DiffEditor
   provider : @moon_diff_provider.MoonFragmentDiffProvider?
   diff_subscription : @common.Disposable
+  active_hunk_subscription : @common.Disposable
   content_height_subscription : @common.Disposable
   navigation_reveal_subscription : @common.Disposable
   pending_navigation_reveal_generation : Ref[Int?]
@@ -494,12 +496,13 @@ fn semantic_review_navigation_sub_loader(
           @dom.document().get_element_by_id(SemanticReviewHostId).to_option()
           is Some(host) &&
           @base_browser.event_target_has_matching_ancestor(
-            event, host, ".semantic-diff-editor-host",
+            event, host, ".semantic-diff-entry",
           ) else {
           return
         }
-        // Capture runs before the child DiffEditor performs its own cyclic F7
-        // command, so exactly one aggregate MultiDiff navigation is emitted.
+        // Include section headers so F7 still works after collapsing the last
+        // editor. Capture precedes the child's cyclic F7 command, so exactly
+        // one aggregate MultiDiff navigation is emitted.
         event.prevent_default()
         event.stop_propagation()
         scheduler.add(
@@ -1154,6 +1157,7 @@ fn schedule_semantic_review_scroll_width_update() -> Unit {
 fn dispose_semantic_review_editor(entry : SemanticReviewEditorHost) -> Unit {
   semantic_review_navigation_generation.val += 1
   entry.diff_subscription.dispose()
+  entry.active_hunk_subscription.dispose()
   entry.content_height_subscription.dispose()
   entry.pending_navigation_reveal_generation.val = None
   entry.navigation_reveal_subscription.dispose()
@@ -1249,6 +1253,12 @@ fn create_semantic_review_editor(
   // below and do not wait for these compatibility layout frames.
   let diff_subscription = editor.on_did_update_diff(() => {
     schedule_semantic_review_scroll_width_update()
+    publish_current_semantic_review_active_hunk(input)
+  })
+  let active_hunk_subscription = editor.on_did_change_active_hunk(active_index => {
+    publish_semantic_review_active_hunk(
+      input, key, editor, section, active_index,
+    )
   })
   // DiffEditor publishes only after the comment ViewZone and both panes'
   // derived alignment zones have committed. Resize synchronously in that same
@@ -1268,6 +1278,13 @@ fn create_semantic_review_editor(
   })
   let focus_listener : @dom.Listener = _ => {
     semantic_review_active_key.val = Some(key)
+    publish_semantic_review_active_hunk(
+      input,
+      key,
+      editor,
+      section,
+      editor.get_active_hunk_index(),
+    )
   }
   host.add_event_listener("focusin", focus_listener)
   let focus_subscription = @common.Disposable::from(() => {
@@ -1301,6 +1318,7 @@ fn create_semantic_review_editor(
     editor,
     provider,
     diff_subscription,
+    active_hunk_subscription,
     content_height_subscription,
     navigation_reveal_subscription,
     pending_navigation_reveal_generation,
@@ -1367,10 +1385,47 @@ fn clear_semantic_review_editors() -> Unit {
 }
 
 ///|
-fn semantic_review_navigation_index(current : String?) -> Int {
-  guard current is Some(current) else { return 0 }
-  let index = semantic_review_order.search(current)
-  index.unwrap_or(0)
+fn semantic_review_navigation_index(current : String?) -> Int? {
+  guard current is Some(current) else { return None }
+  semantic_review_order.search(current)
+}
+
+///|
+fn semantic_review_hunk_position(
+  key : String,
+  active_index : Int?,
+) -> ReviewHunkPosition? {
+  guard active_index is Some(active_index) else { return None }
+  let mut current : Int? = None
+  let mut total = 0
+  for section_key in semantic_review_order {
+    let count = semantic_review_editors
+      .get(section_key)
+      .map(entry => entry.editor.get_hunks().length())
+      .unwrap_or(0)
+    if section_key == key && active_index >= 0 && active_index < count {
+      current = Some(total + active_index)
+    }
+    total += count
+  }
+  ReviewHunkPosition::from_zero_based(current, total)
+}
+
+///|
+fn publish_current_semantic_review_active_hunk(
+  input : SemanticReviewInput,
+) -> Unit {
+  guard semantic_review_active_key.val is Some(key) &&
+    semantic_review_editors.get(key) is Some(entry) else {
+    return
+  }
+  publish_semantic_review_active_hunk(
+    input,
+    key,
+    entry.editor,
+    entry.section,
+    entry.editor.get_active_hunk_index(),
+  )
 }
 
 ///|
@@ -1393,7 +1448,24 @@ fn navigate_semantic_review_change(
 ) -> @cmd.Cmd {
   @cmd.custom_cmd(scheduler => {
     guard !semantic_review_order.is_empty() else { return }
-    let index = semantic_review_navigation_index(semantic_review_active_key.val)
+    guard semantic_review_navigation_index(semantic_review_active_key.val)
+      is Some(index) else {
+      // With every section collapsed there is no active editor. Enter at the
+      // boundary instead of treating the first section as already visited.
+      let target_index = match direction {
+        SemanticReviewPrevious => semantic_review_order.length() - 1
+        SemanticReviewNext => 0
+      }
+      scheduler.add(
+        dispatch(
+          RevealSemanticReviewSectionChange(
+            semantic_review_order[target_index],
+            direction is SemanticReviewPrevious,
+          ),
+        ),
+      )
+      return
+    }
     let current = semantic_review_order[index]
     if !collapsed.contains(current) &&
       semantic_review_editors.get(current) is Some(entry) {
@@ -1460,20 +1532,34 @@ fn reveal_semantic_review_section_change(
 ///|
 /// Reconcile section widgets after Rabbita has committed their keyed hosts.
 /// Unchanged sections retain their editor models, selection, and scroll state.
-fn sync_semantic_review_editors(state : State) -> @cmd.Cmd {
+fn sync_semantic_review_editors(
+  dispatch : @cmd.Emit[Msg],
+  state : State,
+  active_file : @pathx.Relative?,
+) -> @cmd.Cmd {
   @cmd.custom_cmd(
-    _scheduler => {
+    scheduler => {
+      sync_review_hunk_bridge_target(state, active_file, msg => {
+        scheduler.add(dispatch(msg))
+      })
       guard state.semantic_review_input is Some(input) else {
         clear_semantic_review_editors()
+        sync_review_hunk_actions(state)
         return
       }
       let desired = semantic_sections(state.semantic_review_plan)
       let desired_keys = desired.map(section => section.key)
+      let visible_keys = desired_keys.filter(key => {
+        !state.semantic_review_collapsed.contains(key)
+      })
       semantic_review_order.clear()
       semantic_review_order.append(desired_keys)
       if semantic_review_active_key.val is Some(key) &&
-        !desired_keys.contains(key) {
+        !visible_keys.contains(key) {
         semantic_review_active_key.val = None
+      }
+      if semantic_review_active_key.val is None && !visible_keys.is_empty() {
+        semantic_review_active_key.val = Some(visible_keys[0])
       }
       let stale = semantic_review_editors
         .to_array()
@@ -1530,6 +1616,17 @@ fn sync_semantic_review_editors(state : State) -> @cmd.Cmd {
           semantic_review_editors[key] = entry
         }
       }
+      if semantic_review_active_key.val is Some(key) &&
+        semantic_review_editors.get(key) is Some(entry) {
+        publish_semantic_review_active_hunk(
+          input,
+          key,
+          entry.editor,
+          entry.section,
+          entry.editor.get_active_hunk_index(),
+        )
+      }
+      sync_review_hunk_actions(state)
       update_semantic_review_scroll_width()
       schedule_semantic_review_scroll_width_update()
     },

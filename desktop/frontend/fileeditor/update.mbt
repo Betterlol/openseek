@@ -401,7 +401,7 @@ pub fn open_document(
   had_active~ : Bool,
 ) -> (@cmd.Cmd, State) {
   guard ctx.placement_ready() else { return (@cmd.none, state) }
-  let state = { ..state, highlighted: None, }
+  let state = { ..state.invalidate_review_hunk_surface(), highlighted: None, }
   // Opening the path from Files, Quick Open, navigation, or a mention leaves
   // review mode. If the same Viewer model stays attached, the show below
   // clears its resource-keyed quick-diff baseline without replacing content.
@@ -538,8 +538,19 @@ pub fn open_changed_document(
   guard ctx.placement_ready() && change.selectable() else {
     return (@cmd.none, state)
   }
-  let state = { ..state, highlighted: None, }
   let path = change.path
+  let reusing_exact_review = state.docs
+    .get(path)
+    .map(doc => doc.review is Some({ selected, .. }) && selected == change)
+    .unwrap_or(false)
+  let state = {
+    ..(if reusing_exact_review {
+      state.clear_review_active_hunk()
+    } else {
+      state.invalidate_review_hunk_surface()
+    }),
+    highlighted: None,
+  }
   // Selecting a Changes row is activation, not a manual reload. Reuse the
   // exact cached review (including one whose paired reads are still pending)
   // so repeated clicks cannot replace its generation, clear its DiffEditor
@@ -1057,7 +1068,7 @@ pub fn activate(
   guard ctx.placement_ready() && state.docs.get(path) is Some(doc) else {
     return (@cmd.none, state)
   }
-  let state = { ..state, highlighted: None, }
+  let state = { ..state.invalidate_review_hunk_surface(), highlighted: None, }
   let (show, doc, review_generation) = show_activated_tab(
     dispatch,
     ctx,
@@ -2247,7 +2258,7 @@ pub fn sync(
     graph_cmd,
     history_cmd,
     package_graph_cmd,
-    sync_semantic_review_editors(state),
+    sync_semantic_review_editors(dispatch, state, ctx.active_file),
   ])
   // A closed panel re-roots (above) and keeps the watcher placed, but the tree
   // itself can wait for the reopen. Unresolved placement takes the same early
@@ -2324,7 +2335,10 @@ fn select_review_view_mode(
     ReviewSource => @cmd.batch([show, request_viewer_remeasure()])
     ReviewDiff => show
   }
-  (command, { ..state, docs, review_view_mode: view_mode, })
+  (
+    command,
+    { ..state, docs, review_view_mode: view_mode, }.invalidate_review_hunk_surface(),
+  )
 }
 
 ///|
@@ -2470,7 +2484,10 @@ pub fn update(
     }
     ReviewDiffModeSelected(mode) => {
       guard moon_diff_available(state, ctx) else { return (@cmd.none, state) }
-      let selected = { ..state, review_diff_mode: mode, }
+      let selected = {
+        ..state.invalidate_review_hunk_surface(),
+        review_diff_mode: mode,
+      }
       if ctx.active_file is Some(path) &&
         state.docs.get(path)
         is Some({ review: Some({ view_mode: ReviewSource, .. }), .. }) {
@@ -2491,7 +2508,13 @@ pub fn update(
         return (@cmd.none, state)
       }
       let ignore_comments = !state.review_diff_ignore_comments
-      (@cmd.none, { ..state, review_diff_ignore_comments: ignore_comments, })
+      (
+        @cmd.none,
+        {
+          ..state.invalidate_review_hunk_surface(),
+          review_diff_ignore_comments: ignore_comments,
+        },
+      )
     }
     ToggleReviewDiffIgnoreTests => {
       guard moon_diff_ready(state, ctx) &&
@@ -2499,7 +2522,13 @@ pub fn update(
         return (@cmd.none, state)
       }
       let ignore_tests = !state.review_diff_ignore_tests
-      (@cmd.none, { ..state, review_diff_ignore_tests: ignore_tests, })
+      (
+        @cmd.none,
+        {
+          ..state.invalidate_review_hunk_surface(),
+          review_diff_ignore_tests: ignore_tests,
+        },
+      )
     }
     SemanticReviewSectionToggled(key) => {
       guard semantic_sections(state.semantic_review_plan).any(section => {
@@ -2516,7 +2545,10 @@ pub fn update(
         collapsed.push(key)
         collapsed
       }
-      (@cmd.none, { ..state, semantic_review_collapsed, })
+      (
+        @cmd.none,
+        { ..state.invalidate_review_hunk_surface(), semantic_review_collapsed, },
+      )
     }
     ReviewDiffNavigationAvailabilityChanged(available) =>
       (@cmd.none, { ..state, review_diff_navigation_available: available, })
@@ -2576,15 +2608,62 @@ pub fn update(
         files.contains(review.selected) else {
         return (@cmd.none, state)
       }
-      let reviewed_changes = if state.reviewed_changes.contains(review.selected) {
-        state.reviewed_changes.filter(change => change != review.selected)
+      let next = if state.is_change_reviewed(review.selected) {
+        state.set_review_file_progress(review.selected, None)
       } else {
-        let reviewed_changes = state.reviewed_changes.copy()
-        reviewed_changes.push(review.selected)
-        reviewed_changes
+        state.set_review_file_progress(
+          review.selected,
+          Some(ReviewFileComplete),
+        )
       }
-      (@cmd.none, { ..state, reviewed_changes, })
+      (@cmd.none, next)
     }
+    ReviewActiveHunkChanged(
+      change~,
+      review_generation~,
+      surface_generation~,
+      hunk~,
+      file_changes~,
+      position~
+    ) =>
+      (
+        @cmd.none,
+        state.accept_active_review_hunk(
+          change,
+          review_generation,
+          surface_generation,
+          hunk,
+          file_changes,
+          position,
+          ctx.active_file,
+        ),
+      )
+    ToggleReviewHunk(
+      change~,
+      review_generation~,
+      surface_generation~,
+      hunk~,
+      file_changes~,
+      position~
+    ) => {
+      guard state.current_review_generation(change, ctx.active_file) ==
+        Some(review_generation) &&
+        state.review_hunk_surface_generation == surface_generation else {
+        return (@cmd.none, state)
+      }
+      let next = state.accept_active_review_hunk(
+        change,
+        review_generation,
+        surface_generation,
+        Some(hunk),
+        file_changes,
+        position,
+        ctx.active_file,
+      )
+      (@cmd.none, next.toggle_active_review_hunk(ctx.active_file))
+    }
+    ToggleActiveReviewHunk =>
+      (@cmd.none, state.toggle_active_review_hunk(ctx.active_file))
     Search(msg) => {
       let search = state.search.handle(msg, ctx.search_input())
       let next = { ..state, search, }
@@ -3014,12 +3093,22 @@ pub fn update(
           @cmd.none
         }
         review_cmds.push(settle)
-        let reviewed_changes = if follow_up {
-          state.reviewed_changes
+        let review_progress = if follow_up {
+          state.review_progress
         } else if head_changed {
           []
         } else {
-          state.reviewed_changes.filter(change => files.contains(change))
+          state.review_progress.filter(entry => files.contains(entry.change))
+        }
+        let review_active_hunk = if follow_up {
+          state.review_active_hunk
+        } else if head_changed {
+          None
+        } else {
+          match state.review_active_hunk {
+            Some(active) if files.contains(active.change) => Some(active)
+            _ => None
+          }
         }
         (
           @cmd.batch(review_cmds),
@@ -3038,7 +3127,8 @@ pub fn update(
             },
             changes_generation: next_generation,
             review_generation,
-            reviewed_changes,
+            review_progress,
+            review_active_hunk,
             background_review_requests,
             review_recovery_pending: if follow_up {
               state.review_recovery_pending
@@ -3433,7 +3523,8 @@ pub fn update(
         }
         let state = {
           ..state,
-          reviewed_changes: [],
+          review_progress: [],
+          review_active_hunk: None,
           index,
           watching,
           // Agent runs can alter unopened package manifests outside the
@@ -3490,10 +3581,17 @@ pub fn update(
         ctx.root() is Some(ctx_root) &&
         ctx_root == root &&
         generation == ctx.watch_identity(state.watch_generation) {
-        let reviewed_changes = match changes {
+        let review_progress = match changes {
           Some(changes) =>
-            state.reviewed_changes.filter(change => !change.touched_by(changes))
-          None => state.reviewed_changes
+            state.review_progress.filter(entry => {
+              !entry.change.touched_by(changes)
+            })
+          None => state.review_progress
+        }
+        let review_active_hunk = match (state.review_active_hunk, changes) {
+          (Some(active), Some(changes)) if active.change.touched_by(changes) =>
+            None
+          (active, _) => active
         }
         // A baseline checks the whole selection after watcher replacement.
         // Concrete batches stat only affected open files (the dock strip's
@@ -3630,7 +3728,8 @@ pub fn update(
         let next = {
           ..state,
           loading,
-          reviewed_changes,
+          review_progress,
+          review_active_hunk,
           index,
           package_graphs,
         }

@@ -647,6 +647,17 @@ fn embed_diff_editor() -> @viewer.DiffEditor {
         .to_option()
         .unwrap()
       let view = @viewer.DiffEditor::create(host)
+      view.set_hunk_action_renderer(
+        Some(index => {
+          let button = @rdom.document().create_element("button")
+          button.set_attribute("type", "button")
+          button.set_inner_html("✓")
+          button.set_attribute("title", "Select hunk \{index + 1}")
+          button.set_attribute("aria-label", "Select hunk \{index + 1}")
+          button.add_event_listener("click", _ => view.select_hunk(index))
+          Some(button)
+        }),
+      )
       embed_diff_editor_cell.val = Some(view)
       view
     }
