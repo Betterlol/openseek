@@ -2459,25 +2459,22 @@ button.git-history-file.selected {
 .semantic-review-host .semantic-review {
   position: relative;
   box-sizing: border-box;
-  width: 100%;
+  width: calc(
+    var(--semantic-review-viewport-width, 100%) +
+      var(--semantic-review-scroll-width, 0px)
+  );
   min-height: 100%;
   min-width: 0;
 }
 
 .semantic-review-host .semantic-document {
-  position: relative;
-  z-index: 1;
-  width: 100%;
-  min-width: 0;
-}
-
-.semantic-review-host .semantic-review-scroll-width {
-  position: absolute;
-  top: 0;
+  /* Pin the item frames in the browser's scroll pass, before JS receives a
+     scroll event. The wider parent supplies the shared horizontal extent. */
+  position: sticky;
   left: 0;
-  height: 1px;
-  pointer-events: none;
-  visibility: hidden;
+  z-index: 1;
+  width: var(--semantic-review-viewport-width, 100%);
+  min-width: 0;
 }
 
 .semantic-review-host .semantic-diff-entry {
