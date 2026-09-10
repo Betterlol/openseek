@@ -1070,6 +1070,41 @@
   color: var(--color-text-faint);
   text-align: center;
 }
+/* Keep status at the far right, after the summary's ::after disclosure arrow.
+   The arrow stays beside the caption while the auto margin separates status. */
+.tool-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  margin-left: auto;
+  order: 1;
+}
+.tool-status.failed {
+  color: var(--color-danger);
+}
+.tool-status-spinner {
+  box-sizing: border-box;
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: tool-status-spin 0.8s linear infinite;
+}
+@keyframes tool-status-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tool-status-spinner {
+    animation: none;
+  }
+}
 .tool-call-summary:hover,
 .tool-result-summary:hover {
   color: var(--color-text-secondary);
@@ -1107,10 +1142,9 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
-/* The trailing marker belongs to rows that own a fold; `.tool-call-label`
-   rows have nothing to disclose and stay bare. It is the summary's own last
-   flex item rather than part of the text span, so a truncated brief cannot
-   ellipsize it away. */
+/* The marker belongs to rows that own a fold; `.tool-call-label` rows have
+   nothing to disclose and stay bare. Its separate flex item follows the
+   caption but precedes status, and cannot be ellipsized with a long brief. */
 .tool-call-summary::after,
 .tool-result-summary::after {
   content: "▸";
