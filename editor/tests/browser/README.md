@@ -28,6 +28,12 @@ the `smoke/` and `component/` directories.
   pass/fail. The shared harness records console messages and fails a passing
   test if it observed a console error, uncaught page error, failed request, or
   HTTP response at status 400 or above.
+- The `diff-editor-lifecycle` scenario exposes
+  `__diffEditorLifecycleControls.set_scroll_left` for MultiDiff host writes.
+  `horizontal-original`, `horizontal-modified`, and `horizontal-equal` select
+  unwrapped model pairs. Run `playwright test
+  tests/browser/component/diff_editor_lifecycle.spec.js --grep 'shared horizontal
+  scroll'` to check asymmetric clamping and repeated/reversed host offsets.
 - Every component case must state a browser-only contract. Headless Viewer
   tests own model, view-model, contribution, provider, cancellation, and
   event-order state. Component Playwright owns attachment, node ownership,

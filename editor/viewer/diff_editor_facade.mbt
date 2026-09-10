@@ -281,7 +281,8 @@ pub fn DiffEditor::get_max_scroll_left(self : DiffEditor) -> Double {
 }
 
 ///|
-/// Set the shared horizontal offset of both diff panes.
+/// Set the shared horizontal offset through the pane with the larger overflow.
+/// The other pane follows and clamps at its own limit.
 pub fn DiffEditor::set_scroll_left(
   self : DiffEditor,
   scroll_left : Double,

@@ -1483,14 +1483,22 @@ pub fn DiffEditorWidget::get_max_scroll_left(self : DiffEditorWidget) -> Double 
 }
 
 ///|
-/// Apply the MultiDiffEditor's shared horizontal offset to both panes. The
-/// existing pane synchronization absorbs any resulting scroll event echo.
+/// Drive the pane with the larger overflow, as VS Code's
+/// DiffEditorItemTemplate.setScrollLeft does (Original on a tie). Its normal
+/// synchronization clamps the other pane without feeding that clamp back.
 pub fn DiffEditorWidget::set_scroll_left(
   self : DiffEditorWidget,
   scroll_left : Double,
 ) -> Unit {
-  self.editors.original.set_scroll_left(scroll_left)
-  self.editors.modified.set_scroll_left(scroll_left)
+  let original = self.editors.original.get_scroll_width() -
+    self.editors.original.get_layout_info().content_width
+  let modified = self.editors.modified.get_scroll_width() -
+    self.editors.modified.get_layout_info().content_width
+  if modified > original {
+    self.editors.modified.set_scroll_left(scroll_left)
+  } else {
+    self.editors.original.set_scroll_left(scroll_left)
+  }
 }
 
 ///|

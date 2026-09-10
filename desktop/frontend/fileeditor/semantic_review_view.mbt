@@ -180,9 +180,6 @@ fn semantic_editor_host_id(key : String) -> String {
 }
 
 ///|
-const SemanticReviewScrollWidthId = "semantic-review-scroll-width"
-
-///|
 /// Semantic fragments use side-specific schemes so the language registry can
 /// expose current-checkout IDE actions on Modified without advertising them on
 /// an Original revision that the host cannot answer for.
@@ -436,20 +433,7 @@ pub fn semantic_review_view(
           "unified"
         },
       ),
-    [
-      semantic_plan_view(dispatch, plan, input, state.semantic_review_collapsed),
-      // VS Code's MultiDiffEditor owns one horizontal scroll extent. The
-      // imperative lifecycle sizes this otherwise invisible element from the
-      // widest local DiffEditor and mirrors the outer scrollLeft into all
-      // entries.
-      @html.div(
-        attrs=@html.Attrs::build()
-          .id(SemanticReviewScrollWidthId)
-          .class("semantic-review-scroll-width")
-          .aria_hidden("true"),
-        ([] : Array[@html.Html]),
-      ),
-    ],
+    [semantic_plan_view(dispatch, plan, input, state.semantic_review_collapsed)],
   )
 }
 
@@ -570,9 +554,7 @@ fn semantic_review_navigation_subscription(
 ///|
 fn update_semantic_review_scroll_width() -> Unit {
   guard @dom.document().get_element_by_id(SemanticReviewHostId).to_option()
-    is Some(host) &&
-    @dom.document().get_element_by_id(SemanticReviewScrollWidthId).to_option()
-    is Some(spacer) else {
+    is Some(host) else {
     return
   }
   let mut max_scroll = 0.0
@@ -582,9 +564,14 @@ fn update_semantic_review_scroll_width() -> Unit {
     }
   }
   @base_browser.set_style_property(
-    spacer,
-    "width",
-    "\{(host.get_client_width() + max_scroll).ceil()}px",
+    host,
+    "--semantic-review-viewport-width",
+    "\{host.get_client_width()}px",
+  )
+  @base_browser.set_style_property(
+    host,
+    "--semantic-review-scroll-width",
+    "\{max_scroll.ceil()}px",
   )
   sync_semantic_review_scroll_left(host.get_scroll_left())
 }
@@ -594,19 +581,9 @@ fn update_semantic_review_scroll_width() -> Unit {
 /// mirrors VS Code's `VirtualizedViewItem.setScrollLeft` without exposing each
 /// DiffEditor's own horizontal scrollbar.
 fn sync_semantic_review_scroll_left(scroll_left : Double) -> Unit {
-  // A native overflow element supplies the one visible scrollbar, but VS
-  // Code's SmoothScrollableElement does not translate the MultiDiff item DOM.
-  // Counter the browser's native translation, then project the offset into
-  // every DiffEditor so headers stay put and code moves exactly once.
-  if @dom.document().get_element_by_id(SemanticReviewHostId).to_option()
-    is Some(host) &&
-    host.query_selector(".semantic-document") is Some(document) {
-    @base_browser.set_style_property(
-      document,
-      "transform",
-      "translateX(\{scroll_left}px)",
-    )
-  }
+  // CSS pins the item DOM to the viewport during native scrolling. Only the
+  // editor contents need projection; a scroll-event transform would lag the
+  // compositor and briefly move the headers and split-pane frames.
   for _, entry in semantic_review_editors {
     entry.editor.set_scroll_left(scroll_left)
   }

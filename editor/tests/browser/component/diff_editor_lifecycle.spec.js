@@ -68,6 +68,53 @@ async function disposeDiffLifecycle(page) {
   });
 }
 
+// Behavior port: VS Code 07c20d96cf3f2cbc8142ac7079ba9048cf7f6134,
+// multiDiffEditor/diffEditorItemTemplate.ts, setScrollLeft. The outer host
+// drives the pane with the larger overflow; the narrower pane clamps locally.
+// Chromium is required because the pane scroll echoes fire during rendering.
+for (const wider of ['original', 'modified', 'equal']) {
+  test(`shared horizontal scroll preserves each pane's limit (${wider})`, async ({ page }) => {
+    const root = await openDiffLifecycle(page);
+    await setDiffLifecycleFixture(page, `horizontal-${wider}`);
+    const readPanes = () => root.evaluate((node) =>
+      [...node.querySelectorAll('.moonbit-diff-editor-pane')].map((pane) => {
+        const lines = pane.querySelector('.view-lines');
+        const viewport = pane.querySelector('.monaco-scrollable-element');
+        const content = pane.querySelector('.lines-content');
+        return {
+          maxLeft: lines.clientWidth - viewport.clientWidth,
+          left: Math.max(0, -Number.parseFloat(content.style.left)),
+        };
+      }),
+    );
+    await expect.poll(async () => Math.min(...(await readPanes()).map(p => p.maxLeft)))
+      .toBeGreaterThan(100);
+    const initial = await readPanes();
+    const [originalMax, modifiedMax] = initial.map(p => p.maxLeft);
+    if (wider === 'equal') {
+      expect(originalMax).toBe(modifiedMax);
+    } else {
+      expect(wider === 'original' ? originalMax - modifiedMax : modifiedMax - originalMax)
+        .toBeGreaterThan(100);
+    }
+    const sharedMax = Math.min(originalMax, modifiedMax);
+    // Cross the short pane's limit, repeat the outer write (e.g. vertical
+    // host scrolling), overshoot both limits, then reverse into shared range.
+    for (const requested of [sharedMax + 80, sharedMax + 80, 100_000, 80, 0]) {
+      await page.evaluate(left =>
+        globalThis.__diffEditorLifecycleControls.set_scroll_left(left), requested,
+      );
+      await waitForAnimationFrames(page, 6);
+      const panes = await readPanes();
+      for (const [index, pane] of panes.entries()) {
+        expect(pane.left, `pane ${index}, request ${requested}`)
+          .toBe(Math.min(requested, initial[index].maxLeft));
+      }
+    }
+    await disposeDiffLifecycle(page);
+  });
+}
+
 async function modifiedScrollTop(root) {
   return root.evaluate((node) => {
     const content = node.querySelector(

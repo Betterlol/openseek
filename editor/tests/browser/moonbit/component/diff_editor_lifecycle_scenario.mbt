@@ -230,10 +230,24 @@ pub fn run_diff_editor_lifecycle_test() -> Unit {
     "new second hunk at line 100" +
     first_line_suffix,
   )
+  let horizontal_narrow = diff_editor_lifecycle_model(
+    "horizontal-narrow",
+    ("n".repeat(100) + "\n").repeat(40),
+  )
+  let horizontal_wide = diff_editor_lifecycle_model(
+    "horizontal-wide",
+    ("w".repeat(200) + "\n").repeat(40),
+  )
   widget.set_model(Some({ original, modified, })) |> ignore
   install_diff_editor_lifecycle_controls(
     fixture => {
       let pair : @diff_editor.DiffEditorModelData = match fixture {
+        "horizontal-original" =>
+          { original: horizontal_wide, modified: horizontal_narrow, }
+        "horizontal-modified" =>
+          { original: horizontal_narrow, modified: horizontal_wide, }
+        "horizontal-equal" =>
+          { original: horizontal_wide, modified: horizontal_wide, }
         "ignored" => { original: ignored_original, modified: ignored_modified, }
         "digits" => { original: digit_original, modified: digit_modified, }
         "indicators" =>
@@ -242,6 +256,17 @@ pub fn run_diff_editor_lifecycle_test() -> Unit {
         "first-line" =>
           { original: first_line_original, modified: first_line_modified, }
         _ => { original, modified, }
+      }
+      if fixture.has_prefix("horizontal-") {
+        widget.update_options(
+          @code_widget.CodeEditorOptions::default(),
+          DiffEditorOptions(
+            layout=SideBySide,
+            automatic_inline=false,
+            diff_word_wrap=Off,
+            handle_mouse_wheel=false,
+          ),
+        )
       }
       widget.set_model(Some(pair)) |> ignore
     },
@@ -285,8 +310,11 @@ pub fn run_diff_editor_lifecycle_test() -> Unit {
     },
     () => widget.reveal_first_diff(),
     () => widget.reveal_last_diff(),
+    left => widget.set_scroll_left(left),
     () => widget.dispose(),
     () => {
+      horizontal_narrow.dispose()
+      horizontal_wide.dispose()
       ignored_original.dispose()
       ignored_modified.dispose()
       original.dispose()
@@ -312,10 +340,11 @@ extern "js" fn install_diff_editor_lifecycle_controls(
   set_model_attached : (Bool) -> Unit,
   reveal_first_diff : () -> Unit,
   reveal_last_diff : () -> Unit,
+  set_scroll_left : (Double) -> Unit,
   dispose : () -> Unit,
   dispose_models : () -> Unit,
 ) -> Unit =
-  #| (setFixture, setDigitLineCount, setOptions, setProvider, setModelAttached, revealFirstDiff, revealLastDiff, dispose, disposeModels) => {
+  #| (setFixture, setDigitLineCount, setOptions, setProvider, setModelAttached, revealFirstDiff, revealLastDiff, setScrollLeft, dispose, disposeModels) => {
   #|   globalThis.__diffEditorLifecycleControls = Object.freeze({
   #|     set_fixture: setFixture,
   #|     set_digit_line_count: setDigitLineCount,
@@ -324,6 +353,7 @@ extern "js" fn install_diff_editor_lifecycle_controls(
   #|     set_model_attached: setModelAttached,
   #|     reveal_first_diff: revealFirstDiff,
   #|     reveal_last_diff: revealLastDiff,
+  #|     set_scroll_left: setScrollLeft,
   #|     dispose,
   #|     dispose_models: disposeModels,
   #|   });
