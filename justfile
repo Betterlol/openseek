@@ -1,3 +1,9 @@
+# Use Windows PowerShell without requiring Git Bash or WSL.
+set windows-shell := ["powershell.exe", "-NoLogo", "-NoProfile", "-Command"]
+
+PYTHON := if os() == "windows" { "python" } else { "python3" }
+CRAM_SHELL := if os() == "windows" { env_var("ProgramFiles") / "Git/bin/bash.exe" } else { "bash" }
+
 default:
     just --list
 
@@ -28,14 +34,16 @@ inspect *args:
     moon run inspect -- {{ args }}
 
 # Run workspace MoonBit tests plus the offline OpenSeek CLI documentation tests.
-test: test-moon
-    moon cram test tests/cram
-    just test-turn-finish
+test: test-moon test-cram test-turn-finish
+
+# Run the offline CLI documentation tests (Git Bash on Windows).
+test-cram:
+    moon cram test tests/cram --shell '{{ CRAM_SHELL }}'
 
 # Real CLI lifecycle regression with an offline scripted model (Python 3).
 test-turn-finish:
     moon build cmd/openseek --target native
-    python3 tests/integration/turn_finish.py _build/native/debug/build/bobzhang/openseek/cmd/openseek/openseek.exe
+    {{ PYTHON }} tests/integration/turn_finish.py _build/native/debug/build/bobzhang/openseek/cmd/openseek/openseek.exe
 
 test-moon:
     moon test --target native
