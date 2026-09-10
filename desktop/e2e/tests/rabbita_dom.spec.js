@@ -771,6 +771,10 @@ test('tool-call tabs keep focus-driven scrolling inside the transcript', async (
   const tabs = transcript.locator('.tool-call-tabs');
   const originalJson = tabs.getByText('Original JSON', { exact: true });
   await transcript.locator('.tool-call-summary').click();
+  // Revealing a contained row must not scroll the fixed shell either; the
+  // document can remain at zero while #app shifts its entire grid by 1–2px.
+  expect(await page.locator('#app').evaluate(node =>
+    ({ top: node.scrollTop, left: node.scrollLeft }))).toEqual({ top: 0, left: 0 });
   await transcript.evaluate(node => {
     node.scrollTop = node.scrollHeight;
   });
@@ -791,6 +795,8 @@ test('tool-call tabs keep focus-driven scrolling inside the transcript', async (
   expect(await page.evaluate(() => document.scrollingElement.scrollTop)).toBe(0);
   expect(await page.locator('.app').evaluate(node =>
     node.getBoundingClientRect().top)).toBe(0);
+  expect(await page.locator('#app').evaluate(node =>
+    ({ top: node.scrollTop, left: node.scrollLeft }))).toEqual({ top: 0, left: 0 });
   expect(app.pageErrors).toEqual([]);
 });
 

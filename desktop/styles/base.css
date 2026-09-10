@@ -11,6 +11,14 @@ body,
   overflow: hidden;
 }
 
+/* The fixed shell must not be a scroll container. Unlike hidden, clip also
+   prevents focus/scroll-into-view from moving the whole app when a contained
+   transcript row briefly contributes a few pixels of overflow. Inner panes
+   still own their scrolling. */
+#app {
+  overflow: clip;
+}
+
 /* Mobile browsers grow and shrink the viewport as their toolbars
    collapse; the dynamic unit tracks the real visible height so the
    composer stays glued to the bottom instead of floating mid-page. */
