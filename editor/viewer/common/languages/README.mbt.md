@@ -439,3 +439,23 @@ See `pkg.generated.mbti` for the complete surface.
 ```sh
 moon test --target js viewer/common/languages
 ```
+
+## CodeLens
+
+`register_code_lens_provider` supplies complete `CodeLens` values: a source
+range, title, optional tooltip, and an async execution callback. Results are
+ordered by source line, provider priority, then producer order. A failing
+provider does not hide other providers' results.
+
+The Viewer owns one cancellation token per result set. It remains live after
+`provide_code_lenses` returns and is cancelled immediately on model changes,
+provider invalidation, option disable, or disposal. Execution callbacks must
+check it after asynchronous work before changing host UI. The Viewer prevents
+clicks on invalidated rows and retains their geometry during a provider refresh;
+content changes clear the old rows. Providers notify `on_did_change` when data
+outside the current model changes.
+
+This is a behavior port of the inline action surface: grouping, indentation,
+ViewZone layout, keyboard activation and viewport preservation. It has no
+unresolved-lens lifecycle or serialized command dispatcher. A host can capture
+lazy work (such as MoonIDE's Outside lookup) in the execution callback.

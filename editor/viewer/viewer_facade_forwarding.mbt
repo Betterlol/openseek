@@ -202,6 +202,7 @@ pub fn Viewer::fold_top_level(self : Viewer) -> Unit {
 }
 
 ///|
+/// Shows supplied results, replacing any previous Peek at the same symbol.
 pub fn Viewer::show_references(
   self : Viewer,
   position : @base_common.Position,

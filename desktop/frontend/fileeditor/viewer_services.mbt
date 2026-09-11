@@ -14,6 +14,7 @@ priv struct DesktopViewerServices {
   // mounts exactly one Viewer for the page lifetime; a future page teardown
   // can dispose these without reaching into the process-wide registry.
   _navigation_registrations : Array[@common.Disposable]
+  _code_lens_registration : @common.Disposable
 }
 
 ///|
@@ -26,6 +27,9 @@ fn DesktopViewerServices::DesktopViewerServices(
   let feedback = @feedback.DesktopFeedbackService()
   let quick_diff = DesktopQuickDiffService()
   let navigation_registrations = register_moon_ide_navigation_providers(
+    on_navigation_error,
+  )
+  let code_lens_registration = register_moon_ide_code_lens_provider(
     on_navigation_error,
   )
   let viewer_services = @viewer.ViewerServices(
@@ -41,5 +45,6 @@ fn DesktopViewerServices::DesktopViewerServices(
     feedback,
     quick_diff,
     _navigation_registrations: navigation_registrations,
+    _code_lens_registration: code_lens_registration,
   }
 }

@@ -277,9 +277,8 @@ fn CodeEditorWidget::open_symbol_navigation_peek(
       true
     }
     References => {
-      guard self.references_peek_available() else { return false }
-      self.show_references(anchor.position(), locations)
-      true
+      guard self.references_contribution() is Some(state) else { return false }
+      state.controller.toggle_locations(anchor, References, locations)
     }
   }
 }

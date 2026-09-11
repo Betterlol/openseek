@@ -110,6 +110,8 @@ struct Languages {
   markdown_comment_provider : LanguageFeatureRegistry[
     RegisteredMarkdownCommentProvider,
   ]
+  code_lens_provider : LanguageFeatureRegistry[&@language.CodeLensProvider]
+  code_lens_did_change : @base_common.Emitter[Unit]
   /// Per-language comment/folding configuration — the viewer's stand-in for
   /// Monaco's `ILanguageConfigurationService` registrations.
   language_configurations : Map[String, LanguageConfiguration]
@@ -137,6 +139,13 @@ struct LanguageHandle {
     async (Array[async () -> Unit]) -> Unit,
   ) -> Array[@language.Location] noraise
   has_references_provider_callback : (@model.TextModel) -> Bool
+  code_lenses_callback : async (
+    @model.TextModel,
+    @language.CancellationToken,
+    async (Array[async () -> Unit]) -> Unit,
+  ) -> Array[@language.CodeLens] noraise
+  has_code_lens_provider_callback : (@model.TextModel) -> Bool
+  on_did_change_code_lenses_callback : (() -> Unit) -> @base_common.Disposable
 }
 
 ///|
@@ -148,6 +157,8 @@ pub fn Languages::Languages() -> Languages {
     references_provider: LanguageFeatureRegistry(),
     document_symbol_provider: LanguageFeatureRegistry(),
     markdown_comment_provider: LanguageFeatureRegistry(),
+    code_lens_provider: LanguageFeatureRegistry(),
+    code_lens_did_change: Emitter(),
     language_configurations: Map([]),
   }
 }
@@ -193,6 +204,13 @@ pub fn Languages::language_handle(
     },
     has_references_provider_callback: model => {
       self.has_references_provider(model)
+    },
+    code_lenses_callback: (model, token, run_tasks) => {
+      self.code_lenses_with_log_handle(model, log_service, token~, run_tasks~)
+    },
+    has_code_lens_provider_callback: model => self.has_code_lens_provider(model),
+    on_did_change_code_lenses_callback: listener => {
+      self.code_lens_did_change.event(_ => listener())
     },
   }
 }
@@ -276,6 +294,38 @@ pub fn LanguageHandle::has_references_provider(
 }
 
 ///|
+/// Resolves every matching CodeLens provider and returns rows sorted by source
+/// line, provider priority, and provider result order. Browser
+/// callers inject a concurrent runner; the host-neutral default is sequential.
+pub async fn LanguageHandle::code_lenses(
+  self : LanguageHandle,
+  model : @model.TextModel,
+  token? : @language.CancellationToken = @language.CancellationToken::none(),
+  run_tasks? : async (Array[async () -> Unit]) -> Unit = @base_common.run_async_tasks_sequentially,
+) -> Array[@language.CodeLens] noraise {
+  (self.code_lenses_callback)(model, token, run_tasks)
+}
+
+///|
+/// Reports whether the model currently has a matching live CodeLens provider.
+pub fn LanguageHandle::has_code_lens_provider(
+  self : LanguageHandle,
+  model : @model.TextModel,
+) -> Bool {
+  (self.has_code_lens_provider_callback)(model)
+}
+
+///|
+/// Fires when CodeLens registrations or a provider-owned invalidation event
+/// change the result set that a Viewer should request.
+pub fn LanguageHandle::on_did_change_code_lenses(
+  self : LanguageHandle,
+  listener : () -> Unit,
+) -> @base_common.Disposable {
+  (self.on_did_change_code_lenses_callback)(listener)
+}
+
+///|
 /// Default process-wide language registry used by `ViewerServices()`.
 pub let languages : Languages = Languages()
 
@@ -348,6 +398,31 @@ pub fn Languages::register_markdown_comment_provider(
   foldable? : Bool = false,
 ) -> @base_common.Disposable {
   self.markdown_comment_provider.register(selector, { provider, foldable, })
+}
+
+///|
+/// Registers complete CodeLens actions and an optional invalidation event.
+/// Disposing the registration also removes its change subscription.
+pub fn Languages::register_code_lens_provider(
+  self : Languages,
+  selector : @language.LanguageSelector,
+  provider : &@language.CodeLensProvider,
+  on_did_change? : (() -> Unit) -> @base_common.Disposable,
+) -> @base_common.Disposable {
+  let registration = self.code_lens_provider.register(selector, provider)
+  let provider_subscription = match on_did_change {
+    Some(subscribe) => Some(subscribe(() => self.code_lens_did_change.fire(())))
+    None => None
+  }
+  self.code_lens_did_change.fire(())
+  @base_common.Disposable::from(() => {
+    match provider_subscription {
+      Some(subscription) => subscription.dispose()
+      None => ()
+    }
+    registration.dispose()
+    self.code_lens_did_change.fire(())
+  })
 }
 
 ///|
@@ -555,6 +630,84 @@ fn Languages::has_references_provider(
   model : @model.TextModel,
 ) -> Bool {
   !self.references_provider.snapshot_matching(model).is_empty()
+}
+
+///|
+async fn Languages::code_lenses_with_log_handle(
+  self : Languages,
+  model : @model.TextModel,
+  log_service : @log.LogHandle,
+  token? : @language.CancellationToken = @language.CancellationToken::none(),
+  run_tasks? : async (Array[async () -> Unit]) -> Unit = @base_common.run_async_tasks_sequentially,
+) -> Array[@language.CodeLens] noraise {
+  if token.is_cancellation_requested() {
+    return []
+  }
+  let providers = self.code_lens_provider.snapshot_matching(model)
+  let provider_results : Array[Array[@language.CodeLens]?] = [
+    for _ in 0..<providers.length() => None
+  ]
+  let tasks : Array[async () -> Unit] = []
+  for provider_rank, captured in providers {
+    tasks.push(() => {
+      let entry = captured.entry
+      if token.is_cancellation_requested() || !entry.active.val {
+        return
+      }
+      let lenses = entry.provider.provide_code_lenses(model, token) catch {
+        _ => {
+          if !token.is_cancellation_requested() {
+            log_provider_failure(
+              log_service,
+              "language.codeLens",
+              model,
+              captured.provider_index,
+            )
+          }
+          []
+        }
+      }
+      if token.is_cancellation_requested() || !entry.active.val {
+        return
+      }
+      provider_results[provider_rank] = Some(lenses)
+    })
+  }
+  run_tasks(tasks) catch {
+    _ => ()
+  }
+  if token.is_cancellation_requested() {
+    return []
+  }
+  let items : Array[@language.CodeLens] = []
+  for provider_rank, result in provider_results {
+    match result {
+      Some(result) if providers[provider_rank].entry.active.val =>
+        items.append(result)
+      _ => ()
+    }
+  }
+  // Stable sorting retains provider priority and producer order on each line.
+  let ordered = items.mapi((index, lens) => (index, lens))
+  ordered.sort_by((left, right) => {
+    let line = left.1.range.start_line_number.compare(
+      right.1.range.start_line_number,
+    )
+    if line == 0 {
+      left.0.compare(right.0)
+    } else {
+      line
+    }
+  })
+  ordered.map(item => item.1)
+}
+
+///|
+fn Languages::has_code_lens_provider(
+  self : Languages,
+  model : @model.TextModel,
+) -> Bool {
+  !self.code_lens_provider.snapshot_matching(model).is_empty()
 }
 
 ///|

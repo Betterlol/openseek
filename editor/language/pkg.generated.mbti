@@ -26,6 +26,14 @@ pub fn CancellationTokenSource::cancel(Self) -> Unit
 pub fn CancellationTokenSource::dispose(Self, cancel? : Bool) -> Unit
 pub fn CancellationTokenSource::token(Self) -> CancellationToken
 
+pub(all) struct CodeLens {
+  range : @common.Range
+  title : String
+  tooltip : String?
+  execute : async () -> Unit noraise
+} derive(@debug.Debug)
+pub fn CodeLens::to_repr(Self) -> @debug.Repr
+
 pub(all) struct Diagnostic {
   range : @common.Range
   severity : DiagnosticSeverity
@@ -109,6 +117,10 @@ pub fn MarkdownCommentBlock::to_repr(Self) -> @debug.Repr
 // Type aliases
 
 // Traits
+pub(open) trait CodeLensProvider {
+  async fn provide_code_lenses(Self, @model.TextModel, CancellationToken) -> Array[CodeLens]
+}
+
 pub(open) trait DefinitionProvider {
   async fn provide_definition(Self, @model.TextModel, @common.Position, CancellationToken) -> Array[Location]
 }
