@@ -162,7 +162,7 @@ test "large Search replies render incrementally without changing totals" {
   let reply : @protocol.SearchTextReply = {
     root: root.path,
     generation: page.generation,
-    matches: Array::make(501, result),
+    matches: Array::makei(501, i => { ..result, line_number: i * 3 + 1, }),
     match_count: 501,
     file_count: 1,
     limit_hit: false,
@@ -174,9 +174,9 @@ test "large Search replies render incrementally without changing totals" {
     input,
   )
   let initial = render_search(ready, input)
-  assert_true(initial.contains("501 results in 1 files"))
-  assert_true(initial.contains("Show 1 more matching lines"))
-  assert_true(initial.contains("500 of 501 matching lines rendered"))
+  assert_true(initial.contains("501 matches in 1 file"))
+  assert_true(initial.contains("Show 1 more results"))
+  assert_true(initial.contains("500 of 501 results displayed"))
   assert_eq(initial.split("class=\"search-result-row\"").length(), 501)
   let expanded = render_search(ready.handle(ShowMore, input), input)
   assert_false(expanded.contains("search-show-more"))
