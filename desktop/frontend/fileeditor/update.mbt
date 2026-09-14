@@ -1312,7 +1312,8 @@ fn active_moonbit_diagnostics(
 ///|
 fn moonbit_check_input(path : @pathx.Relative) -> Bool {
   let text = path.0
-  if text.has_suffix(".mbt") ||
+  if text.has_suffix(".mbtx") ||
+    text.has_suffix(".mbt") ||
     text.has_suffix(".mbti") ||
     text.has_suffix(".mbt.md") {
     return true
@@ -8834,6 +8835,7 @@ test "concrete watcher events refresh only affected listed directories" {
 ///|
 test "moonbit-relevant changes cover sources, interfaces, and manifests" {
   assert_true(Modified(Relative("src/lib.mbt")).moonbit_relevant())
+  assert_true(Modified(Relative("scripts/run.mbtx")).moonbit_relevant())
   assert_true(Removed(Relative("pkg.generated.mbti")).moonbit_relevant())
   assert_true(Created(Relative("README.mbt.md")).moonbit_relevant())
   assert_true(Modified(Relative("src/moon.pkg")).moonbit_relevant())

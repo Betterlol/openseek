@@ -298,17 +298,11 @@ fn working_feedback_model(
 
 ///|
 /// Register syntax highlighting for the languages the panel can recognize.
-/// `.mbtx` scripts register under their own id but use the MoonBit tokenizer,
-/// so they color exactly like `.mbt` source. Files of any other type render
-/// as plain text.
+/// MoonBit source and standalone `.mbtx` scripts share a tokenizer and language
+/// services. Files of any other type render as plain text.
 fn register_tokenizers() -> Unit {
   @languages.languages.set_tokens_provider(
     "moonbit",
-    @lang_moonbit.MoonBitTokenizer(),
-  )
-  |> ignore
-  @languages.languages.set_tokens_provider(
-    "mbtx",
     @lang_moonbit.MoonBitTokenizer(),
   )
   |> ignore
@@ -1678,17 +1672,15 @@ fn apply_diagnostics(
 
 ///|
 /// The viewer language id for a file name. MoonBit source (`.mbt`, `.mbti`,
-/// `.mbt.md`), `.mbtx` scripts, MoonBit manifests, JavaScript, JSON, and JSONL have
-/// tokenizers; everything else falls back to unhighlighted plain text. A
-/// `.mbtx` script carries its own id but shares the MoonBit tokenizer, so its
-/// top-of-file `import` block highlights exactly as MoonBit source does.
+/// `.mbt.md`, `.mbtx`), MoonBit manifests, JavaScript, JSON, and JSONL have
+/// tokenizers; everything else falls back to unhighlighted plain text.
+/// Standalone scripts use the same MoonBit language services as package source.
 fn language_id(name : String) -> String {
   let lower = name.to_lower()
   if lower == "moon.pkg" || lower == "moon.mod" {
     "moonbit-config"
-  } else if lower.has_suffix(".mbtx") {
-    "mbtx"
-  } else if lower.has_suffix(".mbt") ||
+  } else if lower.has_suffix(".mbtx") ||
+    lower.has_suffix(".mbt") ||
     lower.has_suffix(".mbti") ||
     lower.has_suffix(".mbt.md") {
     "moonbit"
