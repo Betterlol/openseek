@@ -1,7 +1,7 @@
-// The viewer's hover provider: when the pointer rests on a symbol in a `.mbt`
-// file, ask the host's `hover` op (served by `moon ide hover`) and render the
-// reply as a viewer tooltip. The host owns the language tooling, so the
-// front-end only marshals the position and decodes the reply.
+// The viewer's hover provider: when the pointer rests on a symbol in a MoonBit
+// source or standalone script, ask the host's `hover` op (served by
+// `moon ide hover`) and render the reply as a viewer tooltip. The host owns
+// the language tooling; the frontend marshals positions and decodes replies.
 
 ///|
 /// A viewer model URI this app minted (the `to_string()` of an `openseek`-
@@ -313,46 +313,48 @@ test "foreign uris do not parse as model paths or channels" {
 
 ///|
 test "IDE language selector includes semantic Modified but excludes revisions" {
-  let live = @model.TextModel(
-    @common.Uri::parse("openseek://local/work/main.mbt"),
-    "main.mbt",
-    "moonbit",
-    1,
-    "live",
-    "fn main {}",
-  )
-  let original = @model.TextModel(
-    @common.Uri::parse("openseek-review-original://local/work/main.mbt"),
-    "main.mbt",
-    "moonbit",
-    1,
-    "head",
-    "fn main {}",
-  )
-  let semantic_modified = @model.TextModel(
-    @common.Uri::parse("\{SemanticReviewModifiedScheme}:/section-1.mbt"),
-    "main.mbt",
-    "moonbit",
-    1,
-    "semantic-new",
-    "fn main {}",
-  )
-  let semantic_original = @model.TextModel(
-    @common.Uri::parse("\{SemanticReviewOriginalScheme}:/section-1.mbt"),
-    "main.mbt",
-    "moonbit",
-    1,
-    "semantic-old",
-    "fn main {}",
-  )
-  defer live.dispose()
-  defer original.dispose()
-  defer semantic_modified.dispose()
-  defer semantic_original.dispose()
-  assert_true(moon_ide_model_selector().score(live) > 0)
-  assert_true(moon_ide_model_selector().score(semantic_modified) > 0)
-  assert_eq(moon_ide_model_selector().score(original), 0)
-  assert_eq(moon_ide_model_selector().score(semantic_original), 0)
+  for name in ["main.mbt", "run.mbtx"] {
+    let live = @model.TextModel(
+      @common.Uri::parse("openseek://local/work/\{name}"),
+      name,
+      language_id(name),
+      1,
+      "live",
+      "fn main {}",
+    )
+    let original = @model.TextModel(
+      @common.Uri::parse("openseek-review-original://local/work/\{name}"),
+      name,
+      language_id(name),
+      1,
+      "head",
+      "fn main {}",
+    )
+    let semantic_modified = @model.TextModel(
+      @common.Uri::parse("\{SemanticReviewModifiedScheme}:/section-1.mbt"),
+      name,
+      language_id(name),
+      1,
+      "semantic-new",
+      "fn main {}",
+    )
+    let semantic_original = @model.TextModel(
+      @common.Uri::parse("\{SemanticReviewOriginalScheme}:/section-1.mbt"),
+      name,
+      language_id(name),
+      1,
+      "semantic-old",
+      "fn main {}",
+    )
+    defer live.dispose()
+    defer original.dispose()
+    defer semantic_modified.dispose()
+    defer semantic_original.dispose()
+    assert_true(moon_ide_model_selector().score(live) > 0)
+    assert_true(moon_ide_model_selector().score(semantic_modified) > 0)
+    assert_eq(moon_ide_model_selector().score(original), 0)
+    assert_eq(moon_ide_model_selector().score(semantic_original), 0)
+  }
 }
 
 ///|

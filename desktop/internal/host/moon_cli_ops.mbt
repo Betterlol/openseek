@@ -3,14 +3,14 @@
 // of a resident language server (Moon IDE navigation lives in
 // moonide_ops.mbt). `lsp.hover` shells out to `moon ide hover --output-json`
 // at the requested position; `lsp.open` runs `moon check --output-json` over
-// the file's module and converts the emitted diagnostics to the LSP-shaped
-// arrays the wire protocol already speaks; `lsp.workspace_symbols` fans
-// `moon ide workspace-symbols --json` across the workspace's module roots.
+// the file's module or standalone script and converts diagnostics to the
+// LSP-shaped arrays the wire protocol already speaks. `lsp.workspace_symbols`
+// fans `moon ide workspace-symbols --json` across the workspace's module roots.
 // Hover and open receive the editor's exact root plus a path relative to it,
-// then choose the deepest module root containing that file; symbols retain
-// their conversation-scoped workspace request. Everything is best-effort: no
-// module yet, a failed spawn, or a file moon does not know all just yield
-// nothing. moon serializes concurrent runs on a module with its own build
+// then choose the script itself or the deepest module root containing it.
+// Symbols retain their conversation-scoped workspace request. Everything is
+// best-effort: no applicable check scope, a failed spawn, or a file moon does
+// not know all just yield nothing. moon serializes concurrent runs on a module with its own build
 // lock, so requests spawn directly with no pooling.
 
 ///|
@@ -62,11 +62,11 @@ priv struct MoonCliState {
   // Resolved on first use; concurrent first requests may both resolve, which
   // is benign — bundled preparation serializes itself and the results agree.
   mut command : ToolSpawnResolution
-  // Module root → the files the last `moon check` reported diagnostics on.
+  // Check scope → the files the last `moon check` reported diagnostics on.
   // The next run pushes an empty array for any file that dropped out, the
-  // wire's "squiggles fixed" signal. Bounded by the module roots touched in
-  // one app run — a handful of small path arrays.
-  published : Map[@pathx.Absolute, Array[@pathx.Absolute]]
+  // wire's "squiggles fixed" signal. Scripts have independent scopes even
+  // when they share a directory or sit inside a module.
+  published : Map[MoonCliScope, Array[@pathx.Absolute]]
   diagnostics : @async.Queue[DiagnosticsPush]
 }
 
@@ -158,6 +158,43 @@ async fn MoonCliState::run_moon(
     error if @async.is_being_cancelled() => raise error
     _ => None
   }
+}
+
+///|
+/// A standalone script is checked independently of neighboring package files.
+/// This identity also owns diagnostic clears, so checking one script never
+/// clears a sibling script's or its enclosing module's diagnostics.
+priv enum MoonCliScope {
+  Module(@pathx.Absolute)
+  Script(@pathx.Absolute)
+} derive(Eq, Hash)
+
+///|
+fn MoonCliScope::cwd(self : MoonCliScope) -> @pathx.Absolute {
+  match self {
+    Module(root) => root
+    Script(file) => file.to_path().dirname().resolve()
+  }
+}
+
+///|
+fn MoonCliScope::check_args(self : MoonCliScope) -> Array[String] {
+  match self {
+    Module(_) => ["check", "--output-json"]
+    // Keep the absolute selector: a dash-prefixed basename is a CLI option.
+    Script(file) => ["check", "--output-json", file.to_string()]
+  }
+}
+
+///|
+async fn moon_cli_scope(
+  dir : @pathx.Absolute,
+  file : @pathx.Absolute,
+) -> MoonCliScope? {
+  if file.to_string().to_lower().has_suffix(".mbtx") {
+    return Some(Script(file))
+  }
+  moon_module_root(dir, file).map(root => Module(root))
 }
 
 ///|
@@ -253,9 +290,10 @@ async fn lsp_hover_op(
   ignore(LanguagePath::authorized_root(payload.session, payload.root))
   let request_root = WirePath::parse(payload.root)
   let file = request_root.resolve(payload.path)
-  guard moon_module_root(request_root.absolute, file) is Some(root) else {
+  guard moon_cli_scope(request_root.absolute, file) is Some(scope) else {
     return no_hover()
   }
+  let root = scope.cwd()
   // The op speaks 0-based LSP positions; `--loc` is 1-based.
   let loc = "\{file.0}:\{payload.line + 1}:\{payload.character + 1}"
   guard state.run_moon(["ide", "hover", "--loc", loc, "--output-json"], root)
@@ -268,10 +306,10 @@ async fn lsp_hover_op(
 
 ///|
 /// Serve the editor opening the file at `path`: run `moon check` over its
-/// module, reply with the file's diagnostics, and push every other file's
-/// changed diagnostics (including explicit clears) as `lsp.diagnostics`
-/// events. Best-effort with two distinct empty shapes: a file outside every
-/// module truthfully has no diagnostics, while a run that could not produce
+/// module or standalone script, reply with its diagnostics, and push other
+/// files' changed diagnostics (including explicit clears) as `lsp.diagnostics`
+/// events. Best-effort with two distinct empty shapes: a non-script outside
+/// every module has no diagnostics, while a run that could not produce
 /// results (a failed spawn, a broken manifest) answers with the field absent
 /// so the client keeps its markers and earlier push state stays untouched.
 async fn lsp_open_op(
@@ -281,11 +319,11 @@ async fn lsp_open_op(
   ignore(LanguagePath::authorized_root(payload.session, payload.root))
   let request_root = WirePath::parse(payload.root)
   let file = request_root.resolve(payload.path)
-  guard moon_module_root(request_root.absolute, file) is Some(root) else {
+  guard moon_cli_scope(request_root.absolute, file) is Some(scope) else {
     return { diagnostics: Some([]), }
   }
-  guard state.run_moon(["check", "--output-json"], root)
-    is Some((code, stdout, stderr)) else {
+  let root = scope.cwd()
+  guard state.run_moon(scope.check_args(), root) is Some((code, stdout, stderr)) else {
     return { diagnostics: None, }
   }
   // The pinned toolchain prints diagnostics on stdout (the summary goes to
@@ -300,11 +338,11 @@ async fn lsp_open_op(
   if current.is_empty() && code != 0 {
     return { diagnostics: None, }
   }
-  let previous = state.published.get(root).unwrap_or([])
+  let previous = state.published.get(scope).unwrap_or([])
   for push in diagnostics_pushes(request_root.absolute, previous, current) {
     ignore(state.diagnostics.try_put(push) catch { _ => false })
   }
-  state.published.set(root, current.keys().to_array())
+  state.published.set(scope, current.keys().to_array())
   { diagnostics: Some(current.get(file).unwrap_or([])), }
 }
 
