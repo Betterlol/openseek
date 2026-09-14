@@ -162,7 +162,7 @@ test "large Search replies render incrementally without changing totals" {
   let reply : @protocol.SearchTextReply = {
     root: root.path,
     generation: page.generation,
-    matches: Array::make(501, result),
+    matches: Array::makei(501, i => { ..result, line_number: i * 3 + 1, }),
     match_count: 501,
     file_count: 1,
     limit_hit: false,

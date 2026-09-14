@@ -781,7 +781,7 @@ html:is(
 }
 .search-file-header {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 6px;
   width: 100%;
   min-width: 0;
@@ -795,13 +795,16 @@ html:is(
   cursor: pointer;
 }
 .search-file-header:hover,
-.search-result-row:hover {
+.search-preview-line:hover {
   background: var(--color-bg-subtle);
 }
 .search-file-chevron {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex: 0 0 12px;
+  height: 16px;
   color: var(--color-text-muted);
-  font-size: var(--font-size-md);
 }
 .search-file-name {
   flex: 0 1 auto;
@@ -834,20 +837,10 @@ html:is(
   min-width: 0;
 }
 .search-result-row {
-  display: grid;
-  gap: 2px;
-  width: 100%;
   min-width: 0;
-  padding: 4px 10px 4px 8px;
-  border: 0;
-  background: transparent;
-  color: var(--color-text-primary);
-  font: inherit;
-  font-size: var(--font-size-sm);
-  text-align: left;
-  cursor: pointer;
+  padding: 4px 0;
 }
-.search-result-row:focus-visible {
+.search-preview-line:focus-visible {
   outline: 1px solid var(--color-accent);
   outline-offset: -1px;
 }
@@ -855,37 +848,21 @@ html:is(
   display: grid;
   grid-template-columns: 42px minmax(0, 1fr);
   align-items: baseline;
+  width: 100%;
   min-width: 0;
+  padding: 0 10px 0 8px;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-primary);
+  font: inherit;
+  font-size: var(--font-size-sm);
   font-family: var(--font-family-mono);
   line-height: 1.5;
+  text-align: left;
+  cursor: pointer;
 }
 .search-preview-line.context {
   color: var(--color-text-secondary);
-}
-.search-result-annotation {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  min-width: 0;
-  padding-left: 42px;
-  font-size: var(--font-size-xs);
-}
-.search-result-rule {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--color-text-secondary);
-  font-family: var(--font-family-mono);
-}
-.search-result-description {
-  flex: 1 1 0;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--color-text-muted);
 }
 .search-result-line {
   padding-right: 8px;

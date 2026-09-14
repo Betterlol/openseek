@@ -4,7 +4,7 @@ import { DesktopBrowserHarness } from './support/desktop_browser_harness.js';
 for (const mode of ['Text', 'Code']) {
   test(`${mode} results keep previews aligned and support keyboard navigation`, async ({ page }) => {
     const app = new DesktopBrowserHarness(page);
-    app.workingFiles['src/main.mbt'] = 'fn main {\n  inspect(\n    "moon moon",\n  )\n}\n';
+    app.workingFiles['src/main.mbt'] = 'fn main {\n  inspect(\n    "moon moon",\n  )\n  inspect("second")\n}\n';
     app.textSearchMatches = [{
       path: 'src/main.mbt', line_number: 3,
       preview: '    "moon moon",', preview_start_column: 1,
@@ -16,10 +16,18 @@ for (const mode of ['Text', 'Code']) {
       description: 'A long rule name must fit within the result panel.',
       start_line: 2, start_column: 3, end_line: 4, end_column: 4,
       matched_source: 'inspect(\n    "moon moon",\n  )',
-      source_context: app.workingFiles['src/main.mbt'].trimEnd().split('\n').map((text, index) => ({
+      source_context: app.workingFiles['src/main.mbt'].trimEnd().split('\n').slice(0, 5).map((text, index) => ({
         line: index + 1, text, is_match: index >= 1 && index <= 3,
       })),
     }];
+    app.semanticSearchMatches.push({
+      ...app.semanticSearchMatches[0],
+      start_line: 5, start_column: 3, end_line: 5, end_column: 20,
+      matched_source: 'inspect("second")',
+      source_context: app.workingFiles['src/main.mbt'].trimEnd().split('\n').slice(2).map((text, index) => ({
+        line: index + 3, text, is_match: index === 2,
+      })),
+    });
     // Both providers can finish with useful rows and a diagnostic.
     const replyFor = app.replyFor.bind(app);
     let scanFailed = false;
@@ -43,16 +51,21 @@ for (const mode of ['Text', 'Code']) {
       await page.getByRole('textbox', { name: 'Search', exact: true }).fill('moon');
     }
     const results = page.locator('.search-results');
-    const row = results.getByRole('button', { name: mode === 'Text' ? /moon moon/ : /inspect/ });
+    const row = results.locator('.search-result-row');
+    const destination = row.getByRole('button', { name: mode === 'Text' ? /moon moon/ : /inspect\($/ });
     await expect(row).toBeVisible();
+    if (mode === 'Code') {
+      await expect(row.locator('.search-result-line')).toHaveText(['1', '2', '3', '4', '5', '6']);
+      await expect(row.getByRole('button', { name: /second/ })).toHaveAttribute('title', 'Open src/main.mbt:5');
+    }
     await expect(results.locator('.search-summary')).toHaveText(
-      mode === 'Text' ? '2 matches in 1 file' : '1 match in 1 file',
+      '2 matches in 1 file',
     );
     await expect(row.locator('.search-match-highlight')).toHaveText(
-      mode === 'Text' ? ['moon', 'moon'] : ['inspect(', '    "moon moon",', '  )'],
+      mode === 'Text' ? ['moon', 'moon'] : ['inspect(', '    "moon moon",', '  )', 'inspect("second")'],
     );
-    // These are browser geometry contracts: long metadata must not widen the
-    // panel, and every preview line must share its gutter and text columns.
+    // Preview blocks must fit the panel, and every line must share its gutter
+    // and text columns after neighboring contexts have been combined.
     const geometry = await row.evaluate(element => {
       const rect = element.getBoundingClientRect();
       const panel = element.closest('.search-results').getBoundingClientRect();
@@ -63,11 +76,22 @@ for (const mode of ['Text', 'Code']) {
     });
     expect(geometry.overflow).toBeLessThanOrEqual(1);
     expect(Math.max(...geometry.textStarts) - Math.min(...geometry.textStarts)).toBeLessThanOrEqual(1);
-    await row.focus();
+    await destination.focus();
     await page.keyboard.press('Enter');
     await expect(page.locator('#viewer-host .view-lines')).toContainText('moon moon');
     const header = results.getByRole('button', { name: /main.mbt.*src/ });
+    const expectChevronAligned = async () => {
+      const offset = await header.evaluate(element => {
+        const icon = element.querySelector('.search-file-chevron svg').getBoundingClientRect();
+        const name = element.querySelector('.search-file-name').getBoundingClientRect();
+        return Math.abs((icon.top + icon.bottom - name.top - name.bottom) / 2);
+      });
+      expect(offset).toBeLessThanOrEqual(1);
+    };
+    await expectChevronAligned();
+    await expect(results).not.toContainText(app.semanticSearchMatches[0].rule_id);
     await header.click();
+    await expectChevronAligned();
     await expect(row).toBeHidden();
     await header.click();
     await expect(row).toBeVisible();

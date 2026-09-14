@@ -66,7 +66,7 @@ fn visible_file_groups(
   for group in grouped_matches(items) {
     guard remaining > 0 else { break }
     let rows = group.matches.iter().take(remaining).to_array()
-    visible.push({ ..group, matches: rows, })
+    visible.push({ ..group, matches: coalesce_results(rows), })
     remaining -= rows.length()
   }
   visible
@@ -396,30 +396,13 @@ fn result_row(
   open_match : (String, @common.Range) -> @cmd.Cmd,
 ) -> @html.Html {
   let children : Array[@html.Html] = []
-  if result.annotation is Some(annotation) {
-    children.push(
-      @html.span(class="search-result-annotation", [
-        @html.span(
-          class="search-result-rule",
-          title=annotation.label,
-          annotation.label,
-        ),
-        if annotation.description is Some(description) {
-          @html.span(
-            class="search-result-description",
-            title=description,
-            description,
-          )
-        } else {
-          @html.nothing
-        },
-      ]),
-    )
-  }
   for line in result.preview {
     let slices = line.highlight_slices(result.ranges)
+    let target = result.target_for_line(line.line)
     children.push(
-      @html.span(
+      @html.button(
+        title="Open \{result.path}:\{target.start_line_number}",
+        on_click=open_match(result.path, target),
         class=if slices.is_empty() {
           "search-preview-line context"
         } else {
@@ -435,12 +418,7 @@ fn result_row(
       ),
     )
   }
-  @html.button(
-    class="search-result-row",
-    title="Open \{result.path}:\{result.target.start_line_number}",
-    on_click=open_match(result.path, result.target),
-    children,
-  )
+  @html.div(class="search-result-row", children)
 }
 
 ///|
@@ -468,11 +446,22 @@ fn file_group_view(
         @html.span(
           class="search-file-chevron",
           attrs=@html.Attrs::build().aria_hidden("true"),
-          if collapsed {
-            "›"
-          } else {
-            "⌄"
-          },
+          @svg.svg(
+            width=12,
+            height=12,
+            view_box="0 0 12 12",
+            attrs=@svg.Attrs::build()
+              .fill("none")
+              .stroke("currentColor")
+              .stroke_width("1.5")
+              .stroke_linecap("round")
+              .stroke_linejoin("round"),
+            [
+              @svg.path(
+                d=if collapsed { "M4 2 8 6 4 10" } else { "M2 4 6 8 10 4" },
+              ),
+            ],
+          ),
         ),
         @html.span(class="search-file-name", name),
         @html.span(class="search-file-parent", parent),
