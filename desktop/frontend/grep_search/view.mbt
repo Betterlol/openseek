@@ -20,14 +20,12 @@ pub fn focus_query_after_render() -> @cmd.Cmd {
 ///|
 priv struct FileGroup {
   path : String
-  matches : Array[@protocol.TextSearchMatch]
+  matches : Array[SearchResultItem]
   count : Int
 }
 
 ///|
-fn grouped_matches(
-  matches : Array[@protocol.TextSearchMatch],
-) -> Array[FileGroup] {
+fn grouped_matches(matches : Array[SearchResultItem]) -> Array[FileGroup] {
   let groups : Array[FileGroup] = []
   let indexes : Map[String, Int] = Map([])
   for result in matches {
@@ -59,10 +57,13 @@ fn grouped_matches(
 /// Preserve each file's complete occurrence count while taking only the
 /// matching lines currently admitted to the DOM. This is deliberately a view
 /// budget: Host search semantics and the 20,000-result ceiling remain intact.
-fn visible_file_groups(page : Page) -> Array[FileGroup] {
+fn visible_file_groups(
+  items : Array[SearchResultItem],
+  budget : Int,
+) -> Array[FileGroup] {
   let visible : Array[FileGroup] = []
-  let mut remaining = page.visible_lines.max(0)
-  for group in grouped_matches(page.text.matches) {
+  let mut remaining = budget.max(0)
+  for group in grouped_matches(items) {
     guard remaining > 0 else { break }
     let rows = group.matches.iter().take(remaining).to_array()
     visible.push({ ..group, matches: rows, })
@@ -358,63 +359,87 @@ fn pattern_repair_notice(page : Page, emit : @cmd.Emit[Msg]) -> @html.Html {
 }
 
 ///|
-fn highlighted_preview(result : @protocol.TextSearchMatch) -> Array[@html.Html] {
+fn highlighted_preview(
+  line : SearchPreviewLine,
+  slices : Array[(Int, Int)],
+) -> Array[@html.Html] {
   let children : Array[@html.Html] = []
-  let preview_start = result.preview_start_column - 1
   let mut cursor = 0
-  for range in result.ranges {
-    let start = (range.start_column - 1 - preview_start)
-      .max(0)
-      .min(result.preview.length())
-    let end = (range.end_column - 1 - preview_start)
-      .max(0)
-      .min(result.preview.length())
-    if end <= cursor || start >= result.preview.length() {
+  for (start, end) in slices {
+    if end <= cursor {
       continue
     }
     let start = start.max(cursor)
     if start > cursor {
-      children.push(@html.span(result.preview[cursor:start].to_owned()))
+      children.push(@html.span(line.text[cursor:start].to_owned()))
     }
-    if end > start {
-      children.push(
-        @html.span(
-          class="search-match-highlight",
-          result.preview[start:end].to_owned(),
-        ),
-      )
-      cursor = end
-    }
+    children.push(
+      @html.span(
+        class="search-match-highlight",
+        line.text[start:end].to_owned(),
+      ),
+    )
+    cursor = end
   }
-  if cursor < result.preview.length() {
-    children.push(@html.span(result.preview[cursor:].to_owned()))
+  if cursor < line.text.length() {
+    children.push(@html.span(line.text[cursor:].to_owned()))
   }
   if children.is_empty() {
-    children.push(@html.span(result.preview))
+    children.push(@html.span(line.text))
   }
   children
 }
 
 ///|
 fn result_row(
-  result : @protocol.TextSearchMatch,
+  result : SearchResultItem,
   open_match : (String, @common.Range) -> @cmd.Cmd,
 ) -> @html.Html {
-  let range = result.ranges[0]
-  let target = @common.Range(
-    result.line_number,
-    range.start_column,
-    result.line_number,
-    range.end_column,
-  )
+  let children : Array[@html.Html] = []
+  if result.annotation is Some(annotation) {
+    children.push(
+      @html.span(class="search-result-annotation", [
+        @html.span(
+          class="search-result-rule",
+          title=annotation.label,
+          annotation.label,
+        ),
+        if annotation.description is Some(description) {
+          @html.span(
+            class="search-result-description",
+            title=description,
+            description,
+          )
+        } else {
+          @html.nothing
+        },
+      ]),
+    )
+  }
+  for line in result.preview {
+    let slices = line.highlight_slices(result.ranges)
+    children.push(
+      @html.span(
+        class=if slices.is_empty() {
+          "search-preview-line context"
+        } else {
+          "search-preview-line"
+        },
+        [
+          @html.span(class="search-result-line", "\{line.line}"),
+          @html.span(
+            class="search-result-preview",
+            highlighted_preview(line, slices),
+          ),
+        ],
+      ),
+    )
+  }
   @html.button(
     class="search-result-row",
-    title="Open \{result.path}:\{result.line_number}",
-    on_click=open_match(result.path, target),
-    [
-      @html.span(class="search-result-line", "\{result.line_number}"),
-      @html.span(class="search-result-preview", highlighted_preview(result)),
-    ],
+    title="Open \{result.path}:\{result.target.start_line_number}",
+    on_click=open_match(result.path, result.target),
+    children,
   )
 }
 
@@ -504,10 +529,7 @@ fn search_message(page : Page, emit : @cmd.Emit[Msg]) -> @html.Html? {
         @html.div(
           class="search-empty",
           attrs=@html.Attrs::build().role("status").aria_live("polite"),
-          match page.mode {
-            Text => "No results found."
-            Semantic => "No matching code found."
-          },
+          "No matches found.",
         ),
       )
     Idle if page.text.query.is_empty() =>
@@ -532,41 +554,32 @@ fn search_message(page : Page, emit : @cmd.Emit[Msg]) -> @html.Html? {
 }
 
 ///|
-/// Dispatch the results body to the armed Search engine: ripgrep text rows or
-/// moongrep structural hits, mirroring semgrep's mode split.
 fn search_body(
   page : Page,
   emit : @cmd.Emit[Msg],
   open_match : (String, @common.Range) -> @cmd.Cmd,
 ) -> @html.Html {
-  match page.mode {
-    Text => text_search_body(page, emit, open_match)
-    Semantic => semantic_search_body(page, emit, open_match)
-  }
-}
-
-///|
-fn text_search_body(
-  page : Page,
-  emit : @cmd.Emit[Msg],
-  open_match : (String, @common.Range) -> @cmd.Cmd,
-) -> @html.Html {
+  let items = page.result_items()
   let children : Array[@html.Html] = []
   let busy = page.phase is Debouncing || page.phase is Loading
   let summary = page.result_summary()
   let file_count = page.active_file_count()
-  let summary_text = if busy {
-    "Searching…"
-  } else if summary.match_count == 1 {
-    "1 result in \{file_count} file"
-  } else {
-    "\{summary.match_count} results in \{file_count} files"
-  }
+  let result_word = if summary.match_count == 1 { "match" } else { "matches" }
+  let file_word = if file_count == 1 { "file" } else { "files" }
+  let summary_text = "\{summary.match_count} \{result_word} in \{file_count} \{file_word}"
   children.push(
     @html.div(
       class="search-summary",
       attrs=@html.Attrs::build().aria_live("polite").aria_busy(busy.to_string()),
-      summary_text,
+      if busy {
+        if page.mode is Semantic && !items.is_empty() {
+          summary_text + " so far…"
+        } else {
+          "Searching…"
+        }
+      } else {
+        summary_text
+      },
     ),
   )
   if summary.limit_hit {
@@ -578,233 +591,36 @@ fn text_search_body(
       ),
     )
   }
-  if search_message(page, emit) is Some(message) {
-    children.push(message)
-  } else {
-    for group in visible_file_groups(page) {
-      children.push(file_group_view(page, group, emit, open_match))
-    }
-    let shown = page.visible_lines.min(page.text.matches.length())
-    if shown < page.text.matches.length() {
-      let next = VisibleSearchLineStep.min(page.text.matches.length() - shown)
-      children.push(
-        @html.div(class="search-show-more", [
-          @html.button(
-            on_click=emit(ShowMore),
-            "Show \{next} more matching lines",
-          ),
-          @html.div(
-            class="search-show-more-detail",
-            "\{shown} of \{page.text.matches.length()} matching lines rendered",
-          ),
-        ]),
-      )
-    }
-  }
-  @html.div(class="search-results", children)
-}
-
-///|
-priv struct SemanticFileGroup {
-  path : String
-  hits : Array[@protocol.SemanticSearchHit]
-  count : Int
-}
-
-///|
-fn semantic_grouped_hits(
-  hits : Array[@protocol.SemanticSearchHit],
-) -> Array[SemanticFileGroup] {
-  let groups : Array[SemanticFileGroup] = []
-  let indexes : Map[String, Int] = Map([])
-  for hit in hits {
-    match indexes.get(hit.path) {
-      Some(index) => {
-        let group = groups[index]
-        let rows = group.hits
-        rows.push(hit)
-        groups[index] = { ..group, hits: rows, count: group.count + 1, }
-      }
-      None => {
-        indexes[hit.path] = groups.length()
-        groups.push({ path: hit.path, hits: [hit], count: 1, })
-      }
-    }
-  }
-  groups
-}
-
-///|
-fn visible_semantic_file_groups(page : Page) -> Array[SemanticFileGroup] {
-  let visible : Array[SemanticFileGroup] = []
-  let mut remaining = page.visible_lines.max(0)
-  for group in semantic_grouped_hits(page.semantic.hits) {
-    guard remaining > 0 else { break }
-    let rows = group.hits.iter().take(remaining).to_array()
-    visible.push({ ..group, hits: rows, })
-    remaining -= rows.length()
-  }
-  visible
-}
-
-///|
-/// One moongrep context line: gutter line number plus the source text, with the
-/// matched lines highlighted, in the style of semgrep's pattern-match output.
-fn semantic_context_line_view(
-  line : @protocol.SemanticContextLine,
-) -> @html.Html {
-  @html.div(
-    class=if line.is_match {
-      "search-context-line matched"
-    } else {
-      "search-context-line"
-    },
-    [
-      @html.span(class="search-context-gutter", "\{line.line}"),
-      @html.span(class="search-context-text", line.text),
-    ],
-  )
-}
-
-///|
-fn semantic_hit_view(
-  hit : @protocol.SemanticSearchHit,
-  open_match : (String, @common.Range) -> @cmd.Cmd,
-) -> @html.Html {
-  let target = @common.Range(
-    hit.start_line,
-    hit.start_column,
-    hit.end_line,
-    hit.end_column,
-  )
-  @html.div(
-    class="search-semantic-hit",
-    attrs=@html.Attrs::build().on_click(_ => open_match(hit.path, target)),
-    [
-      @html.div(class="search-semantic-meta", [
-        @html.span(class="search-semantic-rule", hit.rule_id),
-        if hit.description is Some(description) && !description.is_empty() {
-          @html.span(class="search-semantic-desc", description)
-        } else {
-          @html.nothing
-        },
-      ]),
-      @html.div(
-        class="search-semantic-context",
-        hit.source_context.map(line => semantic_context_line_view(line)),
-      ),
-    ],
-  )
-}
-
-///|
-fn semantic_file_group_view(
-  page : Page,
-  group : SemanticFileGroup,
-  emit : @cmd.Emit[Msg],
-  open_match : (String, @common.Range) -> @cmd.Cmd,
-) -> @html.Html {
-  let collapsed = page.collapsed.get(group.path).unwrap_or(false)
-  let (name, parent) = file_label(group.path)
-  let rows = if collapsed {
-    ([] : Array[@html.Html])
-  } else {
-    group.hits.map(hit => semantic_hit_view(hit, open_match))
-  }
-  @html.div(class="search-file-group", [
-    @html.button(
-      class="search-file-header",
-      title=group.path,
-      attrs=@html.Attrs::build()
-        .aria_expanded((!collapsed).to_string())
-        .on_click(_ => emit(ToggleFile(group.path))),
-      [
-        @html.span(
-          class="search-file-chevron",
-          attrs=@html.Attrs::build().aria_hidden("true"),
-          if collapsed {
-            "›"
-          } else {
-            "⌄"
-          },
-        ),
-        @html.span(class="search-file-name", name),
-        @html.span(class="search-file-parent", parent),
-        @html.span(class="search-file-count", "\{group.count}"),
-      ],
-    ),
-    @html.div(class="search-file-results", rows),
-  ])
-}
-
-///|
-fn semantic_search_body(
-  page : Page,
-  emit : @cmd.Emit[Msg],
-  open_match : (String, @common.Range) -> @cmd.Cmd,
-) -> @html.Html {
-  let children : Array[@html.Html] = []
-  let busy = page.phase is Debouncing || page.phase is Loading
-  let result_summary = page.result_summary()
-  let file_count = page.active_file_count()
-  let summary = if busy {
-    if page.semantic.hits.is_empty() {
-      "Searching…"
-    } else {
-      // The scan is still running; these counts are the partial stream, not
-      // the final totals the reply will replace.
-      "\{result_summary.match_count} matches in \{file_count} files so far…"
-    }
-  } else if result_summary.match_count == 1 {
-    "1 match in \{file_count} file"
-  } else {
-    "\{result_summary.match_count} matches in \{file_count} files"
-  }
-  children.push(
-    @html.div(
-      class="search-summary",
-      attrs=@html.Attrs::build().aria_live("polite").aria_busy(busy.to_string()),
-      summary,
-    ),
-  )
-  if result_summary.limit_hit {
+  if !busy && page.mode is Semantic && page.semantic.partial {
     children.push(
       @html.div(
         class="search-truncated",
         attrs=@html.Attrs::build().role("status"),
-        "Only the first 20,000 matches are shown. Narrow the search to see more.",
-      ),
-    )
-  }
-  if page.semantic.partial {
-    children.push(
-      @html.div(
-        class="search-truncated",
-        attrs=@html.Attrs::build().role("status"),
-        "Results may be incomplete — moongrep could not parse some files.",
+        "Results may be incomplete — some files could not be searched.",
       ),
     )
   }
   if search_message(page, emit) is Some(message) {
     children.push(message)
   }
-  for group in visible_semantic_file_groups(page) {
-    children.push(semantic_file_group_view(page, group, emit, open_match))
+  // A diagnostic and retained results are independent: both engines can
+  // return useful matches before reporting a scan failure.
+  for group in visible_file_groups(items, page.visible_lines) {
+    children.push(file_group_view(page, group, emit, open_match))
   }
-  let shown = page.visible_lines.min(page.semantic.hits.length())
-  if shown < page.semantic.hits.length() {
-    let next = VisibleSearchLineStep.min(page.semantic.hits.length() - shown)
+  let shown = page.visible_lines.min(items.length())
+  if shown < items.length() {
+    let next = VisibleSearchLineStep.min(items.length() - shown)
     children.push(
       @html.div(class="search-show-more", [
-        @html.button(on_click=emit(ShowMore), "Show \{next} more matches"),
+        @html.button(on_click=emit(ShowMore), "Show \{next} more results"),
         @html.div(
           class="search-show-more-detail",
-          "\{shown} of \{page.semantic.hits.length()} matches rendered",
+          "\{shown} of \{items.length()} results displayed",
         ),
       ]),
     )
   }
-
   @html.div(class="search-results", children)
 }
 

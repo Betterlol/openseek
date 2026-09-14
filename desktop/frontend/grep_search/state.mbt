@@ -552,35 +552,10 @@ fn Page::active_paths(self : Page) -> Array[String] {
 ///|
 fn Page::active_highlights(self : Page, path : String) -> EditorHighlights? {
   let ranges : Array[@common.Range] = []
-  match self.mode {
-    Text =>
-      for result in self.text.matches {
-        if result.path == path {
-          for range in result.ranges {
-            ranges.push(
-              @common.Range(
-                result.line_number,
-                range.start_column,
-                result.line_number,
-                range.end_column,
-              ),
-            )
-          }
-        }
-      }
-    Semantic =>
-      for hit in self.semantic.hits {
-        if hit.path == path {
-          ranges.push(
-            @common.Range(
-              hit.start_line,
-              hit.start_column,
-              hit.end_line,
-              hit.end_column,
-            ),
-          )
-        }
-      }
+  for item in self.result_items() {
+    if item.path == path {
+      ranges.append(item.ranges)
+    }
   }
   guard !ranges.is_empty() else { return None }
   Some({ ranges, })

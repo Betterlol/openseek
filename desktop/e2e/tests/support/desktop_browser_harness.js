@@ -9,6 +9,7 @@ export class DesktopBrowserHarness {
     this.rpcErrors = new Map();
     this.rpcDelays = new Map();
     this.textSearchMatches = [];
+    this.semanticSearchMatches = [];
     this.textSearchMatchCount = undefined;
     this.textSearchLimitHit = false;
     this.directoryEntries = {};
@@ -836,6 +837,17 @@ export class DesktopBrowserHarness {
           file_count: new Set(this.textSearchMatches.map(match => match.path)).size,
           limit_hit: this.textSearchLimitHit,
           cancelled: false,
+        };
+      case 'fs.search_semantic':
+        return {
+          root: request.params?.root,
+          generation: request.params?.generation,
+          matches: this.semanticSearchMatches,
+          match_count: this.semanticSearchMatches.length,
+          file_count: new Set(this.semanticSearchMatches.map(match => match.path)).size,
+          limit_hit: false,
+          cancelled: false,
+          partial: false,
         };
       case 'agent.approval':
         return { delivered: true };
