@@ -477,84 +477,6 @@ priv enum SemanticReviewNavigationDirection {
 }
 
 ///|
-priv suberror SemanticReviewNavigationSubscription {
-  SemanticReviewNavigationSubscription(@cmd.Emit[Msg])
-}
-
-///|
-fn semantic_review_navigation_sub_loader(
-  payload : Error,
-  scheduler : &Scheduler,
-) -> @sub.RunningSub? {
-  match payload {
-    SemanticReviewNavigationSubscription(dispatch) => {
-      let mut dispatch = dispatch
-      let target = @dom.document().as_event_target()
-      let listener : @dom.Listener = event => {
-        guard event.to_keyboard_event() is Some(keyboard) &&
-          keyboard.key() == "F7" &&
-          @dom.document().get_element_by_id(SemanticReviewHostId).to_option()
-          is Some(host) &&
-          @base_browser.event_target_has_matching_ancestor(
-            event, host, ".semantic-diff-entry",
-          ) else {
-          return
-        }
-        // Include section headers so F7 still works after collapsing the last
-        // editor. Capture precedes the child's cyclic F7 command, so exactly
-        // one aggregate MultiDiff navigation is emitted.
-        event.prevent_default()
-        event.stop_propagation()
-        scheduler.add(
-          dispatch(
-            if keyboard.shift_key() {
-              RevealPreviousReviewDiffChange
-            } else {
-              RevealNextReviewDiffChange
-            },
-          ),
-        )
-      }
-      target.add_event_listener_with_options("keydown", listener, capture=true)
-      Some({
-        unload: _ => {
-          target.remove_event_listener_with_options(
-            "keydown",
-            listener,
-            capture=true,
-          )
-        },
-        update_tagger: payload => {
-          guard payload is SemanticReviewNavigationSubscription(next) else {
-            return
-          }
-          dispatch = next
-        },
-      })
-    }
-    _ => None
-  }
-}
-
-///|
-fn semantic_review_navigation_subscription(
-  state : State,
-  ctx : Ctx,
-  dispatch : @cmd.Emit[Msg],
-) -> @sub.Sub {
-  guard review_diff_navigation_enabled(state, ctx) &&
-    !line_diff_ready(state, ctx) else {
-    return @sub.none
-  }
-  @sub.custom_sub(
-    "fileeditor-semantic-review-navigation",
-    @sub.Local,
-    SemanticReviewNavigationSubscription(dispatch),
-    semantic_review_navigation_sub_loader,
-  )
-}
-
-///|
 fn update_semantic_review_scroll_width() -> Unit {
   guard @dom.document().get_element_by_id(SemanticReviewHostId).to_option()
     is Some(host) else {
@@ -1439,15 +1361,19 @@ fn arm_semantic_review_navigation_reveal(
 }
 
 ///|
-/// Move within the focused DiffEditor first, then cycle across Token/Tree
-/// items exactly like VS Code's MultiDiffEditor navigation action.
+/// Move within the focused DiffEditor, then sections, then the review queue.
 fn navigate_semantic_review_change(
   dispatch : @cmd.Emit[Msg],
   collapsed : Array[String],
   direction : SemanticReviewNavigationDirection,
 ) -> @cmd.Cmd {
   @cmd.custom_cmd(scheduler => {
-    guard !semantic_review_order.is_empty() else { return }
+    guard !semantic_review_order.is_empty() else {
+      scheduler.add(
+        dispatch(ReviewDiffFileBoundary(direction is SemanticReviewPrevious)),
+      )
+      return
+    }
     guard semantic_review_navigation_index(semantic_review_active_key.val)
       is Some(index) else {
       // With every section collapsed there is no active editor. Enter at the
@@ -1483,13 +1409,14 @@ fn navigate_semantic_review_change(
       entry.pending_navigation_reveal_generation.val = None
     }
     let target_index = match direction {
-      SemanticReviewPrevious =>
-        if index == 0 {
-          semantic_review_order.length() - 1
-        } else {
-          index - 1
-        }
-      SemanticReviewNext => (index + 1) % semantic_review_order.length()
+      SemanticReviewPrevious => index - 1
+      SemanticReviewNext => index + 1
+    }
+    guard target_index >= 0 && target_index < semantic_review_order.length() else {
+      scheduler.add(
+        dispatch(ReviewDiffFileBoundary(direction is SemanticReviewPrevious)),
+      )
+      return
     }
     scheduler.add(
       dispatch(

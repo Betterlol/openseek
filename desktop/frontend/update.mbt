@@ -2794,7 +2794,8 @@ fn update_msg(
     // tab, then let the file subsystem pair its working-tree document with the
     // row's HEAD path. Deleted rows have no working file but still use the
     // current path as their tab identity.
-    FileEditor(ChangedFileSelected(change)) => {
+    FileEditor(ChangedFileSelected(change))
+    | FileEditor(ChangedFileNavigated(change, _)) => {
       let placement = file_ctx(model).placement
       guard placement is Some(value) && value.is_ready() else {
         return (@cmd.none, model)
@@ -2814,6 +2815,11 @@ fn update_msg(
         change,
         had_active~,
       )
+      let panel = match msg {
+        FileEditor(ChangedFileNavigated(_, last)) =>
+          panel.with_review_navigation_destination(change, last)
+        _ => panel
+      }
       (cmd, { ..model, file_panel: panel, })
     }
     // Historical rows open immutable commit/path identities rather than

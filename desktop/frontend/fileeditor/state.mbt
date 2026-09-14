@@ -449,6 +449,8 @@ pub(all) struct State {
   // Whether DiffEditor's current (possibly source-mode parked) comparison has
   // at least one completed change for cyclic previous/next navigation.
   review_diff_navigation_available : Bool
+  // A cross-file destination waits for both sides, fenced by exact row and generation.
+  review_navigation_destination : (ChangedFile, Int, Bool)?
   changes : ChangeList
   // Git graph state is conversation/workspace scoped like Changes, but is
   // refreshed only at meaningful repository boundaries rather than on the
@@ -587,6 +589,7 @@ pub fn State::empty() -> State {
     semantic_review_plan: None,
     semantic_review_collapsed: [],
     review_diff_navigation_available: false,
+    review_navigation_destination: None,
     changes: ChangeListIdle,
     git_graph: GitGraphIdle,
     git_graph_generation: 0,
@@ -890,6 +893,8 @@ pub(all) enum Msg {
   // A Changes row was clicked. The full decoded row carries the original path
   // needed by renames/copies and whether a working-tree read is possible.
   ChangedFileSelected(ChangedFile)
+  ChangedFileNavigated(ChangedFile, Bool)
+  ReviewDiffFileBoundary(Bool)
   // Reveal a still-pending full-diff notice only after its short grace period.
   // Owner, path, and request generation fence timers that outlive navigation.
   DiffLoadingDue(
