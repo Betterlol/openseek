@@ -265,6 +265,8 @@ pub(all) enum Msg {
   ToggleGitGraphSection
   FileSelected(path~ : @pathx.Relative, name~ : String)
   ChangedFileSelected(ChangedFile)
+  ChangedFileNavigated(ChangedFile, Bool)
+  ReviewDiffFileBoundary(Bool)
   DiffLoadingDue(owner~ : @interop.ConversationKey, path~ : @pathx.Relative, generation~ : Int)
   ToggleReviewDiff
   ToggleReviewDiffLayout
@@ -423,6 +425,7 @@ pub(all) struct State {
   semantic_review_plan : @moondiff.SectionedSemanticReviewPlan?
   semantic_review_collapsed : Array[String]
   review_diff_navigation_available : Bool
+  review_navigation_destination : (ChangedFile, Int, Bool)?
   changes : ChangeList
   git_graph : GitGraphState
   git_graph_generation : Int
@@ -468,6 +471,7 @@ pub fn State::equal(Self, Self) -> Bool
 pub fn State::not_equal(Self, Self) -> Bool
 pub fn State::prepare_owner(Self, @interop.ConversationKey, Array[@pathx.Relative]) -> Self
 pub fn State::retire_watcher(Self, @cmd.Emit[Msg], Ctx) -> (Self, @cmd.Cmd)
+pub fn State::with_review_navigation_destination(Self, ChangedFile, Bool) -> Self
 
 pub(all) enum TabState {
   TabLoading

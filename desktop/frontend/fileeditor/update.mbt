@@ -1617,7 +1617,7 @@ pub fn subscriptions(
 ) -> @sub.Sub {
   @sub.batch([
     changes_poll_subscription(state, ctx, dispatch),
-    semantic_review_navigation_subscription(state, ctx, dispatch),
+    review_diff_navigation_subscription(state, ctx, dispatch),
     state.search.subscription(
       ctx.search_input(),
       dispatch.map(msg => Search(msg)),
@@ -2250,6 +2250,9 @@ pub fn sync(
   }
   let state = state.sync_semantic_review(ctx)
   let (state, package_graph_cmd) = sync_package_graph(dispatch, state, ctx)
+  let (navigation_cmd, state) = sync_review_navigation_destination(
+    dispatch, state, ctx,
+  )
   let pending_cmd = @cmd.batch([
     retire_index_cmd,
     reroot_cmd,
@@ -2259,6 +2262,7 @@ pub fn sync(
     history_cmd,
     package_graph_cmd,
     sync_semantic_review_editors(dispatch, state, ctx.active_file),
+    navigation_cmd,
   ])
   // A closed panel re-roots (above) and keeps the watcher placed, but the tree
   // itself can wait for the reopen. Unresolved placement takes the same early
@@ -2552,38 +2556,38 @@ pub fn update(
     }
     ReviewDiffNavigationAvailabilityChanged(available) =>
       (@cmd.none, { ..state, review_diff_navigation_available: available, })
-    RevealPreviousReviewDiffChange => {
+    RevealPreviousReviewDiffChange | RevealNextReviewDiffChange => {
       guard review_diff_navigation_enabled(state, ctx) else {
         return (@cmd.none, state)
       }
-      if line_diff_ready(state, ctx) {
-        (reveal_previous_review_diff_change(), state)
+      let previous = msg is RevealPreviousReviewDiffChange
+      let cmd = if !full_diff_ready(state, ctx) {
+        dispatch(ReviewDiffFileBoundary(previous))
+      } else if line_diff_ready(state, ctx) {
+        navigate_line_review_change(dispatch, previous)
       } else {
-        (
-          navigate_semantic_review_change(
-            dispatch,
-            state.semantic_review_collapsed,
-            SemanticReviewPrevious,
-          ),
-          state,
+        navigate_semantic_review_change(
+          dispatch,
+          state.semantic_review_collapsed,
+          if previous {
+            SemanticReviewPrevious
+          } else {
+            SemanticReviewNext
+          },
         )
       }
+      (cmd, state)
     }
-    RevealNextReviewDiffChange => {
+    ReviewDiffFileBoundary(previous) => {
       guard review_diff_navigation_enabled(state, ctx) else {
         return (@cmd.none, state)
       }
-      if line_diff_ready(state, ctx) {
-        (reveal_next_review_diff_change(), state)
+      if review_navigation_neighbor(state, ctx, previous) is Some(change) {
+        (dispatch(ChangedFileNavigated(change, previous)), state)
+      } else if line_diff_ready(state, ctx) {
+        (reveal_line_review_edge(previous), state)
       } else {
-        (
-          navigate_semantic_review_change(
-            dispatch,
-            state.semantic_review_collapsed,
-            SemanticReviewNext,
-          ),
-          state,
-        )
+        reveal_semantic_review_edge(dispatch, state, previous)
       }
     }
     RevealSemanticReviewSectionChange(key, reveal_last) => {
@@ -3239,7 +3243,7 @@ pub fn update(
     FileSelected(..) | SearchMatchSelected(..) => (@cmd.none, state)
     // Intercepted by the root so the dock can open/activate the file tab
     // before this package starts the paired working-tree + HEAD reads.
-    ChangedFileSelected(_) => (@cmd.none, state)
+    ChangedFileSelected(_) | ChangedFileNavigated(_, _) => (@cmd.none, state)
     HistoricalFileSelected(_) => (@cmd.none, state)
     // Intercepted by the root for the same reason: a navigation jump opens
     // a dock tab before the document loads.

@@ -2201,20 +2201,11 @@ button.git-history-file.selected {
 .review-badge.hidden {
   display: none;
 }
-.review-navigation {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 2px;
-}
-.review-navigation.hidden {
-  display: none;
-}
 .review-diff-navigation {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 2px;
+  gap: 6px;
 }
 .review-diff-navigation.hidden {
   display: none;

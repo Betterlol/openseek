@@ -1828,10 +1828,10 @@ pub fn breadcrumb_view(
     None => crumbs.push(@html.span(class="crumb crumb-file", "Workspace"))
   }
   let review = full_diff_available(state, ctx)
-  let path_row : Array[@html.Html] = [
-    @html.div(class="crumb-path", crumbs),
-    review_navigation(dispatch, state, ctx),
-  ]
+  let path_row : Array[@html.Html] = [@html.div(class="crumb-path", crumbs)]
+  if !review {
+    path_row.push(review_diff_navigation(dispatch, state, ctx))
+  }
   if review {
     path_row.push(review_progress(dispatch, state, ctx))
   } else {
@@ -2088,6 +2088,9 @@ fn line_diff_ready(state : State, ctx : Ctx) -> Bool {
 /// already nonempty change documents, so their aggregate navigation is ready
 /// once at least one semantic item exists.
 fn review_diff_navigation_enabled(state : State, ctx : Ctx) -> Bool {
+  if active_review_position(state, ctx) is Some((_, _, total)) && total > 1 {
+    return true
+  }
   if line_diff_ready(state, ctx) {
     state.review_diff_navigation_available
   } else {
@@ -2324,23 +2327,38 @@ fn review_tests_control(
 }
 
 ///|
-/// Previous/next controls for walking the DiffEditor's computed change groups.
-/// They share the same command path as Shift+F7/F7, including wrapping at the
-/// ends; the buttons therefore stay enabled at the first and last change.
+/// One navigation group walks changes, then files, and wraps the review queue.
 fn review_diff_navigation(
   dispatch : @cmd.Emit[Msg],
   state : State,
   ctx : Ctx,
 ) -> @html.Html {
-  guard full_diff_available(state, ctx) else {
+  let file_position = active_review_position(state, ctx)
+  guard full_diff_available(state, ctx) || file_position is Some(_) else {
     return @html.span(class="review-diff-navigation hidden", "")
   }
-  let enabled = full_diff_ready(state, ctx) &&
-    review_diff_navigation_enabled(state, ctx)
+  let enabled = review_diff_navigation_enabled(state, ctx)
   let position = state
     .active_review_hunk(ctx.active_file)
     .bind(active => active.position)
-  let controls : Array[@html.Html] = [
+  let controls : Array[@html.Html] = []
+  if file_position is Some((_, index, total)) {
+    controls.push(
+      @html.span(class="review-nav-position", "File \{index + 1} of \{total}"),
+    )
+  }
+  if position is Some(position) {
+    controls.push(
+      @html.span(
+        class="review-hunk-position",
+        attrs=@html.Attrs::build()
+          .aria_label("Hunk \{position.current} of \{position.total}")
+          .aria_live("polite"),
+        "Change \{position.current} of \{position.total}",
+      ),
+    )
+  }
+  controls.push(
     @html.button(
       type_="button",
       class="review-nav-button",
@@ -2353,18 +2371,7 @@ fn review_diff_navigation(
         .aria_keyshortcuts("Shift+F7"),
       @icons.icon(@icons.icon_arrow_up),
     ),
-  ]
-  if position is Some(position) {
-    controls.push(
-      @html.span(
-        class="review-hunk-position",
-        attrs=@html.Attrs::build()
-          .aria_label("Hunk \{position.current} of \{position.total}")
-          .aria_live("polite"),
-        "\{position.current} of \{position.total}",
-      ),
-    )
-  }
+  )
   controls.push(
     @html.button(
       type_="button",
@@ -2382,6 +2389,7 @@ fn review_diff_navigation(
   @html.div(
     class="review-diff-navigation",
     attrs=@html.Attrs::build()
+      .id("review-change-navigation")
       .role("group")
       .aria_label("Diff change navigation"),
     controls,
@@ -2676,59 +2684,6 @@ fn breadcrumb_picker_row(
         } else {
           "breadcrumb-picker-chevron hidden"
         },
-        "›",
-      ),
-    ],
-  )
-}
-
-///|
-/// Previous/next controls for walking the reviewable Changes queue without
-/// returning to the tree between files. Native buttons remain keyboard
-/// reachable; changed rows additionally support ArrowUp/Down and Home/End.
-fn review_navigation(
-  dispatch : @cmd.Emit[Msg],
-  state : State,
-  ctx : Ctx,
-) -> @html.Html {
-  guard active_review_position(state, ctx) is Some((selected, index, total)) else {
-    return @html.span(class="review-navigation hidden", "")
-  }
-  let previous = review_neighbor(state, selected, -1)
-  let next = review_neighbor(state, selected, 1)
-  @html.div(
-    class="review-navigation",
-    attrs=@html.Attrs::build()
-      .role("group")
-      .aria_label("Changed file navigation"),
-    [
-      @html.button(
-        type_="button",
-        class="review-nav-button",
-        title="Previous changed file",
-        disabled=previous is None,
-        on_click=match previous {
-          Some(previous) => dispatch(ChangedFileSelected(previous))
-          None => @cmd.none
-        },
-        attrs=@html.Attrs::build().aria_label("Previous changed file"),
-        "‹",
-      ),
-      @html.span(
-        class="review-nav-position",
-        attrs=@html.Attrs::build().aria_live("polite"),
-        "\{index + 1} of \{total}",
-      ),
-      @html.button(
-        type_="button",
-        class="review-nav-button",
-        title="Next changed file",
-        disabled=next is None,
-        on_click=match next {
-          Some(next) => dispatch(ChangedFileSelected(next))
-          None => @cmd.none
-        },
-        attrs=@html.Attrs::build().aria_label("Next changed file"),
         "›",
       ),
     ],

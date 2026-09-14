@@ -552,25 +552,42 @@ fn request_viewer_mount(dispatch : @cmd.Emit[Msg]) -> @cmd.Cmd {
 }
 
 ///|
-/// Reveal the previous change through DiffEditor's existing cyclic navigation.
-/// This deliberately leaves focus where it is so toolbar clicks do not change
-/// keyboard ownership beyond the editor's own cursor update.
-fn reveal_previous_review_diff_change() -> @cmd.Cmd {
-  @cmd.custom_cmd(_scheduler => {
-    if viewer_state.diff_editor is Some(diff_editor) {
-      diff_editor.reveal_previous_change() |> ignore
+/// Keep the cursor-relative behavior inside a file; the host owns file boundaries.
+fn navigate_line_review_change(
+  dispatch : @cmd.Emit[Msg],
+  previous : Bool,
+) -> @cmd.Cmd {
+  @cmd.custom_cmd(scheduler => {
+    guard viewer_state.diff_editor is Some(editor) &&
+      editor.is_diff_up_to_date() else {
+      return
+    }
+    let revealed = if previous {
+      editor.reveal_previous_change_without_wrap()
+    } else {
+      editor.reveal_next_change_without_wrap()
+    }
+    if !revealed {
+      scheduler.add(dispatch(ReviewDiffFileBoundary(previous)))
     }
   })
 }
 
 ///|
-/// Reveal the next change through DiffEditor's existing cyclic navigation.
-fn reveal_next_review_diff_change() -> @cmd.Cmd {
-  @cmd.custom_cmd(_scheduler => {
-    if viewer_state.diff_editor is Some(diff_editor) {
-      diff_editor.reveal_next_change() |> ignore
-    }
-  })
+fn reveal_line_review_edge(last : Bool) -> @cmd.Cmd {
+  @cmd.custom_cmd(
+    _scheduler => {
+      if viewer_state.diff_editor is Some(editor) {
+        if last {
+          editor.reveal_last_diff()
+        } else {
+          editor.reveal_first_diff()
+        }
+        editor.focus()
+      }
+    },
+    kind=@cmd.after_render,
+  )
 }
 
 ///|
