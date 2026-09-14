@@ -383,6 +383,9 @@ pub fn CodeEditorWidget::show_references(
     self.references_contribution() is Some(state) else {
     return
   }
+  // Supplied results replace the current Peek, including another result set
+  // at the same symbol (for example Local followed by Outside CodeLens).
+  state.controller.close(restore_focus=false)
   state.controller.toggle_locations(anchor, References, locations) |> ignore
 }
 

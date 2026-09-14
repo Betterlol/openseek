@@ -344,6 +344,10 @@ type LspHoverPayload = @protocol.LspHoverPayload
 type MoonIdeNavigationPayload = @protocol.MoonIdeNavigationPayload
 
 ///|
+/// A whole-file CodeLens request under the same authorized editor root.
+type MoonIdeCodeLensPayload = @protocol.MoonIdeCodeLensPayload
+
+///|
 /// One Moon IDE navigation result. The host validates the CLI path against the
 /// physical root, then maps it back under the supplied root's lexical
 /// spelling. Its compact range becomes explicit numeric fields while
@@ -365,6 +369,13 @@ type MoonPackageGraphPayload = @protocol.MoonPackageGraphPayload
 /// error. Keeping the variants distinct prevents failed Moon JSON from being
 /// interpreted as graph input.
 type MoonPackageGraphReply = @protocol.MoonPackageGraphReply
+
+///|
+/// Host-normalized Moon IDE reference CodeLens rows.
+type MoonIdeCodeLensReply = @protocol.MoonIdeCodeLensReply
+
+///|
+type MoonIdeCodeLensAction = @protocol.MoonIdeCodeLensAction
 
 ///|
 /// `lsp_open` tells the host the editor is now showing `path` relative to the

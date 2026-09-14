@@ -84,6 +84,11 @@ test('public locations render an accessible lazy tree, snippets, and decorated p
     );
     await expect(dialog.locator(groupRow)).toHaveCount(3);
 
+    // Explicitly supplied results replace the existing Peek at this anchor.
+    await control(page, 'show_code');
+    await expect(dialog).toBeVisible();
+    await expect(tree).toHaveAttribute('aria-label', 'Found 6 results in 3 files');
+
     const remoteGroup = group(tree, 0);
     const sourceGroup = group(tree, 1);
     const otherGroup = group(tree, 2);

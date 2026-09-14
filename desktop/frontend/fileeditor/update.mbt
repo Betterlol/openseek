@@ -3669,6 +3669,18 @@ pub fn update(
           refresh_index = state.index is IndexLoading(..) ||
             state.index is IndexReady(..)
         }
+        if moonbit_changed || package_graph_changed {
+          cmds.push(
+            @cmd.custom_cmd(_scheduler => {
+              // A sibling edit changes counts without changing the open model.
+              if viewer_state.navigation is Some(context) &&
+                context.owner == owner &&
+                context.root == root {
+                moon_ide_code_lens_changes.fire(())
+              }
+            }),
+          )
+        }
         if !stat_paths.is_empty() {
           cmds.push(
             stat_files(

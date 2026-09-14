@@ -69,6 +69,16 @@ pub(all) struct DocumentSymbol {
 } derive(Debug)
 
 ///|
+/// A complete inline action. The provider owns execution and its captured
+/// data; the editor cancels the request token when this result becomes stale.
+pub(all) struct CodeLens {
+  range : @base_common.Range
+  title : String
+  tooltip : String?
+  execute : async () -> Unit noraise
+} derive(Debug)
+
+///|
 /// Asynchronous hover provider for a readonly text model and the repository's
 /// one-based UTF-16 `Position`.
 pub(open) trait HoverProvider {
@@ -96,6 +106,14 @@ pub(open) trait DefinitionProvider {
 pub(open) trait DocumentSymbolProvider {
   async fn provide_document_symbols(Self, @model.TextModel, CancellationToken) -> Array[
     DocumentSymbol,
+  ]
+}
+
+///|
+/// Asynchronous CodeLens provider for a readonly text model.
+pub(open) trait CodeLensProvider {
+  async fn provide_code_lenses(Self, @model.TextModel, CancellationToken) -> Array[
+    CodeLens,
   ]
 }
 
@@ -130,6 +148,9 @@ pub fn DiagnosticTag::label(self : DiagnosticTag) -> String {
 
 ///|
 pub extend Diagnostic with Debug::{to_repr}
+
+///|
+pub extend CodeLens with Debug::{to_repr}
 
 ///|
 pub extend Diagnostic with Eq::{equal, not_equal}
