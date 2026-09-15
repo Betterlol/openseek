@@ -1395,6 +1395,7 @@ pub impl ToJson for ReadFileReply with fn to_json(self) {
 pub(all) enum PatternRepairStatus {
   Passed
   Unavailable
+  TimedOut
   Failed
 } derive(Debug, Eq)
 
