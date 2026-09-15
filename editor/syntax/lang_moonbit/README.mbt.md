@@ -40,12 +40,6 @@ fn annotate(
 
 ## Lexical classes
 
-Keywords and literal boundaries follow ideas-master revision
-`a642feeb2a891ae9cad4aa66de7c71d95ac7bca3`, specifically
-`lib/xml/lex/{lex_keyword_tbl,lex_unicode,lex_unicode_lex}.ml` and
-`lib/xml/parsing/parsing_parser.mly`. The rules are local; no compiler or grammar
-is loaded at runtime. `package` is highlighted for interface files as well.
-
 One rule consumes a complete identifier, including the compiler's Unicode
 identifier blocks. Keyword-prefixed identifiers remain identifiers; reserved
 words and obsolete `typealias`/`traitalias`/`fnalias` spellings do too. An

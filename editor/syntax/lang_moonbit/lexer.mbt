@@ -1,7 +1,5 @@
 ///|
 /// Hand-written MoonBit lexer behind the `syntax.LineTokenizer` contract.
-/// Rules follow ideas-master lib/xml/lex and lib/xml/parsing. Each `lexmatch`
-/// compiles to a DFA; call highlighting uses only line-local lookahead.
 ///
 /// The carried `TokenizerState` is empty because no MoonBit string construct
 /// survives a line end. A per-line persistent list records lexical modes,
@@ -285,7 +283,6 @@ pub impl @syntax.LineTokenizer for MoonBitTokenizer with fn tokenize_line(
             @syntax.push_token(tokens, at + 1, end, Number)
             continue end, rest, modes
           }
-          // Identifier blocks from ideas-master lib/xml/lex/lex_unicode.ml.
           (
             re"^[a-zA-Z_\u{a1}-\u{ac}\u{ae}-\u{2af}\u{1100}-\u{11ff}\u{1e00}-\u{1eff}\u{2070}-\u{209f}\u{2150}-\u{218f}\u{2e80}-\u{2eff}\u{2ff0}-\u{2fff}\u{3001}-\u{30ff}\u{31c0}-\u{9fff}\u{ac00}-\u{d7ff}\u{f900}-\u{faff}\u{fe00}-\u{fe0f}\u{fe30}-\u{fe4f}\u{1f000}-\u{1fbff}\u{20000}-\u{2a6df}\u{2a700}-\u{2ebef}\u{2f800}-\u{2fa1f}\u{30000}-\u{323af}\u{e0100}-\u{e01ef}][a-zA-Z0-9_\u{a1}-\u{ac}\u{ae}-\u{2af}\u{1100}-\u{11ff}\u{1e00}-\u{1eff}\u{2070}-\u{209f}\u{2150}-\u{218f}\u{2e80}-\u{2eff}\u{2ff0}-\u{2fff}\u{3001}-\u{30ff}\u{31c0}-\u{9fff}\u{ac00}-\u{d7ff}\u{f900}-\u{faff}\u{fe00}-\u{fe0f}\u{fe30}-\u{fe4f}\u{1f000}-\u{1fbff}\u{20000}-\u{2a6df}\u{2a700}-\u{2ebef}\u{2f800}-\u{2fa1f}\u{30000}-\u{323af}\u{e0100}-\u{e01ef}]*" as s,
             after=rest,
