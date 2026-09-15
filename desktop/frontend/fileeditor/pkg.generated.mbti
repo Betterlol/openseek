@@ -242,6 +242,7 @@ pub(all) enum Msg {
   ExplorerModeSelected(ExplorerMode)
   Search(@grep_search.Msg)
   SearchMatchSelected(path~ : String, range~ : @common.Range)
+  TreeFocused(@pathx.Relative)
   DirToggle(@pathx.Relative)
   EnsureFileIndex
   DirLoaded(owner~ : @interop.ConversationKey, epoch~ : Int, path~ : @pathx.Relative, entries~ : Array[FileEntry])
@@ -454,6 +455,7 @@ pub(all) struct State {
   watching : WatchedPaths?
   watch_generation : Int
   watch_error : String?
+  tree_focus : @pathx.Relative?
   expanded : Array[@pathx.Relative]
   loading : Array[@pathx.Relative]
   children : Map[@pathx.Relative, Array[FileEntry]]

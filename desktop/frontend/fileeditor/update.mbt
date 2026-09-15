@@ -2353,6 +2353,28 @@ pub fn update(
   state : State,
   ctx : Ctx,
 ) -> (@cmd.Cmd, State) {
+  let had_focus = tree_has_dom_focus()
+  let (cmd, next) = update_inner(dispatch, msg, state, ctx)
+  let focus = tree_focus_target(next)
+  let restore = if had_focus &&
+    (
+      focus != state.tree_focus ||
+      visible_entries(state) != visible_entries(next)
+    ) {
+    focus_tree_after_render(focus)
+  } else {
+    @cmd.none
+  }
+  (@cmd.batch([cmd, restore]), { ..next, tree_focus: focus, })
+}
+
+///|
+fn update_inner(
+  dispatch : @cmd.Emit[Msg],
+  msg : Msg,
+  state : State,
+  ctx : Ctx,
+) -> (@cmd.Cmd, State) {
   // `sync` parks the old owner while placement is unresolved or its checkout
   // is missing. Refuse file-editor actions until there is a concrete root to
   // put into their absolute filesystem or root-relative language addresses.
@@ -2373,6 +2395,7 @@ pub fn update(
     }
   }
   match msg {
+    TreeFocused(path) => (@cmd.none, { ..state, tree_focus: Some(path), })
     ToggleTree => {
       // The docked panel takes its height from the viewer, and the viewer
       // cannot see a CSS change on its own.

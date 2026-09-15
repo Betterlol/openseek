@@ -540,6 +540,7 @@ pub(all) struct State {
   watch_error : String?
   // Directory paths the user has expanded, and those with a `read_directory`
   // in flight; plain arrays since a workspace tree is small.
+  tree_focus : @pathx.Relative?
   expanded : Array[@pathx.Relative]
   loading : Array[@pathx.Relative]
   // Listed directories' entries, keyed by the directory's relative path.
@@ -618,6 +619,7 @@ pub fn State::empty() -> State {
     watching: None,
     watch_generation: 0,
     watch_error: None,
+    tree_focus: None,
     expanded: [],
     loading: [],
     children: Map([]),
@@ -802,6 +804,7 @@ pub(all) enum Msg {
   SearchMatchSelected(path~ : String, range~ : @common.Range)
   // Expand or collapse a directory row in the file tree; the first expansion
   // lazily lists the directory through the host.
+  TreeFocused(@pathx.Relative)
   DirToggle(@pathx.Relative)
   // Ensure the current workspace's file snapshot exists. Loading and ready
   // states make this idempotent; a failed first request is retryable.

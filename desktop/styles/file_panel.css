@@ -1835,6 +1835,11 @@ button.git-history-file.selected {
   text-overflow: ellipsis;
 }
 
+.tree-row:focus-visible {
+  outline: 2px solid var(--color-accent-strong);
+  outline-offset: -2px;
+}
+
 .tree-row:hover {
   background: var(--color-bg-subtle);
 }
