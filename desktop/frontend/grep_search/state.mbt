@@ -252,6 +252,22 @@ pub fn State::handle(self : State, msg : Msg, input : Input) -> State {
       } else {
         self
       }
+    PatternRepairTimedOut(root~, generation~) =>
+      if page.mode is Semantic &&
+        input.root_text() == root &&
+        page.generation == generation &&
+        page.pattern_repair_phase is PatternRepairRequested {
+        {
+          ..self,
+          page: {
+            ..page,
+            pattern_repair_phase: PatternRepairTimedOut,
+            pattern_repair_message: None,
+          },
+        }
+      } else {
+        self
+      }
     PatternRepairValidationFailed(root~, generation~, diagnostic~) =>
       if page.mode is Semantic &&
         input.root_text() == root &&

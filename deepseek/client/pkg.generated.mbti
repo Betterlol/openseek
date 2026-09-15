@@ -48,7 +48,7 @@ pub async fn Client::chat(Self, Array[@deepseek.ChatMessage], tools? : Array[@de
 pub async fn Client::upload_image(Self, Bytes, filename~ : String, expires_after_seconds? : Int, timeout_ms? : Int) -> UploadedFile
 
 type StreamHandler
-pub fn StreamHandler::StreamHandler(on_content_delta~ : async (String) -> Unit, on_reasoning_delta? : async (String) -> Unit, on_retry? : (Int, Int, String) -> Unit) -> Self
+pub fn StreamHandler::StreamHandler(on_content_delta~ : async (String) -> Unit, on_reasoning_delta? : async (String) -> Unit, on_retry? : (Int, Int, String) -> Unit, on_timeout? : () -> Unit) -> Self
 
 pub struct UploadedFile {
   id : String
