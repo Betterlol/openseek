@@ -151,6 +151,20 @@ html.is-resizing .sidebar-resize-handle {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.conversation-open {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.conversation-open:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
 .conversation-rename-editor {
   flex: 1 1 auto;
   display: flex;
@@ -269,7 +283,8 @@ html.is-resizing .sidebar-resize-handle {
   cursor: pointer;
   visibility: hidden;
 }
-.conversation-row:hover .row-archive {
+.conversation-row:hover .row-archive,
+.conversation-row:focus-within .row-archive {
   visibility: visible;
 }
 .row-archive:hover {
@@ -311,14 +326,16 @@ html.is-resizing .sidebar-resize-handle {
 /* Both groups stay in layout (visibility, not display) so the cell keeps
    one width across the swap. An open menu keeps its trigger visible while
    the pointer moves into the floating surface. */
-.conversation-row:hover .row-trailing:has(.row-actions) .row-status {
+.conversation-row:hover .row-trailing:has(.row-actions) .row-status,
+.conversation-row:focus-within .row-trailing:has(.row-actions) .row-status {
   visibility: hidden;
 }
 .conversation-row.loading .row-trailing {
   display: flex;
   gap: 6px;
 }
-.conversation-row.loading:hover .row-trailing:has(.row-actions) .row-status {
+.conversation-row.loading:hover .row-trailing:has(.row-actions) .row-status,
+.conversation-row.loading:focus-within .row-trailing:has(.row-actions) .row-status {
   visibility: visible;
 }
 

@@ -494,7 +494,27 @@ pub fn component(
           ),
         )
       }
-      None => children.push(@html.span(class="sidebar-label", input.label))
+      None =>
+        children.push(
+          if input.openable {
+            // Native keyboard activation bubbles to the row's existing open
+            // handler, just like a pointer click on the title.
+            @html.button(
+              type_="button",
+              class="sidebar-label conversation-open",
+              attrs=@html.Attrs::build().aria_current(
+                if input.active {
+                  "true"
+                } else {
+                  "false"
+                },
+              ),
+              input.label,
+            )
+          } else {
+            @html.span(class="sidebar-label", input.label)
+          },
+        )
     }
     let status : Array[@html.Html] = []
     if input.loading {
