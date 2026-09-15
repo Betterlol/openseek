@@ -34,6 +34,9 @@ enum Mode {
 enum PatternRepairPhase {
   PatternRepairIdle
   PatternRepairRequested
+  PatternRepairInputRequired
+  PatternRepairUnavailable
+  PatternRepairValidationFailed
   PatternRepairFailed
 } derive(Eq, Debug)
 
@@ -181,7 +184,17 @@ pub(all) enum Msg {
     generation~ : Int,
     candidate_pattern~ : String
   )
-  PatternRepairFailed(root~ : String, generation~ : Int, message~ : String)
+  PatternRepairUnavailable(
+    root~ : String,
+    generation~ : Int,
+    message~ : String
+  )
+  PatternRepairValidationFailed(
+    root~ : String,
+    generation~ : Int,
+    diagnostic~ : String
+  )
+  PatternRepairFailed(root~ : String, generation~ : Int)
   IncludeChanged(String)
   ExcludeChanged(String)
   // Semantic-mode settings, mirroring the text-mode toggles.
