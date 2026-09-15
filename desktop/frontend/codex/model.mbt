@@ -1358,7 +1358,8 @@ fn CodexThread::decode(value : Json) -> CodexThread? {
 }
 
 ///|
-/// Combine app-server's cwd with the native host's managed-worktree metadata.
+/// The native registry owns the checkout path for managed worktrees; app-server
+/// can still report the creation-time cwd when a stored task is reopened.
 /// An unannotated cwd remains an ordinary root even when app-server reports a
 /// different `projectRoot`: SeekMoon must not claim ownership of an external
 /// Codex App or manually-created Git worktree from path shape alone.
@@ -1375,9 +1376,8 @@ fn CodexThread::placement(
       if !worktree.present {
         return Some(@interop.MissingWorktree(project~, name=worktree.name))
       }
-      guard self.cwd is Some(cwd) &&
-        !cwd.trim().is_empty() &&
-        @resource.of_path(channel, cwd) is Some(root) else {
+      guard !worktree.path.trim().is_empty() &&
+        @resource.of_path(channel, worktree.path) is Some(root) else {
         return None
       }
       Some(@interop.Worktree(project~, name=worktree.name, root~))
