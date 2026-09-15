@@ -351,14 +351,31 @@ fn resolved_endpoint(
 }
 
 ///|
+/// Safe outcomes for the short-lived Pattern Repair configuration path.
+/// `Configuration` is emitted only by `resolved_endpoint`, whose messages are
+/// user-facing setup instructions; storage and system failures stay opaque.
+pub(all) enum PatternRepairEnvironment {
+  Ready(Map[String, String])
+  Configuration(String)
+  Unavailable
+} derive(Debug)
+
+///|
+pub extend PatternRepairEnvironment with Debug::{to_repr}
+
+///|
 /// Resolve the credential and endpoint environment for a short-lived host
-/// operation. Credentials stay in the child environment and never enter argv.
+/// operation. Credentials stay in the child environment and never enter argv;
+/// callers receive safe configuration guidance without receiving I/O details.
 pub async fn pattern_repair_environment(
   manager : EngineManager,
-  model~ : String,
-) -> Map[String, String] raise EngineError {
+  model~ : String?,
+) -> PatternRepairEnvironment {
   let (settings, _) = manager.settings_snapshot() catch {
-    error => raise EngineError("could not read engine settings: \{error}")
+    _ => return Unavailable
+  }
+  let endpoint = resolved_endpoint(settings) catch {
+    EngineError(message) => return Configuration(message)
   }
   let endpoint = resolved_endpoint(settings)
   let env = @sys.get_env_vars()
