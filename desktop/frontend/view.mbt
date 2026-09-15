@@ -1879,6 +1879,15 @@ fn view(
     "Show sidebar"
   }
   let children : Array[@html.Html] = [
+    // Keep reading order aligned with the control's top-left position,
+    // outside all animated content tracks.
+    @html.button(
+      class="sidebar-toggle",
+      title=sidebar_toggle_label,
+      on_click=dispatch(ToggleSidebar),
+      attrs=@html.Attrs::build().aria_label(sidebar_toggle_label),
+      icon(icon_layout_sidebar_left),
+    ),
     sidebar_html,
     @html.div(class=content_class, [
       @html.main_(
@@ -1892,14 +1901,6 @@ fn view(
       right_panel_html,
       terminal_html,
     ]),
-    // One shell-owned control remains outside all animated content tracks.
-    @html.button(
-      class="sidebar-toggle",
-      title=sidebar_toggle_label,
-      on_click=dispatch(ToggleSidebar),
-      attrs=@html.Attrs::build().aria_label(sidebar_toggle_label),
-      icon(icon_layout_sidebar_left),
-    ),
   ]
   // On the narrow layout the sidebar's stable backdrop fades with the drawer;
   // keeping it mounted lets the closing transition finish before it becomes
