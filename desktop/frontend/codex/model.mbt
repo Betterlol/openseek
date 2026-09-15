@@ -2589,6 +2589,48 @@ fn CodexItem::tool_name(self : CodexItem) -> String {
   match self.kind {
     "commandExecution" => "shell"
     "fileChange" => "edit"
+    "collabAgentToolCall" =>
+      // The app-server schema identifies the operation explicitly. Do not
+      // infer a spawn from a prompt or from arbitrary tool output.
+      if self.value is Object(fields) &&
+        @jsonx.json_text(fields, "tool") is Some(tool) {
+        match tool {
+          "spawnAgent" => "spawn_agent"
+          "wait" => "wait_agent"
+          "sendInput" => "send_input"
+          "sendMessage" => "send_message"
+          "resumeAgent" => "resume_agent"
+          "followupTask" => "followup_task"
+          "interruptAgent" => "interrupt_agent"
+          "closeAgent" => "close_agent"
+          "listAgents" => "list_agents"
+          _ => self.kind
+        }
+      } else {
+        self.kind
+      }
+    "dynamicToolCall" =>
+      // A dynamically registered tool may be named "edit" or "read" without
+      // implementing our built-in operation. Preserve its name and namespace
+      // for display while keeping it out of built-in category/diff decoding.
+      if self.value is Object(fields) &&
+        @jsonx.json_text(fields, "tool") is Some(tool) {
+        if @jsonx.json_text(fields, "namespace") is Some(tool_namespace) {
+          "dynamic__\{tool_namespace}__\{tool}"
+        } else {
+          "dynamic__\{tool}"
+        }
+      } else {
+        self.kind
+      }
+    "mcpToolCall" =>
+      if self.value is Object(fields) &&
+        @jsonx.json_text(fields, "server") is Some(server) &&
+        @jsonx.json_text(fields, "tool") is Some(tool) {
+        "mcp__\{server}__\{tool}"
+      } else {
+        self.kind
+      }
     other => other
   }
 }
@@ -2624,7 +2666,7 @@ fn CodexItem::tool_arguments(self : CodexItem) -> String? {
 fn CodexItem::tool_has_result(self : CodexItem) -> Bool {
   guard self.value is Object(fields) else { return true }
   match @jsonx.json_text(fields, "status") {
-    Some("inProgress") | Some("pending") => false
+    Some("inProgress") | Some("in_progress") | Some("pending") => false
     _ => true
   }
 }
@@ -2638,7 +2680,10 @@ fn CodexItem::tool_failed(self : CodexItem) -> Bool {
     Some("failed") | Some("declined") | Some("cancelled") => true
     _ => false
   }
+  // Dynamic tools may complete transport successfully but report a failed
+  // operation through their explicit success flag.
   failed_status ||
+  (self.kind == "dynamicToolCall" && fields.get("success") is Some(False)) ||
   @jsonx.json_int(fields, "exitCode").map(code => code != 0).unwrap_or(false)
 }
 
@@ -2669,9 +2714,23 @@ fn CodexItem::tool_brief(self : CodexItem) -> String? {
       "fileChange" => "Changed files"
       "webSearch" => "Searched the web"
       "imageView" => "Viewed image"
+      "imageGeneration" => "Generate image"
+      "sleep" => "Wait"
       "enteredReviewMode" => "Entered review mode"
       "exitedReviewMode" => "Exited review mode"
-      other => other
+      "collabAgentToolCall" =>
+        match self.tool_name() {
+          "spawn_agent" => "Create subagent"
+          "wait_agent" => "Wait for subagents"
+          "send_input" | "send_message" => "Send message to subagent"
+          "resume_agent" => "Resume subagent"
+          "followup_task" => "Assign subagent task"
+          "interrupt_agent" => "Stop subagent"
+          "close_agent" => "Close subagent"
+          "list_agents" => "List subagents"
+          name => name
+        }
+      _ => self.tool_name()
     },
   )
 }
@@ -2701,8 +2760,39 @@ pub fn State::transcript_items(
   }
   if self.active_thread() is Some(active) {
     for turn in active.turns {
+      // app-server owns the turn boundary. A commentary message cannot become
+      // the final answer just because it happens to be last in a stopped turn.
+      let mut final_id : String? = None
+      if turn.status == "completed" && turn.error is None {
+        for item in turn.items {
+          if item.kind == "agentMessage" &&
+            !item.text().is_blank() &&
+            item.value is Object(fields) {
+            let phase = @jsonx.json_text(fields, "phase")
+            if phase is None || phase == Some("final_answer") {
+              final_id = Some(item.id)
+            }
+          }
+        }
+      }
       for item in turn.items {
         let transcript_item = item.transcript_item()
+        let transcript_item = if final_id == Some(item.id) &&
+          transcript_item.kind
+          is @transcript.Assistant(reasoning~, prose~, calls~, replay~, ..) {
+          {
+            ..transcript_item,
+            kind: @transcript.Assistant(
+              reasoning~,
+              prose~,
+              calls~,
+              replay~,
+              finished=true,
+            ),
+          }
+        } else {
+          transcript_item
+        }
         // GPT can commit a reasoning item whose only payload is encrypted:
         // until app-server exposes summary text, there is nothing the
         // transcript can display and an empty thought becomes a blank
@@ -2729,6 +2819,22 @@ pub fn State::transcript_items(
           ts: None,
           sequence: None,
         })
+      } else if turn.status == "interrupted" || turn.status == "failed" {
+        items.push({
+          kind: @transcript.Failure(
+            if turn.status == "interrupted" {
+              "Stopped"
+            } else {
+              "Failed"
+            },
+          ),
+          ts: None,
+          sequence: None,
+        })
+      } else if turn.status == "completed" && final_id is None {
+        // Preserve a successful empty turn as a boundary without inventing an
+        // answer or folding its process into a later completed turn.
+        items.push({ kind: @transcript.TurnEnd, ts: None, sequence: None, })
       }
     }
   }
