@@ -29,6 +29,188 @@ fn split_lines(source : String) -> Array[String] {
 }
 
 ///|
+fn assert_line_tokens(
+  line : String,
+  expected : Array[(String, @syntax.HighlightTag)],
+) -> Unit raise {
+  let lexer = @lang_moonbit.MoonBitTokenizer()
+  let (tokens, state) = lexer.tokenize_line(line, lexer.initial_state())
+  assert_eq(tokens.map(t => (line[t.start:t.end].to_owned(), t.tag)), expected)
+  assert_eq(state, lexer.initial_state())
+}
+
+///|
+test "compiler keywords and ordinary spellings" {
+  for
+    word in [
+      "extenum", "enumview", "readonly", "throw", "letrec", "and", "proof_assert",
+      "proof_let", "nocancel", "package", "_",
+    ] {
+    assert_line_tokens(word, [(word, Keyword)])
+    let identifier = "\{word}_value"
+    assert_line_tokens(identifier, [(identifier, Identifier)])
+  }
+  // Reserved words still lex as identifiers; removed aliases are not keywords.
+  for word in ["not", "typealias", "traitalias", "fnalias", "await", "module"] {
+    assert_line_tokens(word, [(word, Identifier)])
+  }
+}
+
+///|
+test "numeric literals and their boundaries follow the compiler lexer" {
+  for
+    literal in [
+      "0", "123_456", "42U", "42L", "42UL", "42N", "0xFFN", "0o77UL", "0b101N", "1.",
+      "1.F", "3.14e-2F", "1.0e1_0", "0x1.fp+3", "0x1.p-2F", "0XAB.CDp1_2", "0x1.",
+    ] {
+    assert_line_tokens(literal, [(literal, Number)])
+  }
+  for operator in ["..", "..=", "..<", "..<=", "...", ">..", ">=.."] {
+    assert_line_tokens("1\{operator}2", [
+      ("1", Number),
+      (operator, Operator),
+      ("2", Number),
+    ])
+  }
+  assert_line_tokens("0x1..=2", [
+    ("0x1", Number),
+    ("..=", Operator),
+    ("2", Number),
+  ])
+  assert_line_tokens("tuple.0.1", [
+    ("tuple", Identifier),
+    (".", Delimiter),
+    ("0", Number),
+    (".", Delimiter),
+    ("1", Number),
+  ])
+  assert_line_tokens("1ULL 0x_FF 1e3", [
+    ("1UL", Number),
+    ("L", Type),
+    ("0", Number),
+    ("x_FF", Identifier),
+    ("1", Number),
+    ("e3", Identifier),
+  ])
+}
+
+///|
+test "regex text resumes after nested string interpolation" {
+  let source =
+    #|re"^\{f("x")}\w+$"
+  assert_line_tokens(source, [
+    ("re\"^", Regexp),
+    ("\\{", StringEscape),
+    ("f", Function),
+    ("(", Delimiter),
+    ("\"x\"", String),
+    (")", Delimiter),
+    ("}\\w", StringEscape),
+    ("+$\"", Regexp),
+  ])
+  assert_line_tokens("re\"unfinished", [("re\"unfinished", Regexp)])
+}
+
+///|
+test "literal escapes consume their full spelling" {
+  for prefix in ["\"", "b\"", "$|"] {
+    assert_line_tokens("\{prefix}\\x41\\u0042\\u{1F31F}\\o101", [
+      (prefix, String),
+      ("\\x41\\u0042\\u{1F31F}\\o101", StringEscape),
+    ])
+  }
+  assert_line_tokens("#|\\u{41}\\{x}", [("#|\\u{41}\\{x}", String)])
+  assert_line_tokens("'\\u{1F31F}' b'\\x41'", [
+    ("'\\u{1F31F}'", String),
+    ("b'\\x41'", String),
+  ])
+}
+
+///|
+test "call lookahead respects keywords constructors and member names" {
+  assert_line_tokens("fn parse(x : Int) { parse ? (x) }", [
+    ("fn", Keyword),
+    ("parse", Function),
+    ("(", Delimiter),
+    ("x", Identifier),
+    (":", Delimiter),
+    ("Int", Type),
+    (")", Delimiter),
+    ("{", Delimiter),
+    ("parse", Function),
+    ("?", Operator),
+    ("(", Delimiter),
+    ("x", Identifier),
+    (")", Delimiter),
+    ("}", Delimiter),
+  ])
+  assert_line_tokens("@pkg.match!() extend () Some(1) if (ok)", [
+    ("@pkg", Type),
+    (".", Delimiter),
+    ("match", Function),
+    ("!", Operator),
+    ("()", Delimiter),
+    ("extend", Function),
+    ("()", Delimiter),
+    ("Some", Type),
+    ("(", Delimiter),
+    ("1", Number),
+    (")", Delimiter),
+    ("if", Keyword),
+    ("(", Delimiter),
+    ("ok", Identifier),
+    (")", Delimiter),
+  ])
+  assert_line_tokens("obj.let value~ value~~ fn_name // call()", [
+    ("obj", Identifier),
+    (".", Delimiter),
+    ("let", Identifier),
+    ("value", Identifier),
+    ("~", Operator),
+    ("value", Identifier),
+    ("~~", Operator),
+    ("fn_name", Identifier),
+    ("// call()", Comment),
+  ])
+  assert_line_tokens("1..match", [
+    ("1", Number),
+    ("..", Operator),
+    ("match", Keyword),
+  ])
+}
+
+///|
+test "package paths attributes and Unicode identifiers keep token boundaries" {
+  assert_line_tokens("@my-org/core-utils.run() @pkg/", [
+    ("@my-org/core-utils", Type),
+    (".", Delimiter),
+    ("run", Function),
+    ("()", Delimiter),
+    ("@pkg", Type),
+    ("/", Operator),
+  ])
+  assert_line_tokens("#doc.ui(value)", [
+    ("#doc.ui", Attribute),
+    ("(", Delimiter),
+    ("value", Identifier),
+    (")", Delimiter),
+  ])
+  assert_line_tokens("let\u{3000}值🌟 = A值 + 🌟x2; ∀ ∃ → $", [
+    ("let", Keyword),
+    ("值🌟", Identifier),
+    ("=", Operator),
+    ("A值", Type),
+    ("+", Operator),
+    ("🌟x2", Identifier),
+    (";", Delimiter),
+    ("∀", Operator),
+    ("∃", Operator),
+    ("→", Operator),
+    ("$", Punctuation),
+  ])
+}
+
+///|
 test "fixture errors.mbt token stream" {
   // tests/fixtures/workspace/src/errors.mbt
   let source =
@@ -51,7 +233,7 @@ test "fixture errors.mbt token stream" {
       #|27-33 Type String
       #|35-39 CommentDoc ///|
       #|40-42 Keyword fn
-      #|43-53 Identifier risky_step
+      #|43-53 Function risky_step
       #|53-54 Delimiter (
       #|54-58 Identifier flag
       #|59-60 Delimiter :
@@ -221,7 +403,7 @@ test "word classification distinguishes keywords from identifiers" {
       #|33-37 Identifier self
       #|38-46 Identifier selfless
       #|46-47 Delimiter ;
-      #|48-57 Keyword typealias
+      #|48-57 Identifier typealias
       #|58-62 Type Type
     ),
   )
@@ -233,10 +415,10 @@ test "defer and errdefer classify as keywords" {
     render_tokens("defer close(); errdefer rollback(); let deferred = 1"),
     content=(
       #|0-5 Keyword defer
-      #|6-11 Identifier close
+      #|6-11 Function close
       #|11-14 Delimiter ();
       #|15-23 Keyword errdefer
-      #|24-32 Identifier rollback
+      #|24-32 Function rollback
       #|32-35 Delimiter ();
       #|36-39 Keyword let
       #|40-48 Identifier deferred
@@ -247,11 +429,11 @@ test "defer and errdefer classify as keywords" {
 }
 
 ///|
-test "fallback punctuation preserves UTF-16 offsets" {
+test "emoji identifiers preserve UTF-16 offsets" {
   inspect(
     render_tokens("🌟"),
     content=(
-      #|0-2 Punctuation 🌟
+      #|0-2 Identifier 🌟
     ),
   )
 }

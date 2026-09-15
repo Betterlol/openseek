@@ -3,7 +3,7 @@
 The MoonBit lexer. It implements `@syntax.LineTokenizer` with a compile-time
 `lexmatch` DFA, so there is no grammar file to load and no runtime regex engine.
 
-`MoonbitTokenizer` is the whole public surface: hosts, examples, and tests select
+`MoonBitTokenizer` is the whole public surface: hosts, examples, and tests select
 it explicitly. Reusable viewer core packages must not import it — the viewer core
 talks to `@syntax.TokenizationRegistry`, never to a concrete language.
 
@@ -40,10 +40,22 @@ fn annotate(
 
 ## Lexical classes
 
-Keywords, identifiers, and numbers separate as expected. One lexer rule
-consumes a complete identifier, then `classify_word` classifies that lexeme by
-spelling alone. Keyword-prefixed identifiers therefore remain identifiers.
-An ASCII-capitalized identifier is classified as `Type`.
+One rule consumes a complete identifier, including the compiler's Unicode
+identifier blocks. Keyword-prefixed identifiers remain identifiers; reserved
+words and obsolete `typealias`/`traitalias`/`fnalias` spellings do too. An
+ASCII-capitalized identifier is classified as `Type`.
+
+The only contextual heuristic colors lowercase names followed on the same line
+by `(`, `!(`, or `?(` as `Function`, allowing whitespace. This covers ordinary
+declarations and calls, including the soft keyword `extend`. Member names after
+`.` bypass keyword classification, as in the compiler. The tokenizer does not
+resolve bindings or infer types, and calls whose `(` is on another line retain
+identifier color.
+
+Numbers include radix integers with `U`/`L`/`UL`/`N` suffixes, decimal and hex
+floats, `F` suffixes, and exponent separators. A float requires a decimal point,
+as in the reference lexer. Range operators and chained tuple accessors preserve
+their boundaries (`1..=3`, `pair.0.1`).
 
 ```mbt check
 ///|
@@ -56,7 +68,7 @@ test "declarations separate keywords, types, and values" {
       #|[
       #|  "pub|Keyword",
       #|  "fn|Keyword",
-      #|  "parse|Identifier",
+      #|  "parse|Function",
       #|  "(|Delimiter",
       #|  "input|Identifier",
       #|  ":|Delimiter",
@@ -95,6 +107,10 @@ test "doc comments and ordinary comments carry different tags" {
 
 Strings expose their escapes and interpolations as separate tokens, so a
 mis-escaped literal is visible without re-lexing the string body.
+`re"..."` uses `Regexp` for its text and the same nested interpolation rules as
+ordinary and byte strings. Hex, octal, and Unicode escapes are highlighted as
+whole escapes. Incomplete literals remain highlightable while editing; this
+tokenizer does not report lexical or parser errors.
 
 ```mbt check
 ///|
