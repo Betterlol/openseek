@@ -4,6 +4,7 @@ import {
   "moonbitlang/openseek/agent_session/store",
   "moonbitlang/openseek/deepseek",
   "moonbitlang/openseek/deepseek/client",
+  "moonbitlang/openseek_protocol",
   "moonbitlang/openseek_protocol/emit",
 }
 

@@ -12,6 +12,7 @@ import {
   "moonbitlang/openseek/cli",
   "moonbitlang/openseek/deepseek",
   "moonbitlang/openseek_protocol/emit",
+  "moonbitlang/openseek_protocol",
   "moonbitlang/core/env",
   "moonbitlang/openseek/internal/openseek/execution",
   "moonbitlang/async/fs",
