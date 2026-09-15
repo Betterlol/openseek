@@ -111,7 +111,18 @@ priv enum MinimalActivity {
 
 ///|
 priv enum MinimalContent {
-  Prose(text~ : String, assistant~ : String, finished~ : Bool, live~ : Bool)
+  Prose(
+    text~ : String,
+    assistant~ : String,
+    finished~ : Bool,
+    live~ : Bool,
+    // The durable commit instant of the item this prose came from, shown
+    // beside the copy action on a finished answer exactly as detailed mode's
+    // completion stamp is. `None` for prose still inside the process, for a
+    // context-ceiling answer an older store left unstamped, and for the live
+    // streaming bubble.
+    completed_at~ : Double?
+  )
   Activity(Array[MinimalActivity])
   Note(text~ : String, error~ : Bool)
   ContextSummary(String)
@@ -239,12 +250,24 @@ fn Input::minimal_blocks(self : Input) -> @vector.Vector[Block] {
           builder.finish(collapse=true)
           builder.push_block({
             identity: "final\u{0}\{identity}",
-            content: Prose(text~, assistant~, finished=true, live=false),
+            content: Prose(
+              text~,
+              assistant~,
+              finished=true,
+              live=false,
+              completed_at=row.item.ts,
+            ),
           })
         } else if prose is Some(text) && !text.is_blank() {
           builder.push_part(
             "prose\u{0}\{identity}",
-            Prose(text~, assistant~, finished=false, live=false),
+            Prose(
+              text~,
+              assistant~,
+              finished=false,
+              live=false,
+              completed_at=None,
+            ),
           )
         }
         // Reuse detailed mode's recorded job names, scoped to this transcript.
@@ -282,7 +305,13 @@ fn Input::minimal_blocks(self : Input) -> @vector.Vector[Block] {
         if !text.is_blank() {
           builder.push_block({
             identity: "final\u{0}\{identity}",
-            content: Prose(text~, assistant~, finished=true, live=false),
+            content: Prose(
+              text~,
+              assistant~,
+              finished=true,
+              live=false,
+              completed_at=row.item.ts,
+            ),
           })
         }
       }
@@ -320,7 +349,13 @@ fn Input::minimal_blocks(self : Input) -> @vector.Vector[Block] {
   if self.streaming_response is Some(text) && !text.is_blank() {
     builder.push_block({
       identity: "live\u{0}\{self.streaming_identity}",
-      content: Prose(text~, assistant~, finished=false, live=true),
+      content: Prose(
+        text~,
+        assistant~,
+        finished=false,
+        live=true,
+        completed_at=None,
+      ),
     })
   }
   if builder.blocks.is_empty() &&
@@ -426,12 +461,13 @@ fn MinimalContent::render(
           @markdown.markdown_nodes(text, open_file=path => (actions.open)(path)),
         ),
       ])
-    Prose(text~, assistant~, finished~, live~) =>
+    Prose(text~, assistant~, finished~, live~, completed_at~) =>
       assistant_message_view(
         text,
         path => (actions.open)(path),
         assistant,
         is_danger=false,
+        completed_at?,
         show_actions=finished,
         streaming=live,
       )
