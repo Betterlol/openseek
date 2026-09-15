@@ -110,8 +110,17 @@ fn lines_text(lines : @cmark.Seq[@cmark.Node[String]]) -> String {
 }
 
 ///|
-#warnings("-alert_xss_vulnerable")
 fn code_block(block : @cmark.CodeBlock) -> @html.Html {
+  let source = lines_text(block.code)
+  @html.div(class="chat-code-block", [
+    @html.div(class="chat-code-toolbar", [code_copy_button(source)]),
+    code_block_body(block, source),
+  ])
+}
+
+///|
+#warnings("-alert_xss_vulnerable")
+fn code_block_body(block : @cmark.CodeBlock, source : String) -> @html.Html {
   // Unlabelled fences and indented code use MoonBit by default, including
   // code inside completed reasoning. Explicit language labels still win.
   let language = match block.info_string {
@@ -122,7 +131,6 @@ fn code_block(block : @cmark.CodeBlock) -> @html.Html {
       }
     None => "mbt"
   }
-  let source = lines_text(block.code)
   // cmark also parses unfinished fences as code blocks. Only compile closed
   // diagrams, so each growing prefix stays source, including saved messages
   // whose author never supplied a closing fence.

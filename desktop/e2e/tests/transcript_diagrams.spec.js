@@ -131,13 +131,14 @@ for (const language of ['mermaid', 'd2', 'diago']) {
       app.notify('agent.event', { ...run, event: { event: 'assistant_delta', content: delta } });
       await expect(live.locator('pre code')).toContainText(language === 'mermaid' ? `N${i}` : `n${i}`);
       // No render target exists, so neither compiler can run for this prefix.
-      await expect(live.locator('[data-transcript-diagram], svg')).toHaveCount(0);
+      await expect(live.locator('[data-transcript-diagram], svg:not(.icon svg)')).toHaveCount(0);
     }
     const closing = '\n' + fence + '\n';
     content += closing;
     app.notify('agent.event', { ...run, event: { event: 'assistant_delta', content: closing } });
-    await expect(live.locator('svg').first()).toBeVisible();
-    const svg = await live.locator('svg').first().elementHandle();
+    const renderedDiagram = live.locator('[data-transcript-diagram] svg').first();
+    await expect(renderedDiagram).toBeVisible();
+    const svg = await renderedDiagram.elementHandle();
     const tail = '\nFollowing prose.\n\n' + fence + language + '\n' + (language === 'mermaid' ? 'flowchart LR\nFinal --> Done' : 'final -> done');
     content += tail;
     app.notify('agent.event', { ...run, event: { event: 'assistant_delta', content: tail } });

@@ -1,12 +1,16 @@
 import {
   "openseek_desktop/internal/uri",
   "moonbit-community/cmark/cmark",
+  "moonbit-community/rabbita/clipboard",
   "moonbit-community/rabbita/cmd",
+  "moonbit-community/rabbita/dom",
   "moonbit-community/rabbita/html",
   "moonbit-community/rabbita/js",
+  "moonbit-community/rabbita/svg",
   "moonbitlang/editor/base/common",
   "moonbitlang/editor/viewer" @editor_viewer,
   "moonbitlang/editor/viewer/html" @syntax_html,
+  "openseek_desktop/frontend/icons",
 }
 
 supported_targets = "js"
