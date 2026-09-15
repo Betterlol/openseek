@@ -15,7 +15,9 @@ The packages at `package/macos`, `package/windows`, `package/linux`,
 `package/browser`, and `package/dev` preserve the existing `moon run`
 commands. Each contains only a main function that forwards untouched arguments
 through `package/internal/cli`; all parsing and build decisions live in
-`build.mjs`.
+`package/build.mjs`. The entry packages belong to the `desktop` module and
+support only the native target. They invoke backend and frontend builds through
+the script, so `desktop` does not depend on either module.
 
 ## Commands
 

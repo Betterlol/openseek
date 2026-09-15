@@ -2,6 +2,8 @@
 /// Preserve the historical Moon entrypoints while one Node program owns the
 /// actual cross-platform build. Arguments are forwarded unchanged; build.mjs
 /// is the only layer that parses them.
+/// These native-only packages live in the desktop module and do not import
+/// the backend; the build program compiles backend and frontend separately.
 pub async fn run(command : String) -> Unit {
   let desktop = if @asyncfs.exists("package/build.mjs") {
     "."

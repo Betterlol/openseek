@@ -9,19 +9,26 @@ in [`DESIGN.md`](DESIGN.md).
 For reproducing and assessing UX issues with real components, follow
 [`UX_REVIEW_WORKFLOW.md`](UX_REVIEW_WORKFLOW.md).
 
-- `main.mbt` — entry point: wires the window manifest, the IPC extensions, the per-user runtime directory, and the launch log.
-- `internal/engine/` — the native host: keeps one persistent `openseek serve` engine per conversation, streams its JSONL events to the webview, and owns where conversations live on disk (per-session workspace directories, the durable session store root, and archiving).
-- `internal/extension/` — the IPC bridge registration: the `connect` / `start` / `steer` / `cancel` / `list_sessions` / `load_session` handlers, the `skills_*` / `skill_*` ops backing the Skills panel, and bundled frontend asset lookup.
-- `internal/skillmarket/` — the mooncakes.io skill registry client and the local skills-library manager: catalog browsing, digest-verified installs into the engine's global skills directory, and uninstall of what the app itself installed.
-- `internal/env/` — process-environment reads (blank means unset).
-- `internal/home/` — the user's home directory and `~` expansion.
-- `internal/userdirs/` — the user's Documents folder, answered by each platform's authority: the Windows known folder, the XDG user-dirs override, or `~/Documents`.
-- `internal/event/` — engine event decoding.
-- `internal/menu/` — the macOS main menu (App/Edit/Window): macOS dispatches ⌘ key equivalents through the main menu and the webview library never creates one, so without it the editing shortcuts (⌘A/⌘C/⌘V, undo, quit) are silently dropped. No-op on other platforms.
-- `frontend/` — the JS (Rabbita) UI core: the Elm-style model/update/view plus the command files talking to the host bridge. Two thin shells bundle it: `frontend/desktop/` (the app's `frontend.js`) and `frontend/browser/` (the `browser.js` console bundle openseek-api serves).
+- `backend/main.mbt` — native entry point: wires the window manifest, IPC
+  extensions, per-user runtime directory, and launch log.
+- `backend/internal/engine/` — the native process owner: manages persistent
+  engines, streaming, conversation storage, and workspace directories.
+- `backend/internal/extension/` — IPC command registration and bundled frontend asset lookup.
+- `backend/internal/skillmarket/` — the mooncakes.io skill registry client and local skills-library manager.
+- `backend/internal/env/` — process-environment reads (blank means unset).
+- `backend/internal/home/` — the user's home directory and `~` expansion.
+- `backend/internal/userdirs/` — platform-specific Documents directory lookup.
+- `backend/internal/broadcast/` — native event fan-out to connected windows.
+- `frontend/` — the standalone JS (Rabbita) UI module: the Elm-style model/update/view. Two thin shells bundle it: `frontend/desktop/` (the app's `frontend.js`) and `frontend/browser/` (the `browser.js` console bundle openseek-api serves).
+- `protocol/`, `commands/`, `uri/`, and `file_search_*` — target-neutral
+  packages owned directly by the root `desktop` module.
 - `frontend/transcript/` — pure decoders from the engine's wire data to display items: engine events, session-list and session-replay replies, runtime updates.
 - `frontend/markdown/` — markdown rendering for transcript content (cmark to Rabbita nodes, panic-guarded).
 - `frontend/interop/` — the typed `@js` helpers shared by the frontend; no frontend package embeds raw JavaScript.
+
+The native `backend` and JS `frontend` modules both depend on the root
+`desktop` module. They do not depend on each other; backend packaging builds
+the frontend workspace member separately and consumes its generated bundle.
 
 ## Sessions and streaming
 
@@ -199,8 +206,8 @@ git clone <this-repo>
 ```
 
 Proton is an ordinary registry dependency (`moonbit-community/proton` in
-`moon.mod`), so a plain clone is complete — `moon` resolves it like any other
-package.
+`backend/moon.mod`), so a plain clone is complete — `moon` resolves it like
+any other package.
 
 The desktop frontend imports the `moonbitlang/editor` workspace member from
 `../editor`. Packaging reads its reusable CSS and codicon font from that same
