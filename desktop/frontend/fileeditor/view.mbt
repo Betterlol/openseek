@@ -1448,15 +1448,24 @@ fn file_inventory(
   ctx : Ctx,
 ) -> Array[@html.Html] {
   let entries = visible_entries(state)
-  if !state.children.contains("") {
+  let focus = tree_focus_target(state)
+  let children = if !state.children.contains("") {
     [@html.div(class="file-panel-empty", "Loading…")]
   } else if entries.is_empty() {
-    // The workspace exists once the conversation runs; until then (or if the
-    // agent has written nothing) it is simply empty.
     [@html.div(class="file-panel-empty", "This workspace is empty.")]
   } else {
-    entries.map(pair => tree_row(dispatch, state, ctx, pair.0, pair.1))
+    entries.map(pair => tree_row(dispatch, state, ctx, pair.0, pair.1, focus))
   }
+  [
+    @html.div(
+      attrs=@html.Attrs::build()
+        .id("workspace-file-tree")
+        .role("tree")
+        .aria_label("Workspace files")
+        .tabindex(if entries.is_empty() { 0 } else { -1 }),
+      children,
+    ),
+  ]
 }
 
 ///|
@@ -2965,6 +2974,7 @@ fn tree_row(
   ctx : Ctx,
   entry : FileEntry,
   depth : Int,
+  focus : @pathx.Relative?,
 ) -> @html.Html {
   let indent_style = "--tree-depth: \{depth}"
   let expanded = state.expanded.contains(entry.path)
@@ -2990,32 +3000,66 @@ fn tree_row(
       @html.nothing,
     ),
   ]
-  if entry.is_dir {
-    @html.div(
-      class="tree-row tree-dir",
-      style=[indent_style],
-      on_click=dispatch(DirToggle(entry.path)),
-      attrs=@html.Attrs::build()
-        .data_set("path", entry.path.0)
-        .data_set("context-file", entry.path.0)
-        .aria_expanded(expanded.to_string())
-        .tabindex(0),
-      children,
-    )
+  let siblings = state.children
+    .get(FileChange::parent(entry.path))
+    .unwrap_or([])
+  let position = siblings.search_by(item => item.path == entry.path)
+  let selected = ctx.active_file is Some(active) && active == entry.path
+  let attrs = @html.Attrs::build()
+    .id("workspace-tree-" + entry.path.0)
+    .role("treeitem")
+    .aria_label(entry.name)
+    .aria_level((depth + 1).to_string())
+    .aria_setsize(siblings.length().to_string())
+    .aria_selected(selected.to_string())
+    .data_set("path", entry.path.0)
+    .data_set("context-file", entry.path.0)
+    .tabindex(if focus == Some(entry.path) { 0 } else { -1 })
+    .on_focus(_ => dispatch(TreeFocused(entry.path)))
+    .on_keydown(event => {
+      if event.alt_key() || event.ctrl_key() || event.meta_key() {
+        return @cmd.none
+      }
+      let action = tree_key_action(state, entry, event.key())
+      if action is Some(_) {
+        event.prevent_default()
+      }
+      match action {
+        Some(TreeMove(path)) => focus_tree_after_render(Some(path))
+        Some(TreeToggle) => dispatch(DirToggle(entry.path))
+        Some(TreeOpen) =>
+          dispatch(FileSelected(path=entry.path, name=entry.name))
+        Some(TreeStay) | None => @cmd.none
+      }
+    })
+  let attrs = if position is Some(position) {
+    attrs.aria_posinset((position + 1).to_string())
   } else {
-    @html.div(
-      class=if ctx.active_file is Some(active) && active == entry.path {
-        "tree-row tree-file selected"
-      } else {
-        "tree-row tree-file"
-      },
-      style=[indent_style],
-      on_click=dispatch(FileSelected(path=entry.path, name=entry.name)),
-      attrs=@html.Attrs::build()
-        .data_set("path", entry.path.0)
-        .data_set("context-file", entry.path.0)
-        .tabindex(0),
-      children,
-    )
+    attrs
   }
+  let attrs = if entry.is_dir {
+    attrs.aria_expanded(expanded.to_string())
+  } else {
+    attrs
+  }
+  @html.div(
+    class=if entry.is_dir {
+      "tree-row tree-dir"
+    } else if selected {
+      "tree-row tree-file selected"
+    } else {
+      "tree-row tree-file"
+    },
+    style=[indent_style],
+    attrs~,
+    on_click=@cmd.batch([
+      focus_tree_after_render(Some(entry.path)),
+      if entry.is_dir {
+        dispatch(DirToggle(entry.path))
+      } else {
+        dispatch(FileSelected(path=entry.path, name=entry.name))
+      },
+    ]),
+    children,
+  )
 }

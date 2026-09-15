@@ -115,3 +115,94 @@ test('Files scrolls below the view tabs and keeps narrow-screen touch targets', 
   await page.locator('.file-tree-pane').screenshot({ path: testInfo.outputPath('files-narrow.png') });
   expect(app.pageErrors).toEqual([]);
 });
+
+test('file tree exposes hierarchy and one keyboard entry with directional navigation', async ({ page }) => {
+  const app = new DesktopBrowserHarness(page);
+  app.directoryEntries['/workspace'] = [
+    { name: 'src', is_dir: true },
+    { name: 'README.md', is_dir: false },
+  ];
+  app.directoryEntries['/workspace/src'] = [
+    { name: 'nested', is_dir: true },
+    { name: 'main.mbt', is_dir: false },
+  ];
+  app.directoryEntries['/workspace/src/nested'] = [{ name: 'child.mbt', is_dir: false }];
+  app.workingFiles['src/main.mbt'] = 'fn main {}\n';
+  await app.install();
+  await app.goto();
+  await app.openSession();
+  await page.getByRole('button', { name: 'Hide sidebar', exact: true }).click();
+  await app.openReview();
+  const files = page.getByRole('tab', { name: 'Files', exact: true });
+  await files.click();
+  const tree = page.getByRole('tree', { name: 'Workspace files' });
+  const src = tree.getByRole('treeitem', { name: 'src', exact: true });
+  const readme = tree.getByRole('treeitem', { name: 'README.md', exact: true });
+  await expect(src).toBeVisible();
+  await files.press('Tab');
+  await expect(src).toBeFocused();
+  await expect(src).toHaveAttribute('aria-level', '1');
+  await expect(src).toHaveAttribute('aria-setsize', '2');
+  await expect(src).toHaveAttribute('aria-expanded', 'false');
+  await src.press('Control+Alt+ArrowRight');
+  await expect(src).toHaveAttribute('aria-expanded', 'false');
+  await src.press('ArrowRight');
+  await expect(src).toHaveAttribute('aria-expanded', 'true');
+  await expect(src).toBeFocused();
+  const nested = tree.getByRole('treeitem', { name: 'nested', exact: true });
+  await expect(nested).toBeVisible();
+  await src.press('ArrowRight');
+  await expect(nested).toBeFocused();
+  await expect(nested).toHaveAttribute('aria-level', '2');
+  await nested.press('Enter');
+  const child = tree.getByRole('treeitem', { name: 'child.mbt', exact: true });
+  await expect(child).toBeVisible();
+  await nested.press('ArrowRight');
+  await expect(child).toBeFocused();
+  await child.press('ArrowLeft');
+  await expect(nested).toBeFocused();
+  await nested.press('ArrowLeft');
+  await expect(child).toHaveCount(0);
+  await expect(nested).toBeFocused();
+  await nested.press('ArrowDown');
+  const main = tree.getByRole('treeitem', { name: 'main.mbt', exact: true });
+  await expect(main).toBeFocused();
+  await expect(main).toHaveAttribute('aria-selected', 'false');
+  await main.press('Enter');
+  await expect(main).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('.editor-tabs .editor-tab.active')).toContainText('main.mbt');
+  await main.focus();
+  await main.press('End');
+  await expect(readme).toBeFocused();
+  await readme.press('Home');
+  await expect(src).toBeFocused();
+  await expect(tree.locator('[role="treeitem"][tabindex="0"]')).toHaveCount(1);
+  await src.press('Tab');
+  await expect(tree.locator(':focus')).toHaveCount(0);
+  await page.keyboard.press('Shift+Tab');
+  await expect(src).toBeFocused();
+  // A filesystem refresh preserves the focused path despite positional DOM reuse.
+  await main.focus();
+  await expect.poll(() => app.requests.filter(request => request.method === 'fs.watch').length).toBeGreaterThan(0);
+  const notifyChange = (events) => {
+    const watch = app.requests.filter(request => request.method === 'fs.watch').at(-1);
+    app.notify('fs.changed', { root: '/workspace', generation: watch.params.generation, baseline: false, events });
+  };
+  app.directoryEntries['/workspace/src'] = [{ name: 'main.mbt', is_dir: false }];
+  notifyChange([{ kind: 'remove', path: 'src/nested' }]);
+  await expect(nested).toHaveCount(0);
+  await expect(main).toBeFocused();
+  app.directoryEntries['/workspace/src'] = [];
+  notifyChange([{ kind: 'remove', path: 'src/main.mbt' }]);
+  await expect(main).toHaveCount(0);
+  await expect(src).toBeFocused();
+  // An update must not pull focus back from controls outside the tree.
+  await files.focus();
+  app.directoryEntries['/workspace'] = [];
+  notifyChange([{ kind: 'remove', path: 'src' }, { kind: 'remove', path: 'README.md' }]);
+  await expect(src).toHaveCount(0);
+  await expect(files).toBeFocused();
+  await files.press('Tab');
+  await expect(tree).toBeFocused();
+  expect(app.pageErrors).toEqual([]);
+});
