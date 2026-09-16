@@ -451,6 +451,9 @@ pub(all) struct State {
   review_diff_navigation_available : Bool
   // A cross-file destination waits for both sides, fenced by exact row and generation.
   review_navigation_destination : (ChangedFile, Int, Bool)?
+  // None includes all types; Some([]) deliberately includes no types.
+  change_extensions : Array[String?]?
+  change_path_filter : String
   changes : ChangeList
   // Git graph state is conversation/workspace scoped like Changes, but is
   // refreshed only at meaningful repository boundaries rather than on the
@@ -595,6 +598,8 @@ pub fn State::empty() -> State {
     semantic_review_collapsed: [],
     review_diff_navigation_available: false,
     review_navigation_destination: None,
+    change_extensions: None,
+    change_path_filter: "",
     changes: ChangeListIdle,
     git_graph: GitGraphIdle,
     git_graph_generation: 0,
@@ -817,6 +822,9 @@ pub(all) enum Msg {
   SearchMatchSelected(path~ : String, range~ : @common.Range)
   // Expand or collapse a directory row in the file tree; the first expansion
   // lazily lists the directory through the host.
+  ChangeExtensionToggled(String?)
+  ChangeFiltersCleared
+  ChangePathFilterChanged(String)
   TreeFocused(@pathx.Relative)
   DirToggle(@pathx.Relative)
   // Ensure the current workspace's file snapshot exists. Loading and ready

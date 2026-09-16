@@ -2931,3 +2931,107 @@ button.git-history-file.selected {
 .jobs-empty h3 { font-size: var(--font-size-md); }
 .jobs-empty p { color: var(--color-text-secondary); font-size: var(--font-size-sm); line-height: var(--line-height-relaxed); }
 .jobs-panel > :not(.jobs-detail), .jobs-detail > :not(.jobs-output) { flex-shrink: 0; }
+
+.review-path-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px;
+}
+
+.review-path-filter > input {
+  flex: 1 1 100%;
+  width: 100%;
+  padding: 4px 6px;
+}
+
+.review-filter-count {
+  padding: 4px 8px;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.review-type-filter {
+  min-width: 0;
+  flex: 1;
+}
+
+.review-type-trigger {
+  anchor-name: --review-file-types;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+}
+
+.review-type-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.review-type-options {
+  position: fixed;
+  position-anchor: --review-file-types;
+  top: anchor(bottom);
+  left: anchor(left);
+  position-try-fallbacks: flip-block, flip-inline;
+  margin: 4px 0;
+  min-width: 180px;
+  max-width: calc(100vw - 16px);
+  max-height: min(320px, 60vh);
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
+  background: var(--color-bg-surface);
+  box-shadow: var(--shadow-overlay);
+  font-size: var(--font-size-sm);
+}
+
+.review-type-heading {
+  padding: 4px 6px;
+  font-weight: 600;
+}
+
+.review-type-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px;
+  cursor: pointer;
+}
+
+.review-type-option:hover {
+  background: var(--color-bg-subtle);
+}
+
+.review-type-count {
+  margin-left: auto;
+  color: var(--color-text-secondary);
+}
+
+.review-filter-layout {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.review-filter-controls {
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.review-filter-layout > .review-git-layout {
+  flex: 1;
+  height: auto;
+}
+
+.review-filter-scope {
+  padding: 4px 8px 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}

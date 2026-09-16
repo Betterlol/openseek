@@ -667,7 +667,7 @@ fn change_count(changes : ChangeList) -> @html.Html {
 }
 
 ///|
-fn review_git_layout(
+fn review_git_sections(
   dispatch : @cmd.Emit[Msg],
   state : State,
   ctx : Ctx,
@@ -706,7 +706,7 @@ fn review_git_layout(
           @html.div(
             class="review-section-body",
             attrs=@html.Attrs::build().id("review-changes-body"),
-            change_inventory(dispatch, state, ctx),
+            change_inventory_rows(dispatch, state, ctx),
           ),
         ],
       ),
@@ -1374,57 +1374,71 @@ fn git_commit_files(
           ]),
         ]
       } else {
-        files.map(file => {
-          let selectable = file.kind == "file" &&
-            !(["renamed", "copied"].contains(file.status) &&
-            file.original_path is None)
-          let diff : @dock.GitHistoryDiff = {
-            commit: commit.id,
-            parent,
-            path: @pathx.Relative(file.path),
-            original_path: file.original_path.map(path => @pathx.Relative(path)),
-            status: file.status,
-            kind: file.kind,
-          }
-          let selected = ctx.active_history_diff is Some(active_diff) &&
-            active_diff == diff
-          let contents : Array[@html.Html] = [
-            git_graph_placeholder(columns, highlight_index),
-            @html.span(class="git-history-file-path", file.path),
-            @html.span(
-              class="git-history-file-status status-" + file.status,
-              historical_status_label(file.status),
+        let visible = filtered_history_changes(state, files)
+        if visible.is_empty() {
+          [
+            @html.div(
+              class="git-commit-files-message",
+              "No files match these filters.",
             ),
           ]
-          if selectable {
-            @html.button(
-              class=if selected {
-                "git-history-file selected"
-              } else {
-                "git-history-file"
-              },
-              title="Open historical diff for \{file.path}",
-              on_click=dispatch(HistoricalFileSelected(diff)),
-              attrs=@html.Attrs::build()
-                .role("treeitem")
-                .aria_current(if selected { "page" } else { "false" }),
-              contents,
-            )
-          } else {
-            @html.div(
-              class="git-history-file unavailable",
-              title=if file.kind == "submodule" {
-                "Git submodule cannot be shown as a text diff"
-              } else if file.kind == "symlink" {
-                "Git symlink cannot be shown as a text diff"
-              } else {
-                "Original path is outside this workspace"
-              },
-              attrs=@html.Attrs::build().role("treeitem").aria_disabled("true"),
-              contents,
-            )
-          }
-        })
+        } else {
+          visible.map(file => {
+            let selectable = file.kind == "file" &&
+              !(["renamed", "copied"].contains(file.status) &&
+              file.original_path is None)
+            let diff : @dock.GitHistoryDiff = {
+              commit: commit.id,
+              parent,
+              path: @pathx.Relative(file.path),
+              original_path: file.original_path.map(path => {
+                @pathx.Relative(path)
+              }),
+              status: file.status,
+              kind: file.kind,
+            }
+            let selected = ctx.active_history_diff is Some(active_diff) &&
+              active_diff == diff
+            let contents : Array[@html.Html] = [
+              git_graph_placeholder(columns, highlight_index),
+              @html.span(class="git-history-file-path", file.path),
+              @html.span(
+                class="git-history-file-status status-" + file.status,
+                historical_status_label(file.status),
+              ),
+            ]
+            if selectable {
+              @html.button(
+                class=if selected {
+                  "git-history-file selected"
+                } else {
+                  "git-history-file"
+                },
+                title="Open historical diff for \{file.path}",
+                on_click=dispatch(HistoricalFileSelected(diff)),
+                attrs=@html.Attrs::build()
+                  .role("treeitem")
+                  .aria_current(if selected { "page" } else { "false" }),
+                contents,
+              )
+            } else {
+              @html.div(
+                class="git-history-file unavailable",
+                title=if file.kind == "submodule" {
+                  "Git submodule cannot be shown as a text diff"
+                } else if file.kind == "symlink" {
+                  "Git symlink cannot be shown as a text diff"
+                } else {
+                  "Original path is outside this workspace"
+                },
+                attrs=@html.Attrs::build()
+                  .role("treeitem")
+                  .aria_disabled("true"),
+                contents,
+              )
+            }
+          })
+        }
       }
     _ =>
       [
@@ -1469,7 +1483,7 @@ fn file_inventory(
 }
 
 ///|
-fn change_inventory(
+fn change_inventory_rows(
   dispatch : @cmd.Emit[Msg],
   state : State,
   ctx : Ctx,
@@ -1509,7 +1523,13 @@ fn change_inventory(
             },
           ),
         ]
-        for index, change in files {
+        let visible = filtered_changes(state)
+        if visible.is_empty() {
+          rows.push(
+            @html.div(class="file-panel-empty", "No files match these filters."),
+          )
+        }
+        for index, change in visible {
           rows.push(changed_file_row(dispatch, state, ctx, change, index))
         }
         rows
@@ -1630,16 +1650,12 @@ fn changed_file_row(
 
 ///|
 fn reviewable_changes(state : State) -> Array[ChangedFile] {
-  match state.changes {
-    ChangeListReady(files~, ..) => files.filter(change => change.selectable())
-    _ => []
-  }
+  filtered_changes(state).filter(change => change.selectable())
 }
 
 ///|
 fn change_row_index(state : State, selected : ChangedFile) -> Int? {
-  guard state.changes is ChangeListReady(files~, ..) else { return None }
-  files.search_by(change => change == selected)
+  filtered_changes(state).search_by(change => change == selected)
 }
 
 ///|
@@ -3062,4 +3078,180 @@ fn tree_row(
     ]),
     children,
   )
+}
+
+///|
+fn review_filter_controls(
+  dispatch : @cmd.Emit[Msg],
+  state : State,
+) -> @html.Html {
+  @html.div(class="review-filter-controls", [
+    @html.div(
+      class="review-filter-scope",
+      attrs=@html.Attrs::build().id("review-filter-scope"),
+      match state.git_graph_selected {
+        Some(commit) => "Filtering commit " + short_commit(commit)
+        None => "Filtering working tree"
+      },
+    ),
+    @html.div(class="review-path-filter", [
+      @html.input(
+        input_type=@html.InputType::Text,
+        value=state.change_path_filter,
+        placeholder="Filter files by path",
+        on_input=dispatch.map(value => ChangePathFilterChanged(value)),
+        attrs=@html.Attrs::build()
+          .id("review-path-filter-input")
+          .data_set("focus-owner", "")
+          .aria_describedby("review-filter-scope")
+          .aria_label("Filter changed files by path")
+          .on_keydown(event => {
+            if event.key() == "Escape" && !state.change_path_filter.is_empty() {
+              event.prevent_default()
+              event.stop_propagation()
+              dispatch(ChangePathFilterChanged(""))
+            } else {
+              @cmd.none
+            }
+          }),
+      ),
+      change_extension_filter(dispatch, state),
+      @html.button(
+        class="button secondary small",
+        disabled=state.change_path_filter.is_empty() &&
+          state.change_extensions is None,
+        on_click=@cmd.batch([
+          dispatch(ChangeFiltersCleared),
+          focus_change_filter_after_render(),
+        ]),
+        attrs=@html.Attrs::build().aria_label("Clear file filters"),
+        "Clear",
+      ),
+    ]),
+    match review_filter_inventory(state) {
+      Some(files) if !state.change_path_filter.is_empty() ||
+        state.change_extensions is Some(_) => {
+        let filter = state.review_file_filter()
+        let count = files
+          .filter(file => filter.matches(file.path, file.original))
+          .length()
+        @html.div(
+          class="review-filter-count",
+          attrs=@html.Attrs::build().role("status"),
+          "Showing \{count} of \{files.length()} files",
+        )
+      }
+      _ => @html.nothing
+    },
+  ])
+}
+
+///|
+fn focus_change_filter_after_render() -> @cmd.Cmd {
+  @cmd.custom_cmd(
+    _ => {
+      if @dom.document()
+        .get_element_by_id("review-path-filter-input")
+        .to_option()
+        is Some(input) {
+        let _ : @js.Value = @js.Value::cast_from(input).apply_with_string(
+          "focus",
+          ([] : FixedArray[@js.Value]),
+        )
+      }
+    },
+    kind=@cmd.after_render,
+  )
+}
+
+///|
+fn change_extension_filter(
+  dispatch : @cmd.Emit[Msg],
+  state : State,
+) -> @html.Html {
+  let options = change_extension_options(state)
+  let label = match state.change_extensions {
+    None => "File types"
+    Some(selected) if selected.is_empty() => "File types: none"
+    Some(selected) => selected.map(extension_label).join(", ")
+  }
+  @html.div(class="review-type-filter", [
+    @html.button(
+      class="button secondary small review-type-trigger",
+      disabled=review_filter_inventory(state) is None,
+      title=label,
+      attrs=@html.Attrs::build()
+        .id("review-file-types-trigger")
+        .aria_label(
+          "Filter by file extension, " +
+          (if state.change_extensions is None {
+            "all file types"
+          } else {
+            label
+          }),
+        )
+        .aria_describedby("review-filter-scope")
+        .aria_haspopup("dialog")
+        .aria_controls("review-file-types"),
+      [
+        @html.span(class="review-type-label", label),
+        @icons.icon(@icons.icon_chevron_down),
+      ],
+    ),
+    @html.div(
+      class="review-type-options",
+      attrs=@html.Attrs::build()
+        .id("review-file-types")
+        .popover("auto")
+        .role("dialog")
+        .aria_label("File types"),
+      [
+        @html.div(class="review-type-heading", "File types"),
+        ..options.map(option => {
+          @html.label(class="review-type-option", [
+            @html.input(
+              input_type=@html.InputType::Checkbox,
+              checked=state.change_extensions is None ||
+                (
+                  state.change_extensions is Some(selected) &&
+                  selected.contains(option.0)
+                ),
+              on_change=dispatch.map(_ => ChangeExtensionToggled(option.0)),
+              attrs=@html.Attrs::build().aria_label(extension_label(option.0)),
+            ),
+            @html.span(extension_label(option.0)),
+            @html.span(class="review-type-count", option.1.to_string()),
+          ])
+        }),
+        if options.is_empty() {
+          @html.div("No changed file types")
+        } else {
+          @html.nothing
+        },
+      ],
+    ),
+  ])
+}
+
+///|
+// Rabbita does not expose the popovertarget attribute yet. Bind the native
+// invoker after rendering instead of duplicating light-dismiss behavior.
+extern "js" fn bind_change_types() -> Unit =
+  #| () => {
+  #|   if (typeof document === "undefined") return;
+  #|   const trigger = document.getElementById("review-file-types-trigger");
+  #|   const menu = document.getElementById("review-file-types");
+  #|   if (trigger && menu) trigger.popoverTargetElement = menu;
+  #| }
+
+///|
+fn review_git_layout(
+  dispatch : @cmd.Emit[Msg],
+  state : State,
+  ctx : Ctx,
+) -> @html.Html {
+  @html.div(class="review-filter-layout", [
+    review_filter_controls(dispatch, state),
+    review_git_sections(dispatch, state, ctx),
+  ])
 }

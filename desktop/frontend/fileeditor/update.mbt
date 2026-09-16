@@ -2366,7 +2366,12 @@ pub fn update(
   } else {
     @cmd.none
   }
-  (@cmd.batch([cmd, restore]), { ..next, tree_focus: focus, })
+  let bind_filter = if next.explorer_mode is ExplorerChanges {
+    @cmd.custom_cmd(_ => bind_change_types(), kind=@cmd.after_render)
+  } else {
+    @cmd.none
+  }
+  (@cmd.batch([cmd, restore, bind_filter]), { ..next, tree_focus: focus, })
 }
 
 ///|
@@ -2396,6 +2401,51 @@ fn update_inner(
     }
   }
   match msg {
+    ChangeExtensionToggled(extension) => {
+      let selected = match state.change_extensions {
+        None => change_extension_options(state).map(option => option.0)
+        Some(selected) => selected
+      }
+      let selected = if selected.contains(extension) {
+        selected.filter(value => value != extension)
+      } else {
+        [..selected, extension]
+      }
+      let all = change_extension_options(state).all(option => {
+        selected.contains(option.0)
+      })
+      (
+        @cmd.none,
+        {
+          ..state,
+          change_extensions: if all {
+            None
+          } else {
+            Some(selected)
+          },
+          review_navigation_destination: None,
+        },
+      )
+    }
+    ChangeFiltersCleared =>
+      (
+        @cmd.none,
+        {
+          ..state,
+          change_path_filter: "",
+          change_extensions: None,
+          review_navigation_destination: None,
+        },
+      )
+    ChangePathFilterChanged(value) =>
+      (
+        @cmd.none,
+        {
+          ..state,
+          change_path_filter: value,
+          review_navigation_destination: None,
+        },
+      )
     TreeFocused(path) => (@cmd.none, { ..state, tree_focus: Some(path), })
     ToggleTree => {
       // The docked panel takes its height from the viewer, and the viewer
