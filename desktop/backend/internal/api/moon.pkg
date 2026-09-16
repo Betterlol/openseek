@@ -1,5 +1,4 @@
 import {
-  "bobzhang/openseek_protocol",
   "openseek_desktop/backend/internal/auth",
   "openseek_desktop/backend/internal/broadcast",
   "openseek_desktop/commands",
