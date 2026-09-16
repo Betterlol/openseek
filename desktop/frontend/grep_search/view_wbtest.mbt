@@ -83,18 +83,15 @@ test "Code search repairs one pattern without a composer or preview" {
       PatternRepairUnavailable(
         root=root.path,
         generation=semantic.page.generation,
-        message="Pattern Repair Agent returned no candidate.",
+        message="DeepSeek API key is required; add it in Settings or set DEEPSEEK",
       ),
       input,
     )
   let unavailable_html = render_search(unavailable, input)
   assert_true(
     unavailable_html.contains(
-      "Pattern repair failed. Update the pattern or retry.",
+      "DeepSeek API key is required; add it in Settings or set DEEPSEEK",
     ),
-  )
-  assert_false(
-    unavailable_html.contains("Pattern Repair Agent returned no candidate."),
   )
   let timed_out = semantic
     .handle(FixPattern, input)

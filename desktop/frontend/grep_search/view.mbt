@@ -252,12 +252,16 @@ fn pattern_repair_control(page : Page, emit : @cmd.Emit[Msg]) -> @html.Html {
 }
 
 ///|
-/// Select recovery copy from the closed repair state, never the error text.
+/// Select recovery copy from the closed repair state. Unavailable messages are
+/// Host-controlled setup guidance (for example, a missing API key), so retain
+/// them instead of replacing the user's recovery action with generic advice.
 fn pattern_repair_failure_label(page : Page) -> String {
   match page.pattern_repair_phase {
     PatternRepairInputRequired => "Enter a pattern before repairing it."
     PatternRepairUnavailable =>
-      "Pattern repair failed. Update the pattern or retry."
+      page.pattern_repair_message.unwrap_or(
+        "Pattern repair is unavailable. Check Settings and retry.",
+      )
     PatternRepairTimedOut =>
       "Pattern repair timed out while contacting the AI provider. Check your connection or provider endpoint, then retry."
     PatternRepairValidationFailed =>
