@@ -82,7 +82,6 @@ pub(all) struct SemanticSearchReference {
 
 ///|
 pub(all) struct SemanticSearchReferenceMatch {
-  pattern : String
   file : String
   start_line : Int
   start_column : Int
@@ -341,13 +340,10 @@ fn write_semantic_search(
     parts <+ "</pattern>\n"
   }
   for hit in reference.matches {
-    let pattern = MentionAttribute::encode(hit.pattern).wire
     let file = MentionAttribute::encode(hit.file).wire
     parts <+
-      "<match pattern=\"\{pattern}\" file=\"\{file}\" lines=\"\{hit.start_line}-\{hit.end_line}\" columns=\"\{hit.start_column}-\{hit.end_column}\">\n"
-    parts <+ "<matched_source>\n"
+      "<match file=\"\{file}\" lines=\"\{hit.start_line}-\{hit.end_line}\" columns=\"\{hit.start_column}-\{hit.end_column}\">\n"
     write_body(parts, hit.matched_source)
-    parts <+ "</matched_source>\n"
     parts <+ "</match>\n"
   }
   parts <+ "</semantic_search>\n"
@@ -418,7 +414,12 @@ let annotation_pattern : Regex = re"^<annotation file=\"(?<file>[^\"]+)\" lines=
 let semantic_search_pattern : Regex = re"^<semantic_search id=\"(?<id>[^\"]*)\" root=\"(?<root>[^\"]*)\" include=\"(?<include>[^\"]*)\" exclude=\"(?<exclude>[^\"]*)\">$"
 
 ///|
-let semantic_match_pattern : Regex = re"^<match pattern=\"(?<pattern>[^\"]+)\" file=\"(?<file>[^\"]+)\" lines=\"(?<start>[0-9]+)-(?<end>[0-9]+)\" columns=\"(?<start_column>[0-9]+)-(?<end_column>[0-9]+)\">$"
+let semantic_match_pattern : Regex = re"^<match file=\"(?<file>[^\"]+)\" lines=\"(?<start>[0-9]+)-(?<end>[0-9]+)\" columns=\"(?<start_column>[0-9]+)-(?<end_column>[0-9]+)\">$"
+
+///|
+/// The pre-review form is still accepted so saved transcripts can render
+/// their semantic-search mention chips after the wire format changes.
+let legacy_semantic_match_pattern : Regex = re"^<match pattern=\"[^\"]+\" file=\"(?<file>[^\"]+)\" lines=\"(?<start>[0-9]+)-(?<end>[0-9]+)\" columns=\"(?<start_column>[0-9]+)-(?<end_column>[0-9]+)\">$"
 
 ///|
 /// The lines between `<user_mentions>` and `</user_mentions>` as chips, or
@@ -526,27 +527,36 @@ fn parse_mention_block(lines : ArrayView[String]) -> Array[MentionRef]? {
       while cursor < lines.length() && lines[cursor] != "</semantic_search>" {
         let pattern_line = lines[cursor]
         guard pattern_line == "<pattern>" else {
-          if semantic_match_pattern.execute(pattern_line) is Some(match_header) {
-            guard match_header.named_group("pattern") is Some(pattern) &&
-              match_header.named_group("file") is Some(file) &&
+          let match_header = match
+            semantic_match_pattern.execute(pattern_line) {
+            Some(matched) => Some(matched)
+            None => legacy_semantic_match_pattern.execute(pattern_line)
+          }
+          if match_header is Some(match_header) {
+            guard match_header.named_group("file") is Some(file) &&
               match_header.named_group("start") is Some(start) &&
               match_header.named_group("end") is Some(end) &&
               match_header.named_group("start_column") is Some(start_column) &&
               match_header.named_group("end_column") is Some(end_column) else {
               return None
             }
-            guard lines[cursor + 1:] is ["<matched_source>", .. source_lines] else {
-              return None
-            }
-            guard source_lines.search("</matched_source>") is Some(source_end) else {
-              return None
-            }
-            let source = source_lines[:source_end].join("\n")
-            guard source_lines[source_end + 1:] is ["</match>", ..] else {
-              return None
+            let match_body = lines[cursor + 1:]
+            let (source, consumed) = if match_body
+              is ["<matched_source>", .. source_lines] {
+              guard source_lines.search("</matched_source>") is Some(source_end) else {
+                return None
+              }
+              guard source_lines[source_end + 1:] is ["</match>", ..] else {
+                return None
+              }
+              (source_lines[:source_end].join("\n"), source_end + 4)
+            } else {
+              guard match_body.search("</match>") is Some(match_end) else {
+                return None
+              }
+              (match_body[:match_end].join("\n"), match_end + 2)
             }
             matches.push({
-              pattern: MentionAttribute::decode(pattern.to_owned()),
               file: MentionAttribute::decode(file.to_owned()),
               start_line: @string.parse_int(start) catch {
                 _ => return None
@@ -562,7 +572,7 @@ fn parse_mention_block(lines : ArrayView[String]) -> Array[MentionRef]? {
               },
               matched_source: source,
             })
-            cursor += source_end + 4
+            cursor += consumed
             continue
           }
           return None
