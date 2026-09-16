@@ -45,7 +45,7 @@ pub async fn migrate_global_store() -> Int
 
 pub fn new_engine_actor(String, runtime_dir? : @pathx.Path) -> EngineActor
 
-pub async fn pattern_repair_environment(EngineManager, model~ : String?) -> PatternRepairEnvironment
+pub async fn pattern_repair_environment(EngineManager, model~ : String) -> PatternRepairEnvironment
 
 pub fn queue_run(EngineManager, @protocol.QueuePayload) -> @protocol.QueueReply raise EngineError
 
