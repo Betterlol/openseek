@@ -14,6 +14,9 @@ struct PatternRepairValidator {
 } derive(FromJson)
 
 ///|
+pub extend PatternRepairValidator with FromJson::{from_json}
+
+///|
 fn pattern_repair_validator_from_environment() -> Result[
   PatternRepairValidator,
   String,
