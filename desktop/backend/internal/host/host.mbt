@@ -228,12 +228,12 @@ pub fn endpoints(
       match @engine.pattern_repair_environment(manager, model=payload.model) {
         Ready(env) => pattern_repair_op(state, env, payload)
         Configuration(message) =>
-          pattern_repair_failure(payload, Unavailable, payload.pattern, message)
+          pattern_repair_failure(payload, Unavailable, None, message)
         Unavailable =>
           pattern_repair_failure(
             payload,
             Unavailable,
-            payload.pattern,
+            None,
             "Pattern Repair settings are unavailable.",
           )
       }

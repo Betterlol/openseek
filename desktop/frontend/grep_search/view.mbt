@@ -273,7 +273,7 @@ fn pattern_repair_failure_label(page : Page) -> String {
     PatternRepairTimedOut =>
       "Pattern repair timed out while contacting the AI provider. Check your connection or provider endpoint, then retry."
     PatternRepairValidationFailed =>
-      "The repaired pattern could not be validated."
+      "Pattern repair failed. The current pattern was not changed."
     _ => "Pattern repair failed. Update the pattern or retry."
   }
 }
@@ -304,11 +304,27 @@ fn pattern_repair_notice(
         attrs=@html.Attrs::build().role("alert"),
         pattern_repair_failure_label(page),
       ),
-      if page.pattern_repair_phase is PatternRepairValidationFailed &&
-        page.pattern_repair_message is Some(diagnostic) {
+      if page.pattern_repair_phase is PatternRepairValidationFailed {
+        let candidate = match page.pattern_repair_candidate {
+          Some(candidate) =>
+            @html.div(class="search-pattern-repair-candidate", [
+              @html.p("Candidate pattern (not applied)"),
+              @html.pre(
+                class="search-pattern-repair-candidate-value",
+                candidate,
+              ),
+            ])
+          None => @html.nothing
+        }
+        let diagnostic = match page.pattern_repair_message {
+          Some(diagnostic) =>
+            @html.pre(class="search-pattern-repair-diagnostic", diagnostic)
+          None => @html.nothing
+        }
         @html.details(class="search-pattern-repair-details", [
-          @html.summary("Show validation details"),
-          @html.pre(class="search-pattern-repair-diagnostic", diagnostic),
+          @html.summary("Show repair details"),
+          candidate,
+          diagnostic,
         ])
       } else {
         @html.nothing

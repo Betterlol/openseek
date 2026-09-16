@@ -57,13 +57,15 @@ fn pattern_repair_request_loader(
         settled = true
         guard active else { return }
         match reply {
-          reply if reply.valid =>
+          reply if reply.valid &&
+            reply.validation_status is @protocol.PatternRepairStatus::Passed &&
+            reply.candidate_pattern is Some(candidate) =>
             scheduler.add(
               emit(
                 PatternRepaired(
                   root=request.root,
                   generation=request.generation,
-                  candidate_pattern=reply.candidate_pattern,
+                  candidate_pattern=candidate,
                 ),
               ),
             )
@@ -94,6 +96,7 @@ fn pattern_repair_request_loader(
                 PatternRepairValidationFailed(
                   root=request.root,
                   generation=request.generation,
+                  candidate_pattern=reply.candidate_pattern,
                   diagnostic=reply.message,
                 ),
               ),
