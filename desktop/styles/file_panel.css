@@ -3016,3 +3016,26 @@ button.git-history-file.selected {
   margin-left: auto;
   color: var(--color-text-secondary);
 }
+
+.review-filter-layout {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.review-filter-controls {
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.review-filter-layout > .review-git-layout {
+  flex: 1;
+  height: auto;
+}
+
+.review-filter-scope {
+  padding: 4px 8px 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}

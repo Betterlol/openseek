@@ -189,3 +189,67 @@ test "extension filters intersect paths and keep full-list counts" {
     [plain],
   )
 }
+
+///|
+test "history filtering shares matching but owns its inventory and counts" {
+  let workspace = test_modified_change(Relative("workspace.mbt"))
+  let renamed : @protocol.GitHistoricalChange = {
+    path: "docs/new.md",
+    original_path: Some("old/readme.md"),
+    status: "renamed",
+    kind: "file",
+  }
+  let plain : @protocol.GitHistoricalChange = {
+    path: "LICENSE",
+    original_path: None,
+    status: "added",
+    kind: "file",
+  }
+  let state = {
+    ..owned_state(),
+    changes: ChangeListReady(
+      repository=true,
+      files=[workspace],
+      refreshing=false,
+      refresh_again=false,
+    ),
+    git_graph_selected: Some("commit-a"),
+    git_commit_files: GitCommitFilesReady(commit="commit-a", parent=None, files=[
+      renamed, plain,
+    ]),
+    change_path_filter: "OLD/",
+    change_extensions: Some([Some(".md")]),
+  }
+  assert_eq(filtered_history_changes(state, [renamed, plain]), [renamed])
+  assert_true(filtered_changes(state) == [workspace])
+  assert_eq(change_extension_options(state), [(Some(".md"), 1), (None, 1)])
+  assert_true(
+    review_filter_inventory({ ..state, git_graph_selected: Some("commit-b"), })
+    is None,
+  )
+  assert_true(
+    review_filter_inventory({
+      ..state,
+      git_commit_files: GitCommitFilesLoading(commit="commit-a"),
+    })
+    is None,
+  )
+  assert_true(
+    review_filter_inventory({
+      ..state,
+      git_commit_files: GitCommitFilesFailed(
+        commit="commit-a",
+        message="failed",
+      ),
+    })
+    is None,
+  )
+  let working = {
+    ..state,
+    git_graph_selected: None,
+    change_path_filter: "",
+    change_extensions: None,
+  }
+  assert_eq(change_extension_options(working), [(Some(".mbt"), 1)])
+  assert_true(filtered_changes(working) == [workspace])
+}

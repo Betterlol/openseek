@@ -10,24 +10,91 @@ fn change_path_matches(
 }
 
 ///|
+priv struct ReviewFileFilter {
+  query : String
+  extensions : Array[String?]?
+}
+
+///|
+fn State::review_file_filter(self : State) -> ReviewFileFilter {
+  { query: self.change_path_filter, extensions: self.change_extensions, }
+}
+
+///|
+fn ReviewFileFilter::matches(
+  self : ReviewFileFilter,
+  path : @pathx.Relative,
+  original : @pathx.Relative?,
+) -> Bool {
+  change_path_matches(path, original, self.query) &&
+  (
+    self.extensions is None ||
+    (
+      self.extensions is Some(selected) &&
+      selected.contains(change_extension(path))
+    )
+  )
+}
+
+///|
 fn filtered_changes(state : State) -> Array[ChangedFile] {
   match state.changes {
-    ChangeListReady(files~, ..) =>
-      files.filter(change => {
-        change_path_matches(
-          change.path,
-          change.original_path,
-          state.change_path_filter,
-        ) &&
-        (
-          state.change_extensions is None ||
-          (
-            state.change_extensions is Some(selected) &&
-            selected.contains(change_extension(change.path))
-          )
-        )
-      })
+    ChangeListReady(files~, ..) => {
+      // An expanded commit owns the filter; working changes remain unfiltered.
+      if state.git_graph_selected is Some(_) {
+        return files
+      }
+      let filter = state.review_file_filter()
+      files.filter(change => filter.matches(change.path, change.original_path))
+    }
     _ => []
+  }
+}
+
+///|
+fn filtered_history_changes(
+  state : State,
+  files : Array[@protocol.GitHistoricalChange],
+) -> Array[@protocol.GitHistoricalChange] {
+  let filter = state.review_file_filter()
+  files.filter(file => {
+    filter.matches(
+      Relative(file.path),
+      file.original_path.map(path => Relative(path)),
+    )
+  })
+}
+
+///|
+priv struct ReviewFilterFile {
+  path : @pathx.Relative
+  original : @pathx.Relative?
+}
+
+///|
+/// Only a settled inventory for the selected source can supply filter choices.
+/// Loading and failed source states retain their own messages in the lists.
+fn review_filter_inventory(state : State) -> Array[ReviewFilterFile]? {
+  match state.git_graph_selected {
+    Some(selected) =>
+      match state.git_commit_files {
+        GitCommitFilesReady(commit~, files~, ..) if commit == selected =>
+          Some(
+            files.map(file => {
+              path: Relative(file.path),
+              original: file.original_path.map(path => Relative(path)),
+            }),
+          )
+        _ => None
+      }
+    None =>
+      match state.changes {
+        ChangeListReady(files~, ..) =>
+          Some(
+            files.map(file => { path: file.path, original: file.original_path, }),
+          )
+        _ => None
+      }
   }
 }
 
@@ -75,7 +142,7 @@ fn extension_label(extension : String?) -> String {
 ///|
 fn change_extension_options(state : State) -> Array[(String?, Int)] {
   let counts : Map[String?, Int] = Map([])
-  if state.changes is ChangeListReady(files~, ..) {
+  if review_filter_inventory(state) is Some(files) {
     for change in files {
       let extension = change_extension(change.path)
       counts[extension] = counts.get(extension).unwrap_or(0) + 1
