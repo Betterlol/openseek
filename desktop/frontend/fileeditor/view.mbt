@@ -3088,6 +3088,7 @@ fn review_filter_controls(
   @html.div(class="review-filter-controls", [
     @html.div(
       class="review-filter-scope",
+      attrs=@html.Attrs::build().id("review-filter-scope"),
       match state.git_graph_selected {
         Some(commit) => "Filtering commit " + short_commit(commit)
         None => "Filtering working tree"
@@ -3101,6 +3102,8 @@ fn review_filter_controls(
         on_input=dispatch.map(value => ChangePathFilterChanged(value)),
         attrs=@html.Attrs::build()
           .id("review-path-filter-input")
+          .data_set("focus-owner", "")
+          .aria_describedby("review-filter-scope")
           .aria_label("Filter changed files by path")
           .on_keydown(event => {
             if event.key() == "Escape" && !state.change_path_filter.is_empty() {
@@ -3179,10 +3182,21 @@ fn change_extension_filter(
       title=label,
       attrs=@html.Attrs::build()
         .id("review-file-types-trigger")
-        .aria_label("Filter by file extension")
+        .aria_label(
+          "Filter by file extension, " +
+          (if state.change_extensions is None {
+            "all file types"
+          } else {
+            label
+          }),
+        )
+        .aria_describedby("review-filter-scope")
         .aria_haspopup("dialog")
         .aria_controls("review-file-types"),
-      label + " ▾",
+      [
+        @html.span(class="review-type-label", label),
+        @icons.icon(@icons.icon_chevron_down),
+      ],
     ),
     @html.div(
       class="review-type-options",

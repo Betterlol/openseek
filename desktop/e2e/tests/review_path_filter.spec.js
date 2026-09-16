@@ -57,6 +57,9 @@ test('Review combines extension checkboxes with paths and clears both filters', 
   const trigger = page.getByRole('button', { name: 'Filter by file extension' });
   const menu = page.getByRole('dialog', { name: 'File types', exact: true });
   await expect(rows).toHaveCount(4);
+  await expect(trigger).toHaveAccessibleName("Filter by file extension, all file types");
+  await expect(trigger).toHaveAccessibleDescription("Filtering working tree");
+  await expect(input).toHaveAccessibleDescription("Filtering working tree");
   await trigger.click();
   await expect(menu).toBeVisible();
   await expect(menu.getByRole('checkbox', { name: '.mbt', exact: true })).toBeChecked();
@@ -68,7 +71,7 @@ test('Review combines extension checkboxes with paths and clears both filters', 
   await expect(rows).toHaveCount(3);
   await menu.getByRole('checkbox', { name: 'No extension', exact: true }).uncheck();
   await expect(rows).toHaveCount(2);
-  await expect(trigger).toContainText('.mbt');
+  await expect(trigger).toHaveAccessibleName('Filter by file extension, .mbt');
   await menu.getByRole('checkbox', { name: '.mbt', exact: true }).focus();
   await page.keyboard.press('Escape');
   await expect(menu).toBeHidden();
@@ -136,6 +139,8 @@ test('shared filters follow the expanded commit even with no working changes', a
   await expect(scope).toHaveText('Filtering working tree');
   await head.click();
   await expect(scope).toHaveText('Filtering commit cccccccc');
+  await expect(input).toHaveAccessibleDescription('Filtering commit cccccccc');
+  await expect(types).toHaveAccessibleDescription('Filtering commit cccccccc');
   await expect(types).toBeDisabled();
   await expect(historicalFiles).toHaveCount(2);
   await types.click();
