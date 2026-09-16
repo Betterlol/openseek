@@ -244,6 +244,9 @@ pub(all) enum Msg {
   ExplorerModeSelected(ExplorerMode)
   Search(@grep_search.Msg)
   SearchMatchSelected(path~ : String, range~ : @common.Range)
+  ChangeExtensionToggled(String?)
+  ChangeFiltersCleared
+  ChangePathFilterChanged(String)
   TreeFocused(@pathx.Relative)
   DirToggle(@pathx.Relative)
   EnsureFileIndex
@@ -435,6 +438,8 @@ pub(all) struct State {
   semantic_review_collapsed : Array[String]
   review_diff_navigation_available : Bool
   review_navigation_destination : (ChangedFile, Int, Bool)?
+  change_extensions : Array[String?]?
+  change_path_filter : String
   changes : ChangeList
   git_graph : GitGraphState
   git_graph_generation : Int

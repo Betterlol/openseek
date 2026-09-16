@@ -1,0 +1,107 @@
+import { test, expect } from '@playwright/test';
+import { DesktopBrowserHarness } from './support/desktop_browser_harness.js';
+
+test('Review filters changed paths live, clears, and preserves the open diff', async ({ page }) => {
+  const app = new DesktopBrowserHarness(page);
+  app.gitChanges.push({ path: 'docs/guide.md', index_status: ' ', worktree_status: 'M', kind: 'modified' });
+  await app.install();
+  await app.goto();
+  await app.openSession();
+  await app.openReview();
+  const changes = page.locator('#review-changes-body');
+  const input = changes.getByRole('textbox', { name: 'Filter changed files by path' });
+  const rows = changes.locator('.change-row');
+  await expect(rows).toHaveCount(3);
+  await changes.locator('[data-path="src/main.mbt"]').click();
+  const activeTab = page.locator('.editor-tab.active');
+  await expect(activeTab).toContainText('main.mbt');
+  await input.fill('SRC/');
+  await expect(rows).toHaveCount(2);
+  await expect(changes.getByRole('status')).toHaveText('Showing 2 of 3 files');
+  await expect(input).toBeFocused();
+  await changes.locator('[data-path="src/main.mbt"]').press('ArrowDown');
+  await expect(changes.locator('[data-path="src/lib.mbt"]')).toBeFocused();
+  await expect(activeTab).toContainText('lib.mbt');
+  await input.fill('docs/');
+  await expect(rows).toHaveCount(1);
+  await expect(rows).toContainText('docs/guide.md');
+  await expect(activeTab).toContainText('lib.mbt');
+  await input.fill('does-not-exist');
+  await expect(rows).toHaveCount(0);
+  await expect(changes.getByText('No files match these filters.', { exact: true })).toBeVisible();
+  await input.press('Escape');
+  await expect(rows).toHaveCount(3);
+  await expect(input).toBeFocused();
+  await input.fill('.mbt');
+  await expect(rows).toHaveCount(2);
+  await changes.getByRole('button', { name: 'Clear file filters' }).click();
+  await expect(rows).toHaveCount(3);
+  await expect(input).toHaveValue('');
+  await expect(input).toBeFocused();
+  expect(app.pageErrors).toEqual([]);
+});
+
+test('Review combines extension checkboxes with paths and clears both filters', async ({ page }, testInfo) => {
+  const app = new DesktopBrowserHarness(page);
+  app.gitChanges.push(
+    { path: 'docs/guide.md', index_status: ' ', worktree_status: 'M', kind: 'modified' },
+    { path: 'LICENSE', index_status: ' ', worktree_status: 'M', kind: 'modified' },
+  );
+  await app.install();
+  await app.goto();
+  await app.openSession();
+  await app.openReview();
+  const changes = page.locator('#review-changes-body');
+  const input = changes.getByRole('textbox', { name: 'Filter changed files by path' });
+  const rows = changes.locator('.change-row');
+  const trigger = changes.getByRole('button', { name: 'Filter by file extension' });
+  const menu = page.getByRole('dialog', { name: 'File types', exact: true });
+  await expect(rows).toHaveCount(4);
+  await trigger.click();
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole('checkbox', { name: '.mbt', exact: true })).toBeChecked();
+  await expect(menu.getByRole('checkbox', { name: '.md', exact: true })).toBeChecked();
+  await expect(menu.getByRole('checkbox', { name: 'No extension', exact: true })).toBeChecked();
+  await expect(menu.locator('.review-type-option').filter({ hasText: '.mbt' })).toContainText('2');
+  await menu.getByRole('checkbox', { name: '.md', exact: true }).uncheck();
+  await expect(menu).toBeVisible();
+  await expect(rows).toHaveCount(3);
+  await menu.getByRole('checkbox', { name: 'No extension', exact: true }).uncheck();
+  await expect(rows).toHaveCount(2);
+  await expect(trigger).toContainText('.mbt');
+  await menu.getByRole('checkbox', { name: '.mbt', exact: true }).focus();
+  await page.keyboard.press('Escape');
+  await expect(menu).toBeHidden();
+  await expect(trigger).toBeFocused();
+  await input.fill('docs/');
+  await expect(rows).toHaveCount(0);
+  await trigger.click();
+  await menu.getByRole('checkbox', { name: '.md', exact: true }).check();
+  await expect(rows).toHaveCount(1);
+  await expect(rows).toContainText('docs/guide.md');
+  await trigger.click();
+  await expect(menu).toBeHidden();
+  await trigger.click();
+  await expect(menu).toBeVisible();
+  for (const colorScheme of ['light', 'dark']) {
+    await page.emulateMedia({ colorScheme });
+    await page.screenshot({ path: testInfo.outputPath(`file-filters-${colorScheme}.png`) });
+  }
+  await page.setViewportSize({ width: 390, height: 760 });
+  await expect(menu).toBeVisible();
+  const bounds = await menu.boundingBox();
+  expect(bounds.x).toBeGreaterThanOrEqual(0);
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(390);
+  await input.click();
+  await expect(menu).toBeHidden();
+  await changes.getByRole('button', { name: 'Clear file filters' }).click();
+  await expect(rows).toHaveCount(4);
+  await expect(input).toHaveValue('');
+  await trigger.click();
+  await menu.getByRole('checkbox', { name: '.mbt', exact: true }).uncheck();
+  await menu.getByRole('checkbox', { name: '.md', exact: true }).uncheck();
+  await menu.getByRole('checkbox', { name: 'No extension', exact: true }).uncheck();
+  await expect(rows).toHaveCount(0);
+  await expect(trigger).toContainText('none');
+  expect(app.pageErrors).toEqual([]);
+});
