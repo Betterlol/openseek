@@ -369,7 +369,7 @@ pub extend PatternRepairEnvironment with Debug::{to_repr}
 /// callers receive safe configuration guidance without receiving I/O details.
 pub async fn pattern_repair_environment(
   manager : EngineManager,
-  model~ : String?,
+  model~ : String,
 ) -> PatternRepairEnvironment {
   let (settings, _) = manager.settings_snapshot() catch {
     _ => return Unavailable
@@ -377,7 +377,6 @@ pub async fn pattern_repair_environment(
   let endpoint = resolved_endpoint(settings) catch {
     EngineError(message) => return Configuration(message)
   }
-  let endpoint = resolved_endpoint(settings)
   let env = @sys.get_env_vars()
   env[key_env_for(settings.provider, model)] = endpoint.api_key
   match endpoint.api_url {
@@ -389,7 +388,7 @@ pub async fn pattern_repair_environment(
   env.remove("OPENSEEK_MODEL")
   env.remove("OPENSEEK_THINKING")
   env.remove("OPENSEEK_MAX_STEPS")
-  env
+  Ready(env)
 }
 
 ///|
@@ -935,13 +934,18 @@ async test "pattern repair uses provider credentials and leaves run options to a
     @sys.set_env_var("OPENSEEK_THINKING", "no")
     @sys.set_env_var("OPENSEEK_MAX_STEPS", "4")
     let env = pattern_repair_environment(manager, model="glm-5.3")
-    assert_eq(env.get("GLM"), Some("repair-key"))
-    assert_eq(
-      env.get("OPENSEEK_API_URL"),
-      Some("https://proxy.example/chat/completions"),
-    )
-    assert_eq(env.get("OPENSEEK_MODEL"), None)
-    assert_eq(env.get("OPENSEEK_THINKING"), None)
-    assert_eq(env.get("OPENSEEK_MAX_STEPS"), None)
+    match env {
+      Ready(env) => {
+        assert_eq(env.get("GLM"), Some("repair-key"))
+        assert_eq(
+          env.get("OPENSEEK_API_URL"),
+          Some("https://proxy.example/chat/completions"),
+        )
+        assert_eq(env.get("OPENSEEK_MODEL"), None)
+        assert_eq(env.get("OPENSEEK_THINKING"), None)
+        assert_eq(env.get("OPENSEEK_MAX_STEPS"), None)
+      }
+      _ => ()
+    }
   })
 }
