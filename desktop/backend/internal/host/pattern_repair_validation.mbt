@@ -17,7 +17,7 @@ fn pattern_repair_provider_args(
   pattern : String,
 ) -> Array[String] {
   let args = pattern_repair_provider_prefix_args(command)
-  args.append(["dump", "--expr", pattern, "--exit-code"])
+  args.append(["dump", "--expr", pattern, "--strict-check", "--exit-code"])
   args
 }
 
