@@ -159,13 +159,14 @@ fn Page::selected_semantic_reference(
     !pattern.trim().is_empty()
   })
   Some({
-    id: "semantic-search:\{root}:\{self.generation}:\{matches.length()}",
+    // The root is payload data; keeping it out of the snapshot id avoids
+    // serializing the same absolute path twice in the mention envelope.
+    id: "semantic-search:\{self.generation}:\{matches.length()}",
     root,
     patterns,
     include_glob: self.include_glob,
     exclude_glob: self.exclude_glob,
     matches: matches.map(hit => {
-      pattern: hit.rule_id,
       file: hit.path,
       start_line: hit.start_line,
       start_column: hit.start_column,

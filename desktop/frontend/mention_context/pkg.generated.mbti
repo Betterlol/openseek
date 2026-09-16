@@ -111,7 +111,6 @@ pub fn SemanticSearchReference::not_equal(Self, Self) -> Bool
 pub fn SemanticSearchReference::to_repr(Self) -> @debug.Repr
 
 pub(all) struct SemanticSearchReferenceMatch {
-  pattern : String
   file : String
   start_line : Int
   start_column : Int

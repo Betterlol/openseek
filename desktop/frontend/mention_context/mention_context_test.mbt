@@ -58,7 +58,6 @@ test "semantic search mentions round-trip as one aggregate reference" {
     exclude_glob: "src/generated/**",
     matches: [
       {
-        pattern: "inspect($(x:arg))",
         file: "src/main.mbt",
         start_line: 4,
         start_column: 1,
@@ -67,7 +66,6 @@ test "semantic search mentions round-trip as one aggregate reference" {
         matched_source: "inspect(x)",
       },
       {
-        pattern: "match($x)",
         file: "src/other.mbt",
         start_line: 9,
         start_column: 1,
@@ -79,11 +77,43 @@ test "semantic search mentions round-trip as one aggregate reference" {
   }
   let mention = @mention_context.SemanticSearch(reference)
   let encoded = @mention_context.encode([mention], "Explain these matches")
+  assert_true(
+    encoded.contains(
+      "<match file=\"src/main.mbt\" lines=\"4-4\" columns=\"1-12\">\ninspect(x)\n</match>",
+    ),
+  )
+  assert_false(encoded.contains("<matched_source>"))
+  assert_false(encoded.contains("pattern=\"inspect($(x:arg))\""))
   let parsed = @mention_context.parse(encoded).unwrap()
   assert_eq(parsed.task, "Explain these matches")
   assert_eq(parsed.mentions, [mention])
   assert_true(@mention_context.label(mention).contains("2 patterns"))
   assert_true(@mention_context.target(mention) is None)
+}
+
+///|
+test "parse accepts the legacy semantic match wrapper" {
+  let content =
+    #|<user_mentions>
+    #|<semantic_search id="legacy" root="/work" include="" exclude="">
+    #|<pattern>
+    #|inspect($(x:arg))
+    #|</pattern>
+    #|<match pattern="inspect($(x:arg))" file="src/main.mbt" lines="4-4" columns="1-12">
+    #|<matched_source>
+    #|inspect(x)
+    #|</matched_source>
+    #|</match>
+    #|</semantic_search>
+    #|</user_mentions>
+  guard @mention_context.parse(content) is Some(parsed) else {
+    fail("expected legacy semantic-search envelope")
+  }
+  guard parsed.mentions is [@mention_context.SemanticSearch(reference)] else {
+    fail("expected one semantic-search mention")
+  }
+  assert_eq(reference.matches.length(), 1)
+  assert_eq(reference.matches[0].matched_source, "inspect(x)")
 }
 
 ///|
