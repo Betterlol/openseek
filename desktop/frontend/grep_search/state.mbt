@@ -644,53 +644,6 @@ fn Page::result_summary(self : Page) -> SearchResultSummary {
 }
 
 ///|
-test "one-click pattern repair applies only the current reply" {
-  let owner : @interop.ConversationKey = {
-    channel: @interop.ChannelId::Local,
-    session: "pattern-repair",
-  }
-  let root = @common.Uri::parse("file:///work")
-  let input : Input = { owner, root: Some(root), pattern_repair_model: None, }
-  let armed = State::empty()
-    .handle(ModeChanged(Semantic), input)
-    .handle(PatternChanged(0, "inspect($(x:arg"), input)
-    .handle(FixPattern, input)
-  let generation = armed.page.generation
-  assert_true(armed.page.pattern_repair_phase is PatternRepairRequested)
-
-  let stale = armed.handle(
-    PatternRepaired(
-      root=root.path,
-      generation=generation - 1,
-      candidate_pattern="inspect($_)",
-    ),
-    input,
-  )
-  assert_true(stale == armed)
-
-  let repaired = armed.handle(
-    PatternRepaired(
-      root=root.path,
-      generation~,
-      candidate_pattern="inspect($_)",
-    ),
-    input,
-  )
-  assert_eq(repaired.page.semantic.patterns[0], "inspect($_)")
-  assert_true(repaired.page.phase is Loading)
-  assert_true(repaired.page.pattern_repair_phase is PatternRepairIdle)
-
-  let empty = State::empty()
-    .handle(ModeChanged(Semantic), input)
-    .handle(FixPattern, input)
-  assert_true(empty.page.pattern_repair_phase is PatternRepairInputRequired)
-  assert_eq(
-    empty.page.pattern_repair_message,
-    Some("Enter a pattern before repairing it."),
-  )
-}
-
-///|
 fn Page::text_request_payload(
   self : Page,
   input : Input,

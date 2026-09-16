@@ -140,7 +140,6 @@ fn Page::pattern_repair_request_payload(
     root: root.path,
     pattern: self.semantic.patterns[0],
     instruction: DefaultPatternRepairInstruction,
-    model: input.pattern_repair_model,
     generation: self.generation,
   })
 }
