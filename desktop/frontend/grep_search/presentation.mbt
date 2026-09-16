@@ -130,7 +130,6 @@ fn visible_semantic_pattern_groups(
 }
 
 ///|
-#cfg(not(target="js"))
 test "semantic presentation projects flat hits without changing their order" {
   let first : @protocol.SemanticSearchHit = {
     path: "src/main.mbt",
@@ -151,9 +150,9 @@ test "semantic presentation projects flat hits without changing their order" {
     "inspect($(x:arg))", "match($x)",
   ])
   assert_eq(semantic_file_groups(groups[0].hits).map(group => group.path), [
-    "src/main.mbt",
+    "src/main.mbt", "src/other.mbt",
   ])
-  assert_eq(visible_semantic_pattern_groups(hits, 2)[0].hits, [first])
+  assert_eq(visible_semantic_pattern_groups(hits, 2)[0].hits, [first, third])
   assert_eq(hits, [first, second, third])
   assert_true(semantic_hit_key(first) != semantic_hit_key(second))
 }

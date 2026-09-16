@@ -153,14 +153,18 @@ test "Code search groups semantic hits by pattern before file" {
 }
 
 ///|
-#cfg(not(target="js"))
 test "semantic selection stays independent from its presentation groups" {
   let owner : @interop.ConversationKey = {
     channel: @interop.ChannelId::Local,
     session: "semantic-selection",
   }
   let root = @common.Uri::parse("file:///work")
-  let input : Input = { owner, root: Some(root), }
+  let input : Input = {
+    model: "deepseek-v4-flash",
+    thinking: None,
+    owner,
+    root: Some(root),
+  }
   let state = State::empty()
     .handle(ModeChanged(Semantic), input)
     .handle(PatternChanged(0, "inspect($(x:arg))"), input)

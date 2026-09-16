@@ -663,8 +663,14 @@ fn search_body(
       selected_semantic_hits(page.semantic.hits, page.selected)
   }
   if page.mode is Semantic {
-    for group in visible_semantic_pattern_groups(filtered_hits, page.visible_lines) {
-      children.push(semantic_pattern_group_view(page, group, emit, open_match))
+    for
+      group in visible_semantic_pattern_groups(
+        filtered_hits,
+        page.visible_lines,
+      ) {
+      children.push(
+        semantic_pattern_group_view(locale~, page, group, emit, open_match),
+      )
     }
   } else {
     for group in visible_file_groups(items, page.visible_lines) {
@@ -697,37 +703,13 @@ fn search_body(
 }
 
 ///|
-/// One moongrep context line: gutter line number plus the source text, with the
-/// matched lines highlighted, in the style of semgrep's pattern-match output.
-fn semantic_context_line_view(
-  line : @protocol.SemanticContextLine,
-) -> @html.Html {
-  @html.div(
-    class=if line.is_match {
-      "search-context-line matched"
-    } else {
-      "search-context-line"
-    },
-    [
-      @html.span(class="search-context-gutter", "\{line.line}"),
-      @html.span(class="search-context-text", line.text),
-    ],
-  )
-}
-
-///|
 fn semantic_hit_view(
+  locale? : @i18n.Locale = English,
   page : Page,
   hit : @protocol.SemanticSearchHit,
   emit : @cmd.Emit[Msg],
   open_match : (String, @common.Range) -> @cmd.Cmd,
 ) -> @html.Html {
-  let target = @common.Range(
-    hit.start_line,
-    hit.start_column,
-    hit.end_line,
-    hit.end_column,
-  )
   let key = semantic_hit_key(hit)
   let selected = page.selected.get(key).unwrap_or(false)
   @html.div(
@@ -739,9 +721,10 @@ fn semantic_hit_view(
     attrs=@html.Attrs::build().data_set("semantic-hit-key", key),
     [
       @html.div(
-        attrs=@html.Attrs::build().on_click(_ => open_match(hit.path, target)),
         class="search-semantic-context",
-        hit.source_context.map(line => semantic_context_line_view(line)),
+        // Keep the shared UTF-16 highlights and matched-source fallback while
+        // selection identifies each structural hit independently.
+        [result_row(locale~, SearchResultItem::from_semantic(hit), open_match)],
       ),
       @html.button(
         class="search-semantic-select",
@@ -761,6 +744,7 @@ fn semantic_hit_view(
 
 ///|
 fn semantic_file_group_view(
+  locale? : @i18n.Locale = English,
   page : Page,
   pattern : String,
   group : SemanticFileGroup,
@@ -774,7 +758,9 @@ fn semantic_file_group_view(
   let rows = if collapsed {
     ([] : Array[@html.Html])
   } else {
-    group.hits.map(hit => semantic_hit_view(page, hit, emit, open_match))
+    group.hits.map(hit => {
+      semantic_hit_view(locale~, page, hit, emit, open_match)
+    })
   }
   let all_hits = page.semantic.hits.filter(hit => {
     hit.rule_id == pattern && hit.path == group.path
@@ -832,6 +818,7 @@ fn semantic_file_group_view(
 
 ///|
 fn semantic_pattern_group_view(
+  locale? : @i18n.Locale = English,
   page : Page,
   group : SemanticPatternGroup,
   emit : @cmd.Emit[Msg],
@@ -844,7 +831,14 @@ fn semantic_pattern_group_view(
     []
   } else {
     semantic_file_groups(group.hits).map(file => {
-      semantic_file_group_view(page, group.pattern, file, emit, open_match)
+      semantic_file_group_view(
+        locale~,
+        page,
+        group.pattern,
+        file,
+        emit,
+        open_match,
+      )
     })
   }
   let all_hits = page.semantic.hits.filter(hit => hit.rule_id == group.pattern)
