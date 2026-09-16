@@ -14,7 +14,6 @@ import {
   "moonbitlang/openseek/prompt",
   "moonbitlang/openseek/agent_session/store",
   "moonbitlang/openseek/internal/workspace_path",
-  "moonbitlang/openseek_protocol",
 }
 
 import {

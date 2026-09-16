@@ -6,7 +6,6 @@ import {
   "moonbitlang/openseek/mcp/streamhttp",
   "moonbitlang/openseek/mcp/config",
   "moonbitlang/openseek_protocol/emit",
-  "moonbitlang/openseek_protocol",
   "moonbitlang/async",
 }
 
