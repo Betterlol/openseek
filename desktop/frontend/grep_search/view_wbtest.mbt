@@ -112,20 +112,32 @@ test "Code search repairs one pattern without a composer or preview" {
       PatternRepairValidationFailed(
         root=root.path,
         generation=semantic.page.generation,
-        diagnostic="invalid_pattern: expected a complete expression",
+        candidate_pattern=Some("let mut $(name:id) = $(value:exp)"),
+        diagnostic="raw moongrep diagnostic: expected a complete expression",
       ),
       input,
     )
   let validation_failed_html = render_search(validation_failed, input)
+  assert_true(validation_failed.page.semantic.patterns[0] == "inspect($(x:arg")
+  assert_true(
+    validation_failed.page.pattern_repair_candidate
+    is Some("let mut $(name:id) = $(value:exp)"),
+  )
   assert_true(
     validation_failed_html.contains(
-      "The repaired pattern could not be validated.",
+      "Pattern repair failed. The current pattern was not changed.",
     ),
   )
-  assert_true(validation_failed_html.contains("Show validation details"))
+  assert_true(validation_failed_html.contains("Show repair details"))
+  assert_true(
+    validation_failed_html.contains("Candidate pattern (not applied)"),
+  )
+  assert_true(
+    validation_failed_html.contains("let mut $(name:id) = $(value:exp)"),
+  )
   assert_true(
     validation_failed_html.contains(
-      "invalid_pattern: expected a complete expression",
+      "raw moongrep diagnostic: expected a complete expression",
     ),
   )
   let invalid = semantic

@@ -44,7 +44,7 @@ fn pattern_repair_validator_config(command : String) -> Json {
 priv enum PatternRepairValidation {
   PatternRepairValid
   PatternRepairUnavailable
-  PatternRepairInvalid(String, String)
+  PatternRepairInvalid(String)
 }
 
 ///|
@@ -57,7 +57,7 @@ async fn validate_pattern_repair_candidate(
   } else {
     guard moongrep_command() is Some(command) else {
       return PatternRepairInvalid(
-        "moongrep_unavailable", "The semantic-search provider is unavailable.",
+        "The semantic-search provider is unavailable.",
       )
     }
     let (code, stdout, stderr) = @processx.collect_output_no_stdin(
@@ -67,7 +67,6 @@ async fn validate_pattern_repair_candidate(
     ) catch {
       error =>
         return PatternRepairInvalid(
-          "validation_failed",
           "Cannot validate Pattern Repair candidate: \{error}",
         )
     }
@@ -79,10 +78,7 @@ async fn validate_pattern_repair_candidate(
       } else {
         stdout.text()
       }
-      PatternRepairInvalid(
-        pattern_repair_validation_code(detail),
-        pattern_repair_diagnostic(detail),
-      )
+      PatternRepairInvalid(pattern_repair_diagnostic(detail))
     }
   }
 }
@@ -100,21 +96,6 @@ fn pattern_repair_diagnostic(stderr : String) -> String {
 }
 
 ///|
-fn pattern_repair_validation_code(stderr : String) -> String {
-  let lower = stderr.to_lower()
-  if lower.contains("not a valid") ||
-    lower.contains("lexical error") ||
-    lower.contains("parse error") {
-    "invalid_pattern"
-  } else if lower.contains("permission denied") ||
-    lower.contains("access is denied") {
-    "permission_denied"
-  } else {
-    "validation_failed"
-  }
-}
-
-///|
 test "pattern repair validation preserves the dump command" {
   assert_eq(pattern_repair_provider_args("moonx", "foo()"), [
     MoongrepPackageCoordinate,
@@ -122,6 +103,7 @@ test "pattern repair validation preserves the dump command" {
     "dump",
     "--expr",
     "foo()",
+    "--strict-check",
     "--exit-code",
   ])
 }
@@ -135,18 +117,10 @@ test "pattern repair validator configuration keeps provider ownership in the Hos
 }
 
 ///|
-test "pattern repair validation bounds diagnostics and classifies errors" {
+test "pattern repair validation preserves the provider diagnostic" {
   assert_eq(
-    pattern_repair_validation_code("Pattern is not a valid MoonBit expression"),
-    "invalid_pattern",
-  )
-  assert_eq(
-    pattern_repair_validation_code("Access is denied"),
-    "permission_denied",
-  )
-  assert_eq(
-    pattern_repair_validation_code("unexpected failure"),
-    "validation_failed",
+    pattern_repair_diagnostic("Pattern is not a valid MoonBit expression"),
+    "Pattern is not a valid MoonBit expression",
   )
   assert_eq(
     pattern_repair_diagnostic(""),

@@ -51,7 +51,7 @@ pub(all) enum Msg {
   PatternRepaired(root~ : String, generation~ : Int, candidate_pattern~ : String)
   PatternRepairUnavailable(root~ : String, generation~ : Int, message~ : String)
   PatternRepairTimedOut(root~ : String, generation~ : Int)
-  PatternRepairValidationFailed(root~ : String, generation~ : Int, diagnostic~ : String)
+  PatternRepairValidationFailed(root~ : String, generation~ : Int, candidate_pattern~ : String?, diagnostic~ : String)
   PatternRepairFailed(root~ : String, generation~ : Int)
   IncludeChanged(String)
   ExcludeChanged(String)

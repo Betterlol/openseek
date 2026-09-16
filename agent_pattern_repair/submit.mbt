@@ -40,8 +40,9 @@ fn parse_pattern_repair_submission(
 }
 
 ///|
-/// Run one bounded Pattern Repair Agent turn. It has no workspace tools: its
-/// only non-submit capability is the Host-owned syntax validator.
+/// Run one Pattern Repair Agent turn. It has no workspace tools: its only
+/// non-submit capability is the Host-owned syntax validator. The caller may
+/// impose a step ceiling; the normal Host path relies on its wall timeout.
 pub async fn run(
   pattern : String,
   instruction : String,

@@ -6,7 +6,7 @@ const PatternRepairWallTimeoutMs = 180_000
 
 ///|
 priv enum PatternRepairProcessOutcome {
-  Finished(String)
+  Finished(Int, String, String)
   TimedOut
 }
 
@@ -14,7 +14,7 @@ priv enum PatternRepairProcessOutcome {
 priv enum PatternRepairCandidateOutcome {
   Candidate(String, String)
   TimedOut
-  NoCandidate
+  Failed(String)
 }
 
 ///|
@@ -69,9 +69,49 @@ async fn run_pattern_repair_process(
     })
   })
   match result {
-    Some((_, stdout, _)) => Finished(stdout)
+    Some((code, stdout, stderr)) => Finished(code, stdout, stderr)
     None => TimedOut
   }
+}
+
+///|
+/// Keep the child's original terminal event available to the UI. Event names
+/// are only used to identify terminal events; the displayed value remains the
+/// raw provider/agent diagnostic instead of a Host-side error classification.
+fn pattern_repair_agent_error(json : Json) -> String? {
+  guard json is { "event": String(event), .. } else { return None }
+  if event == "turn_failed" {
+    match json {
+      { "error": String(error), .. } => Some(error)
+      _ => Some(json.stringify())
+    }
+  } else if event == "max_steps_exhausted" ||
+    event == "context_yield" ||
+    event == "agent_finished" ||
+    event == "agent_aborted" {
+    Some(json.stringify())
+  } else {
+    None
+  }
+}
+
+///|
+test "pattern repair preserves raw agent failure diagnostics" {
+  assert_eq(
+    pattern_repair_agent_error({
+      "event": "turn_failed",
+      "error": "provider returned an invalid tool call",
+    }),
+    Some("provider returned an invalid tool call"),
+  )
+  match pattern_repair_agent_error({ "event": "max_steps_exhausted" }) {
+    Some(diagnostic) => assert_true(diagnostic.contains("max_steps_exhausted"))
+    None => assert_true(false)
+  }
+  assert_true(
+    pattern_repair_agent_error({ "event": "provider_request_timed_out" })
+    is None,
+  )
 }
 
 ///|
@@ -110,14 +150,23 @@ async fn request_pattern_repair_candidate(
   ) catch {
     error if @async.is_being_cancelled() || @async.is_cancellation_error(error) =>
       raise error
-    _ => return NoCandidate
+    error => return Failed("\{error}")
   }
-  guard process is Finished(stdout) else { return TimedOut }
+  guard process is Finished(code, stdout, stderr) else { return TimedOut }
   let mut provider_timed_out = false
+  let mut agent_error : String? = if code == 0 || stderr.trim().is_empty() {
+    None
+  } else {
+    Some(pattern_repair_diagnostic(stderr))
+  }
   for line in stdout.split("\n") {
     let json = @json.parse(line.trim()) catch { _ => continue }
     if json is { "event": String("provider_request_timed_out"), .. } {
       provider_timed_out = true
+      continue
+    }
+    if pattern_repair_agent_error(json) is Some(error) {
+      agent_error = Some(pattern_repair_diagnostic(error))
       continue
     }
     guard json is { "subrun_report": report, .. } else { continue }
@@ -127,14 +176,20 @@ async fn request_pattern_repair_candidate(
         "message": String(message),
         ..
       } else {
-      return NoCandidate
+      return Failed(pattern_repair_diagnostic(report.stringify()))
     }
     return Candidate(candidate, message)
   }
   if provider_timed_out {
     TimedOut
+  } else if agent_error is Some(error) {
+    Failed(error)
+  } else if !stdout.trim().is_empty() {
+    Failed(pattern_repair_diagnostic(stdout))
+  } else if code != 0 {
+    Failed("Pattern Repair Agent process exited with code \{code}.")
   } else {
-    NoCandidate
+    Failed("Pattern Repair Agent did not produce a subrun report.")
   }
 }
 
@@ -142,7 +197,7 @@ async fn request_pattern_repair_candidate(
 fn pattern_repair_failure(
   payload : @protocol.PatternRepairPayload,
   validation_status : @protocol.PatternRepairStatus,
-  candidate_pattern : String,
+  candidate_pattern : String?,
   message : String,
 ) -> @protocol.PatternRepairReply {
   {
@@ -165,7 +220,7 @@ async fn pattern_repair_op(
     return pattern_repair_failure(
       payload,
       Unavailable,
-      payload.pattern,
+      None,
       "Pattern Repair Agent is unavailable.",
     )
   }
@@ -185,23 +240,17 @@ async fn pattern_repair_op(
       return pattern_repair_failure(
         payload,
         TimedOut,
-        payload.pattern,
+        None,
         "Pattern repair timed out while contacting the AI provider. Check your connection or provider endpoint, then retry.",
       )
-    NoCandidate =>
-      return pattern_repair_failure(
-        payload,
-        Unavailable,
-        payload.pattern,
-        "Pattern Repair Agent returned no candidate.",
-      )
+    Failed(error) => return pattern_repair_failure(payload, Failed, None, error)
   }
   match validate_pattern_repair_candidate(root, candidate) {
     PatternRepairValid =>
       {
         root: payload.root,
         generation: payload.generation,
-        candidate_pattern: candidate,
+        candidate_pattern: Some(candidate),
         valid: true,
         validation_status: Passed,
         message,
@@ -210,17 +259,12 @@ async fn pattern_repair_op(
       {
         root: payload.root,
         generation: payload.generation,
-        candidate_pattern: candidate,
-        valid: true,
+        candidate_pattern: Some(candidate),
+        valid: false,
         validation_status: Unavailable,
         message,
       }
-    PatternRepairInvalid(code, diagnostic) =>
-      pattern_repair_failure(
-        payload,
-        Failed,
-        candidate,
-        "\{code}: \{diagnostic}",
-      )
+    PatternRepairInvalid(diagnostic) =>
+      pattern_repair_failure(payload, Failed, Some(candidate), diagnostic)
   }
 }
