@@ -149,6 +149,7 @@ pub fn update(
           selection: CodexNoTask,
           draft: "",
           mentions: [],
+          images: [],
           submitted_first_prompt: None,
           pending_steers: [],
           placement: @composer.LocalCheckout,
@@ -188,6 +189,7 @@ pub fn update(
             // its own identity, exactly as it does for OpenSeek conversations.
             draft: "",
             mentions: [],
+            images: [],
             submitted_first_prompt: None,
             pending_steers: [],
             notice: "",
@@ -573,7 +575,12 @@ fn State::with_turn_start_reply(self : State, value : Json) -> State {
       { ..next, activity: next.activity.started(active.id), }
     _ => next
   }
-  { ..next, mentions: [], submission_sequence: next.submission_sequence + 1, }.with_observed_first_prompt()
+  {
+    ..next,
+    mentions: [],
+    images: [],
+    submission_sequence: next.submission_sequence + 1,
+  }.with_observed_first_prompt()
 }
 
 ///|
@@ -595,7 +602,12 @@ fn State::with_turn_steer_reply(self : State, value : Json) -> State {
   } else {
     { ..accepted, draft: "", }
   }
-  { ..next, mentions: [], submission_sequence: next.submission_sequence + 1, }.with_observed_first_prompt()
+  {
+    ..next,
+    mentions: [],
+    images: [],
+    submission_sequence: next.submission_sequence + 1,
+  }.with_observed_first_prompt()
 }
 
 ///|
@@ -643,7 +655,7 @@ test "Codex project add stays local until the first prompt" {
   let submit = ComposerAction(
     @composer.DraftSubmitted(
       identity=wants_worktree.composer_identity(@interop.ChannelId::Local),
-      draft={ task: "inspect this", mentions: [], },
+      draft={ images: [], task: "inspect this", mentions: [], },
     ),
   )
   let (_, submitting) = update(
@@ -666,7 +678,7 @@ test "Codex project add stays local until the first prompt" {
   assert_true(submitting.waiting_for_first_user_item())
   let starting_items = submitting.transcript_items()
   assert_eq(starting_items.length(), 1)
-  assert_true(starting_items[0].kind is @transcript.User(_))
+  assert_true(starting_items[0].kind is @transcript.User(..))
   assert_eq(starting_items[0].text(), Some("inspect this"))
   let (_, adopted) = update(
     dispatch,
@@ -724,7 +736,7 @@ test "Codex project add stays local until the first prompt" {
     ComposerAction(
       @composer.DraftSubmitted(
         identity=acknowledged.composer_identity(@interop.ChannelId::Local),
-        draft={ task: "steer early", mentions: [], },
+        draft={ images: [], task: "steer early", mentions: [], },
       ),
     ),
     acknowledged,
@@ -756,9 +768,9 @@ test "Codex project add stays local until the first prompt" {
   let observed_items = observed.transcript_items()
   assert_eq(observed.pending_steers.length(), 1)
   assert_eq(observed_items.length(), 2)
-  assert_true(observed_items[0].kind is @transcript.User(_))
+  assert_true(observed_items[0].kind is @transcript.User(..))
   assert_eq(observed_items[0].text(), Some("inspect this"))
-  assert_true(observed_items[1].kind is @transcript.User(_))
+  assert_true(observed_items[1].kind is @transcript.User(..))
   assert_eq(observed_items[1].text(), Some("steer early"))
 
   let (_, steered) = update(
@@ -814,7 +826,7 @@ test "Codex full steer replies replace their local receipt" {
     ComposerAction(
       @composer.DraftSubmitted(
         identity=state.composer_identity(@interop.ChannelId::Local),
-        draft={ task: "steer once", mentions: [], },
+        draft={ images: [], task: "steer once", mentions: [], },
       ),
     ),
     state,
@@ -875,14 +887,14 @@ test "Codex steer failure preserves an older first-prompt receipt" {
       },
     }),
     connection: CodexReady,
-    submitted_first_prompt: Some({ task: "initial", mentions: [], }),
+    submitted_first_prompt: Some({ images: [], task: "initial", mentions: [], }),
   }
   let (_, sending_first) = update(
     dispatch,
     ComposerAction(
       @composer.DraftSubmitted(
         identity=state.composer_identity(@interop.ChannelId::Local),
-        draft={ task: "accepted steer", mentions: [], },
+        draft={ images: [], task: "accepted steer", mentions: [], },
       ),
     ),
     state,
@@ -901,7 +913,7 @@ test "Codex steer failure preserves an older first-prompt receipt" {
     ComposerAction(
       @composer.DraftSubmitted(
         identity=accepted_first.composer_identity(@interop.ChannelId::Local),
-        draft={ task: "rejected steer", mentions: [], },
+        draft={ images: [], task: "rejected steer", mentions: [], },
       ),
     ),
     accepted_first,
@@ -1004,7 +1016,7 @@ test "Codex steer receipts reconcile duplicate text by item id and FIFO" {
   let submit = ComposerAction(
     @composer.DraftSubmitted(
       identity=state.composer_identity(@interop.ChannelId::Local),
-      draft={ task: "same text", mentions: [], },
+      draft={ images: [], task: "same text", mentions: [], },
     ),
   )
   let (_, sending_first) = update(
@@ -1032,7 +1044,7 @@ test "Codex steer receipts reconcile duplicate text by item id and FIFO" {
     ComposerAction(
       @composer.DraftSubmitted(
         identity=accepted_first.composer_identity(@interop.ChannelId::Local),
-        draft={ task: "same text", mentions: [], },
+        draft={ images: [], task: "same text", mentions: [], },
       ),
     ),
     accepted_first,
@@ -1133,7 +1145,7 @@ test "Codex steer receipts reconcile duplicate text by item id and FIFO" {
   assert_true(observed_second.pending_steers.is_empty())
   let items = observed_second.transcript_items()
   assert_eq(items.length(), 3)
-  assert_true(items.all(item => item.kind is @transcript.User(_)))
+  assert_true(items.all(item => item.kind is @transcript.User(..)))
   assert_true(items.all(item => item.text() == Some("same text")))
 }
 
@@ -1283,7 +1295,11 @@ test "Codex turn connection errors settle immediately without a history read" {
       "thread": { "id": "thread-1", "turns": [] },
     }),
     draft: "new prompt",
-    submitted_first_prompt: Some({ task: "new prompt", mentions: [], }),
+    submitted_first_prompt: Some({
+      images: [],
+      task: "new prompt",
+      mentions: [],
+    }),
   }.begin_foreground(CodexTurnStartReply("thread-1"))
   let (_, failed) = update(
     dispatch,

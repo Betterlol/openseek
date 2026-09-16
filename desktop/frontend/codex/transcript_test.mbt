@@ -41,7 +41,7 @@ test "Codex adapts app-server items to the shared transcript model" {
   })
   let items = state.transcript_items()
   assert_eq(items.length(), 4)
-  guard items[0].kind is @transcript.User(prompt) else {
+  guard items[0].kind is @transcript.User(text=prompt, ..) else {
     fail("expected the submitted prompt as the first item")
   }
   guard @mention_context.parse(prompt) is Some(user) else {
@@ -329,4 +329,37 @@ test "Codex covers every declared collaboration operation and dynamic names" {
     items[11].kind
     is @transcript.Assistant(calls=[{ outcome: Pending(..), .. }], ..),
   )
+}
+
+///|
+test "Codex history preserves image-only and mixed user messages" {
+  let state = @codex.State::from_thread_snapshot({
+    "thread": {
+      "id": "images",
+      "turns": [
+        {
+          "id": "turn-images",
+          "status": "completed",
+          "items": [
+            {
+              "id": "user-images",
+              "type": "userMessage",
+              "content": [
+                { "type": "text", "text": "Look at this" },
+                { "type": "image", "url": "data:image/png;base64,YQ==" },
+                { "type": "image", "url": "data:image/jpeg;base64,Yg==" },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  })
+  guard state.transcript_items()[0].kind is @transcript.User(text~, images~) else {
+    fail("expected image content in the user message")
+  }
+  assert_eq(text, "Look at this")
+  assert_eq(images, [
+    "data:image/png;base64,YQ==", "data:image/jpeg;base64,Yg==",
+  ])
 }
