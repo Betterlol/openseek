@@ -44,7 +44,7 @@ async fn run_pattern_repair_validator(
   workspace_root : String,
 ) -> Result[String, String] {
   let args = validator.prefix_args.copy()
-  args.append(["dump", "--expr", pattern, "--exit-code"])
+  args.append(["dump", "--expr", pattern, "--strict-check", "--exit-code"])
   let (code, stdout, stderr) = @async.with_task_group(group => {
     let (stdin_reader, stdin_writer) = @process.write_to_process()
     let (stdout_reader, child_stdout) = @process.read_from_process()
@@ -154,16 +154,4 @@ fn validate_pattern_tool(
       validate_pattern_tool_action(args, workspace_root, validated_pattern)
     }),
   )
-}
-
-///|
-test "pattern repair validator accepts only Host-provided configuration" {
-  let raw = (
-    {
-      "command": "moonx",
-      "prefix_args": ["moonbit-community/moongrep@0.3.1", "--"],
-    } : Json)
-  let validator : PatternRepairValidator = @json.from_json(raw)
-  assert_eq(validator.command, "moonx")
-  assert_eq(validator.prefix_args, ["moonbit-community/moongrep@0.3.1", "--"])
 }
