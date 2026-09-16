@@ -80,6 +80,9 @@ struct Page {
   phase : Phase
   pattern_repair_phase : PatternRepairPhase
   pattern_repair_message : String?
+  /// A rejected candidate is retained for diagnosis, but is never applied to
+  /// the active semantic pattern.
+  pattern_repair_candidate : String?
   generation : Int
   delay_ms : Int
 } derive(Eq)
@@ -146,6 +149,7 @@ pub(all) enum Msg {
   PatternRepairValidationFailed(
     root~ : String,
     generation~ : Int,
+    candidate_pattern~ : String?,
     diagnostic~ : String
   )
   PatternRepairFailed(root~ : String, generation~ : Int)

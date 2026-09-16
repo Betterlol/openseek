@@ -1418,7 +1418,9 @@ pub extend PatternRepairStatus with Eq::{equal, not_equal}
 pub(all) struct PatternRepairReply {
   root : String
   generation : Int
-  candidate_pattern : String
+  /// Present only when the Agent submitted a candidate. Failure replies do
+  /// not use the original pattern as a sentinel value.
+  candidate_pattern : String?
   valid : Bool
   validation_status : PatternRepairStatus
   message : String
