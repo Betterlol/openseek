@@ -70,6 +70,7 @@ pub(all) enum MentionRef {
   Skill(name~ : String)
   File(path~ : String)
   Symbol(name~ : String, file~ : String, line~ : Int)
+  SemanticSearch(SemanticSearchReference)
   Annotation(file~ : String, start_line~ : Int, end_line~ : Int, quote~ : String, comment~ : String, side~ : AnnotationSide)
 } derive(Eq, @debug.Debug)
 pub fn MentionRef::equal(Self, Self) -> Bool
@@ -96,6 +97,31 @@ pub(all) struct ReviewSource {
 pub fn ReviewSource::equal(Self, Self) -> Bool
 pub fn ReviewSource::not_equal(Self, Self) -> Bool
 pub fn ReviewSource::to_repr(Self) -> @debug.Repr
+
+pub(all) struct SemanticSearchReference {
+  id : String
+  root : String
+  patterns : Array[String]
+  include_glob : String
+  exclude_glob : String
+  matches : Array[SemanticSearchReferenceMatch]
+} derive(Eq, @debug.Debug)
+pub fn SemanticSearchReference::equal(Self, Self) -> Bool
+pub fn SemanticSearchReference::not_equal(Self, Self) -> Bool
+pub fn SemanticSearchReference::to_repr(Self) -> @debug.Repr
+
+pub(all) struct SemanticSearchReferenceMatch {
+  pattern : String
+  file : String
+  start_line : Int
+  start_column : Int
+  end_line : Int
+  end_column : Int
+  matched_source : String
+} derive(Eq, @debug.Debug)
+pub fn SemanticSearchReferenceMatch::equal(Self, Self) -> Bool
+pub fn SemanticSearchReferenceMatch::not_equal(Self, Self) -> Bool
+pub fn SemanticSearchReferenceMatch::to_repr(Self) -> @debug.Repr
 
 pub struct Target {
   file : String
