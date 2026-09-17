@@ -39,6 +39,22 @@ async fn materialize_semantic_selection_op(
   let dir = root.join(relative_dir)
   @fs.mkdir(dir.to_string(), recursive=true) catch {
     error if @async.is_being_cancelled() => raise error
+    @os_error.OSError(_) as error if error.is_EEXIST() => {
+      // `async/fs.mkdir` only handles missing parents when recursive=true;
+      // Windows reports an existing leaf as ERROR_ALREADY_EXISTS. Treat that
+      // normal steady state as success, but never mistake a file at this path
+      // for the artifact directory.
+      let kind = @fs.kind(dir.to_string()) catch {
+        error if @async.is_being_cancelled() => raise error
+        error =>
+          raise HostError(
+            "could not inspect semantic selection directory: \{error}",
+          )
+      }
+      guard kind is Directory else {
+        raise HostError("semantic selection path is not a directory")
+      }
+    }
     error =>
       raise HostError("could not create semantic selection directory: \{error}")
   }
@@ -139,6 +155,40 @@ async test "semantic selections materialize as bounded JSONL below the checkout"
   assert_true(written.contains("\"kind\":\"semantic-search-selection\""))
   assert_true(written.contains("\"rule_id\":\"inspect\""))
   assert_true(written.contains("\"matched_source\":\"inspect(value)\""))
+}
+
+///|
+async test "semantic selection accepts an existing artifact directory" {
+  let dir = @fs.tmpdir(prefix="openseek-semantic-selection-existing-")
+  defer @fs.rmdir(dir, recursive=true)
+  let root = @pathx.Path(@fs.realpath(dir))
+    .to_absolute()
+    .unwrap()
+    .to_uri_path()
+    .unwrap()
+  let artifact_dir = @pathx.Path(dir).join(
+    ".openseek/agent-context/semantic-search",
+  )
+  @fs.mkdir(artifact_dir.to_string(), recursive=true)
+  @fs.write_file(
+    artifact_dir.join("previous.jsonl").to_string(),
+    "old snapshot\n",
+    create_mode=CreateNew,
+  )
+  let reply = materialize_semantic_selection_op({
+    root,
+    artifact_id: "semantic-search-existing",
+    patterns: ["inspect($(x:arg))"],
+    include_glob: "",
+    exclude_glob: "",
+    matches: [],
+  })
+  assert_true(reply.path.contains("semantic-search-existing"))
+  assert_true(@fs.exists(@pathx.Path(dir).join(reply.path).to_string()))
+  assert_eq(
+    @fs.read_file(artifact_dir.join("previous.jsonl").to_string()).text(),
+    "old snapshot\n",
+  )
 }
 
 ///|
