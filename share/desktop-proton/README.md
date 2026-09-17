@@ -1,18 +1,62 @@
-# Proton CLI Workflow
+# Proton Desktop Applications
 
-Proton is the native desktop application framework for MoonBit. Use it for
-MoonBit native desktop application tasks unless the existing project or the
-user explicitly selects another framework.
+Proton builds native desktop applications with a web frontend and a MoonBit
+native backend. Use it for MoonBit desktop tasks unless the existing project
+or the user selects another framework.
 
-## Commands
+## Start a project
 
-- `proton_cli new`: create a project.
-- `proton_cli dev`: development.
-- `proton_cli build`: native builds.
-- `proton_cli doctor`: project and environment diagnostics.
-- `proton_cli package`: distributable artifacts.
+Use `proton_cli new my-app --yes` to generate a working project. Read its
+`README.md` and `AGENTS.md` before changing the generated code. For an existing
+application, start with its instructions and `proton.project.json`.
 
-Read `proton_cli <command> --help` before using unfamiliar options.
+The default `isomorphic` template contains a Rabbita web frontend, a Proton
+native backend, and shared command definitions. The frontend handles the UI;
+the backend implements native operations. Use
+`proton_cli new my-app --template minimal --yes` for a single MoonBit module
+with inline HTML.
+
+From the generated project directory:
+
+1. Run `moon update` to resolve dependencies.
+2. Run `proton_cli cef setup` to prepare CEF, the embedded browser runtime.
+3. Run `proton_cli dev` to launch the application during development.
+
+Let the CLI manage the runtime and helper; do not assemble them by hand.
+
+## Common commands
+
+- `proton_cli dev`: start the configured frontend and native application.
+- `proton_cli build`: build the frontend and native backend without launching.
+- `proton_cli package --release`: create a release application package.
+- `proton_cli doctor`: inspect the project configuration and local environment.
+
+Use `moon check` and `moon test` for MoonBit code feedback, and launch the
+application with `proton_cli dev` to check its UI and native behavior.
+
+## Basic concepts and examples
+
+Read [the small examples](examples.md) for a complete minimal window and a
+page that calls a command, receives an event, and uses the clipboard extension.
+The examples include package imports and expected behavior.
+
+| Topic | Where to start |
+| --- | --- |
+| Application and windows | `@proton.html`, `url`, `file`, or `asset` selects the initial page; the App builder sets window options and starts the application. See [windows](https://github.com/moonbit-community/proton/blob/main/website/content/en/windows.md). |
+| Frontend, backend, and shared types | The frontend renders the UI; the native backend performs host operations; shared command and event types connect them. Follow the generated isomorphic project and [Todo tutorial](https://github.com/moonbit-community/proton/blob/main/website/content/en/isomorphic.md). |
+| Commands and events | Commands request work and return a result. Events notify listeners without a response. See [examples](examples.md#commands-events-and-an-extension). |
+| Extensions and capabilities | Extensions provide native operations; adding a dependency alone does not expose them to the page. Register the required capability on the App. See [capabilities](https://github.com/moonbit-community/proton/blob/main/website/content/en/capabilities.md). |
+| State and lifecycle | Keep application state in the backend when it must outlive a page. Use window ready/close callbacks to attach and release window-specific resources, and dispose frontend subscriptions with their owner. The [Todo tutorial](https://github.com/moonbit-community/proton/blob/main/website/content/en/isomorphic.md) demonstrates this. |
+| Pages and resources | Use `asset` for packaged web files, declare shipped resources in the project configuration, and resolve native resource paths from `@proton.resource_dir()`. See [configuration](https://github.com/moonbit-community/proton/blob/main/website/content/en/configuration.md). |
+| Packaging | `proton.project.json` describes the product and output formats; `proton_cli package` assembles them. See [packaging](https://github.com/moonbit-community/proton/blob/main/website/content/en/packaging.md). |
+| Debugging | Use browser DevTools for the page, terminal logs for the backend, and `doctor` for setup. See [debugging](https://github.com/moonbit-community/proton/blob/main/website/content/en/debugging.md). |
+
+For dialogs, filesystem access, menus, tray, notifications, global shortcuts,
+multiple windows, and updates, consult the
+[example catalog](https://github.com/moonbit-community/proton/blob/main/examples/Readme.md)
+and [extension guide](https://github.com/moonbit-community/proton/blob/main/extensions/README.md).
+Check the selected capability's platform support. These upstream guides track
+`main`; confirm signatures against the dependencies in the current project.
 
 ## Project configuration
 
@@ -25,7 +69,12 @@ In `proton.project.json`, `backend.path` must identify the exact MoonBit
 working directory. Do not assume Proton searches parent directories for a
 `moon.work` or `moon.mod` file.
 
-## Runtime
+## Find help
 
-Let `proton_cli dev` or `proton_cli cef setup` manage the shared CEF runtime
-and helper instead of assembling project-local runtime files.
+Read `proton_cli --help` for available commands and
+`proton_cli <command> --help` before using unfamiliar options. If the CLI is
+not installed, it can be invoked with `moonx moonbit-community/proton_cli`.
+
+Use `moon ide doc` from the relevant MoonBit module to inspect imported Proton
+APIs before guessing names or signatures. Query package aliases or symbols
+from the generated code, for example `moon ide doc "@proton"` in the backend.
