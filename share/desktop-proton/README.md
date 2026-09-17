@@ -1,18 +1,38 @@
-# Proton CLI Workflow
+# Proton Desktop Applications
 
-Proton is the native desktop application framework for MoonBit. Use it for
-MoonBit native desktop application tasks unless the existing project or the
-user explicitly selects another framework.
+Proton builds native desktop applications with a web frontend and a MoonBit
+native backend. Use it for MoonBit desktop tasks unless the existing project
+or the user selects another framework.
 
-## Commands
+## Start a project
 
-- `proton_cli new`: create a project.
-- `proton_cli dev`: development.
-- `proton_cli build`: native builds.
-- `proton_cli doctor`: project and environment diagnostics.
-- `proton_cli package`: distributable artifacts.
+Use `proton_cli new my-app --yes` to generate a working project. Read its
+`README.md` and `AGENTS.md` before changing the generated code. For an existing
+application, start with its instructions and `proton.project.json`.
 
-Read `proton_cli <command> --help` before using unfamiliar options.
+The default `isomorphic` template contains a Rabbita web frontend, a Proton
+native backend, and shared command definitions. The frontend handles the UI;
+the backend implements native operations. Use
+`proton_cli new my-app --template minimal --yes` for a single MoonBit module
+with inline HTML.
+
+From the generated project directory:
+
+1. Run `moon update` to resolve dependencies.
+2. Run `proton_cli cef setup` to prepare CEF, the embedded browser runtime.
+3. Run `proton_cli dev` to launch the application during development.
+
+Let the CLI manage the runtime and helper; do not assemble them by hand.
+
+## Common commands
+
+- `proton_cli dev`: start the configured frontend and native application.
+- `proton_cli build`: build the frontend and native backend without launching.
+- `proton_cli package --release`: create a release application package.
+- `proton_cli doctor`: inspect the project configuration and local environment.
+
+Use `moon check` and `moon test` for MoonBit code feedback, and launch the
+application with `proton_cli dev` to check its UI and native behavior.
 
 ## Project configuration
 
@@ -25,7 +45,12 @@ In `proton.project.json`, `backend.path` must identify the exact MoonBit
 working directory. Do not assume Proton searches parent directories for a
 `moon.work` or `moon.mod` file.
 
-## Runtime
+## Find help
 
-Let `proton_cli dev` or `proton_cli cef setup` manage the shared CEF runtime
-and helper instead of assembling project-local runtime files.
+Read `proton_cli --help` for available commands and
+`proton_cli <command> --help` before using unfamiliar options. If the CLI is
+not installed, it can be invoked with `moonx moonbit-community/proton_cli`.
+
+Use `moon ide doc` from the relevant MoonBit module to inspect imported Proton
+APIs before guessing names or signatures. Query package aliases or symbols
+from the generated code, for example `moon ide doc "@proton"` in the backend.
