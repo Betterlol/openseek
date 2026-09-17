@@ -57,6 +57,8 @@ pub(all) enum MentionRef {
   File(path~ : String)
   Symbol(name~ : String, file~ : String, line~ : Int)
   SemanticSearch(SemanticSearchReference)
+  SemanticSearchArtifact(SemanticSearchArtifact)
+  SemanticSearchPending(SemanticSearchReference)
   Annotation(
     file~ : String,
     start_line~ : Int,
@@ -82,12 +84,23 @@ pub(all) struct SemanticSearchReference {
 
 ///|
 pub(all) struct SemanticSearchReferenceMatch {
+  rule_id : String?
+  description : String?
   file : String
   start_line : Int
   start_column : Int
   end_line : Int
   end_column : Int
   matched_source : String
+} derive(Eq, Debug)
+
+///|
+/// A generated JSONL snapshot used when a semantic selection is too large to
+/// put in the prompt itself.
+pub(all) struct SemanticSearchArtifact {
+  path : String
+  pattern_count : Int
+  match_count : Int
 } derive(Eq, Debug)
 
 ///|
@@ -167,6 +180,8 @@ pub fn glyph(mention : MentionRef) -> String {
     File(_) => "@"
     Symbol(_) => "#"
     SemanticSearch(_) => "⌕"
+    SemanticSearchArtifact(_) => "⌕"
+    SemanticSearchPending(_) => "⌕"
     Annotation(_) => "✎"
   }
 }
@@ -184,6 +199,10 @@ pub fn label(mention : MentionRef) -> String {
       let match_count = reference.matches.length()
       "Semantic search · \{pattern_count} patterns · \{match_count} matches"
     }
+    SemanticSearchArtifact(artifact) =>
+      "Semantic search · \{artifact.pattern_count} patterns · \{artifact.match_count} matches (file)"
+    SemanticSearchPending(reference) =>
+      "Semantic search · \{reference.patterns.length()} patterns · \{reference.matches.length()} matches (preparing file…)"
     Annotation(file~, start_line~, end_line~, side~, ..) => {
       let suffix = if side is OriginalRevision { " (original)" } else { "" }
       "\{file}:\{start_line}-\{end_line}\{suffix}"
@@ -211,7 +230,10 @@ pub fn target(mention : MentionRef) -> Target? {
           annotation: None,
         })
       }
-    SemanticSearch(_) | Annotation(side=OriginalRevision, ..) => None
+    SemanticSearch(_)
+    | SemanticSearchArtifact(_)
+    | SemanticSearchPending(_)
+    | Annotation(side=OriginalRevision, ..) => None
     Annotation(
       file~,
       start_line~,
@@ -304,6 +326,18 @@ fn write_mention(parts : StringBuilder, mention : MentionRef) -> Unit {
       }
     }
     SemanticSearch(reference) => write_semantic_search(parts, reference)
+    SemanticSearchArtifact(artifact) => {
+      let path = MentionAttribute::encode(artifact.path).wire
+      parts <+
+        "<semantic_search_file path=\"\{path}\" patterns=\"\{artifact.pattern_count}\" matches=\"\{artifact.match_count}\">\n"
+      parts <+
+        "This file is an immutable JSONL semantic-search selection snapshot. Inspect it selectively before reading broad source ranges.\n"
+      parts <+ "</semantic_search_file>\n"
+    }
+    SemanticSearchPending(reference) => {
+      let id = MentionAttribute::encode(reference.id).wire
+      parts <+ "<semantic_search_pending id=\"\{id}\"/>\n"
+    }
     Annotation(file~, start_line~, end_line~, quote~, comment~, side~) => {
       let file = MentionAttribute::encode(file).wire
       let side_attribute = match side {
@@ -341,8 +375,14 @@ fn write_semantic_search(
   }
   for hit in reference.matches {
     let file = MentionAttribute::encode(hit.file).wire
+    let rule = hit.rule_id
+      .map(id => " rule=\"\{MentionAttribute::encode(id).wire}\"")
+      .unwrap_or("")
+    let description = hit.description
+      .map(text => " description=\"\{MentionAttribute::encode(text).wire}\"")
+      .unwrap_or("")
     parts <+
-      "<match file=\"\{file}\" lines=\"\{hit.start_line}-\{hit.end_line}\" columns=\"\{hit.start_column}-\{hit.end_column}\">\n"
+      "<match file=\"\{file}\" lines=\"\{hit.start_line}-\{hit.end_line}\" columns=\"\{hit.start_column}-\{hit.end_column}\"\{rule}\{description}>\n"
     write_body(parts, hit.matched_source)
     parts <+ "</match>\n"
   }
@@ -414,7 +454,10 @@ let annotation_pattern : Regex = re"^<annotation file=\"(?<file>[^\"]+)\" lines=
 let semantic_search_pattern : Regex = re"^<semantic_search id=\"(?<id>[^\"]*)\" root=\"(?<root>[^\"]*)\" include=\"(?<include>[^\"]*)\" exclude=\"(?<exclude>[^\"]*)\">$"
 
 ///|
-let semantic_match_pattern : Regex = re"^<match file=\"(?<file>[^\"]+)\" lines=\"(?<start>[0-9]+)-(?<end>[0-9]+)\" columns=\"(?<start_column>[0-9]+)-(?<end_column>[0-9]+)\">$"
+let semantic_search_file_pattern : Regex = re"^<semantic_search_file path=\"(?<path>[^\"]+)\" patterns=\"(?<patterns>[0-9]+)\" matches=\"(?<matches>[0-9]+)\">$"
+
+///|
+let semantic_match_pattern : Regex = re"^<match file=\"(?<file>[^\"]+)\" lines=\"(?<start>[0-9]+)-(?<end>[0-9]+)\" columns=\"(?<start_column>[0-9]+)-(?<end_column>[0-9]+)\"( rule=\"(?<rule>[^\"]*)\")?( description=\"(?<description>[^\"]*)\")?>$"
 
 ///|
 /// The pre-review form is still accepted so saved transcripts can render
@@ -514,6 +557,30 @@ fn parse_mention_block(lines : ArrayView[String]) -> Array[MentionRef]? {
       index += length + 2
       continue
     }
+    if semantic_search_file_pattern.execute(line) is Some(matched) {
+      guard matched.named_group("path") is Some(path) &&
+        matched.named_group("patterns") is Some(patterns) &&
+        matched.named_group("matches") is Some(matches) else {
+        return None
+      }
+      let body = lines[index + 1:]
+      guard body.search("</semantic_search_file>") is Some(end) else {
+        return None
+      }
+      mentions.push(
+        SemanticSearchArtifact({
+          path: MentionAttribute::decode(path.to_owned()),
+          pattern_count: @string.parse_int(patterns) catch {
+            _ => return None
+          },
+          match_count: @string.parse_int(matches) catch {
+            _ => return None
+          },
+        }),
+      )
+      index += end + 3
+      continue
+    }
     if semantic_search_pattern.execute(line) is Some(matched) {
       guard matched.named_group("id") is Some(id) &&
         matched.named_group("root") is Some(root) &&
@@ -557,6 +624,12 @@ fn parse_mention_block(lines : ArrayView[String]) -> Array[MentionRef]? {
               (match_body[:match_end].join("\n"), match_end + 2)
             }
             matches.push({
+              rule_id: match_header
+              .named_group("rule")
+              .map(rule => MentionAttribute::decode(rule.to_owned())),
+              description: match_header
+              .named_group("description")
+              .map(text => MentionAttribute::decode(text.to_owned())),
               file: MentionAttribute::decode(file.to_owned()),
               start_line: @string.parse_int(start) catch {
                 _ => return None
@@ -639,6 +712,12 @@ pub extend SemanticSearchReferenceMatch with Eq::{equal, not_equal}
 
 ///|
 pub extend SemanticSearchReferenceMatch with Debug::{to_repr}
+
+///|
+pub extend SemanticSearchArtifact with Eq::{equal, not_equal}
+
+///|
+pub extend SemanticSearchArtifact with Debug::{to_repr}
 
 ///|
 pub extend MentionMessage with Debug::{to_repr}

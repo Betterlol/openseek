@@ -2872,9 +2872,11 @@ fn update_inner(
           scheduler.add(
             dispatch(
               SemanticSelectionChanged(
-                next.search.selected_semantic_reference(
+                owner=ctx.owner,
+                reference=next.search.selected_semantic_reference(
                   ctx.root().map(root => root.path).unwrap_or(""),
                 ),
+                materialize=!next.search.semantic_reference_available(),
               ),
             ),
           )
@@ -2890,7 +2892,7 @@ fn update_inner(
         next,
       )
     }
-    SemanticSelectionChanged(_) => (@cmd.none, state)
+    SemanticSelectionChanged(..) => (@cmd.none, state)
     ExplorerModeSelected(mode) => {
       let already_selected = state.explorer_mode == mode
       let selected = { ..state, explorer_mode: mode, }

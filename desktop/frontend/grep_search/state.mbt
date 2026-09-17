@@ -24,6 +24,7 @@ fn fresh_page() -> Page {
     limit_hit: false,
     collapsed: Map([]),
     selected: Map([]),
+    semantic_selection_revision: 0,
     semantic_filter: AllSemanticResults,
     visible_lines: InitialVisibleSearchLines,
     phase: Idle,
@@ -370,7 +371,21 @@ pub fn State::handle(self : State, msg : Msg, input : Input) -> State {
       }
       { ..self, page: { ..page, collapsed, }, }
     }
-    ClearSelection => { ..self, page: { ..page, selected: Map([]), }, }
+    ClearSelection => {
+      let changed = !page.selected.is_empty()
+      {
+        ..self,
+        page: {
+          ..page,
+          selected: Map([]),
+          semantic_selection_revision: if changed {
+            page.semantic_selection_revision + 1
+          } else {
+            page.semantic_selection_revision
+          },
+        },
+      }
+    }
     ShowMore =>
       {
         ..self,
@@ -413,7 +428,14 @@ pub fn State::handle(self : State, msg : Msg, input : Input) -> State {
           selected[hit_key] = true
         }
       }
-      { ..self, page: { ..page, selected, }, }
+      {
+        ..self,
+        page: {
+          ..page,
+          selected,
+          semantic_selection_revision: page.semantic_selection_revision + 1,
+        },
+      }
     }
     ToggleSemanticHit(key) => {
       let selected = page.selected.copy()
@@ -422,7 +444,14 @@ pub fn State::handle(self : State, msg : Msg, input : Input) -> State {
       } else {
         selected[key] = true
       }
-      { ..self, page: { ..page, selected, }, }
+      {
+        ..self,
+        page: {
+          ..page,
+          selected,
+          semantic_selection_revision: page.semantic_selection_revision + 1,
+        },
+      }
     }
     ToggleSemanticFile(pattern, path) => {
       let selected = page.selected.copy()
@@ -439,7 +468,14 @@ pub fn State::handle(self : State, msg : Msg, input : Input) -> State {
           selected[key] = true
         }
       }
-      { ..self, page: { ..page, selected, }, }
+      {
+        ..self,
+        page: {
+          ..page,
+          selected,
+          semantic_selection_revision: page.semantic_selection_revision + 1,
+        },
+      }
     }
     SetSemanticResultFilter(filter) =>
       { ..self, page: { ..page, semantic_filter: filter, }, }

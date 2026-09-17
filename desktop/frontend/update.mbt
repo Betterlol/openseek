@@ -2,6 +2,65 @@
 const TranscriptReloadMaxAttempts : Int = 3
 
 ///|
+/// Write a large selection through the Host's fixed artifact path. The
+/// callback carries the complete reference and owner so a late reply can only
+/// replace the exact pending chip that requested it.
+fn materialize_semantic_selection(
+  dispatch : @cmd.Emit[Msg],
+  owner : @interop.ConversationKey,
+  reference : @mention_context.SemanticSearchReference,
+) -> @cmd.Cmd {
+  let payload : @protocol.MaterializeSemanticSelectionPayload = {
+    root: reference.root,
+    artifact_id: reference.id,
+    patterns: reference.patterns,
+    include_glob: reference.include_glob,
+    exclude_glob: reference.exclude_glob,
+    matches: reference.matches.map(match_ => {
+      rule_id: match_.rule_id,
+      description: match_.description,
+      file: match_.file,
+      start_line: match_.start_line,
+      start_column: match_.start_column,
+      end_line: match_.end_line,
+      end_column: match_.end_column,
+      matched_source: match_.matched_source,
+    }),
+  }
+  @cmd.custom_cmd(scheduler => {
+    @js.async_run(() => {
+      let reply : @protocol.MaterializeSemanticSelectionReply = @interop.bridge_request(
+        owner.channel,
+        @commands.fs_materialize_semantic_selection,
+        payload,
+      ) catch {
+        error => {
+          scheduler.add(
+            dispatch(
+              SemanticSelectionMaterializationFailed(
+                owner~,
+                reference~,
+                message=@interop.bridge_error_text(error),
+              ),
+            ),
+          )
+          return
+        }
+      }
+      scheduler.add(
+        dispatch(
+          SemanticSelectionMaterialized(owner~, reference~, artifact={
+            path: reply.path,
+            pattern_count: reference.patterns.length(),
+            match_count: reply.match_count,
+          }),
+        ),
+      )
+    })
+  })
+}
+
+///|
 /// Build the request for one transcript generation. Foreground loads may
 /// activate a selected stored session; background refreshes only reconcile
 /// the conversation already in the model.
@@ -2886,20 +2945,74 @@ fn update_msg(
     // place; an already-open file is activated.
     FileEditor(@fileeditor.SearchMatchSelected(path~, range~)) =>
       open_editor_at(dispatch, model, path, Some(range))
-    FileEditor(@fileeditor.SemanticSelectionChanged(reference)) => {
-      guard model.active_conversation() is Some(conv) else {
+    SemanticSelectionMaterialized(owner~, reference~, artifact~) => {
+      guard model.find_conversation(owner.channel, owner.session) is Some(conv) else {
+        return (@cmd.none, model)
+      }
+      let matches_pending = conv.mentions.any(mention => {
+        mention.ref_ is @mention_context.SemanticSearchPending(current) &&
+        current == reference
+      })
+      guard matches_pending else { return (@cmd.none, model) }
+      let mentions = conv.mentions.filter(mention => {
+          !(mention.ref_ is @mention_context.SemanticSearchPending(current) &&
+          current == reference)
+        }) +
+        [
+          {
+            ref_: @mention_context.SemanticSearchArtifact(artifact),
+            range: None,
+          },
+        ]
+      (@cmd.none, model.replace_conversation({ ..conv, mentions, }))
+    }
+    SemanticSelectionMaterializationFailed(owner~, reference~, message~) => {
+      guard model.find_conversation(owner.channel, owner.session) is Some(conv) &&
+        conv.mentions.any(mention => {
+          mention.ref_ is @mention_context.SemanticSearchPending(current) &&
+          current == reference
+        }) else {
+        return (@cmd.none, model)
+      }
+      model.notify_error(
+        dispatch,
+        "Could not prepare semantic-search selection: \{message}",
+      )
+    }
+    FileEditor(
+      @fileeditor.SemanticSelectionChanged(owner~, reference~, materialize~)
+    ) => {
+      guard model.active_conversation() is Some(conv) &&
+        conv.device == owner.channel &&
+        conv.session_id == owner.session else {
         return (@cmd.none, model)
       }
       let mentions = conv.mentions.filter(mention => {
-        !(mention.ref_ is @mention_context.SemanticSearch(_))
+        !(mention.ref_ is @mention_context.SemanticSearch(_) ||
+        mention.ref_ is @mention_context.SemanticSearchArtifact(_) ||
+        mention.ref_ is @mention_context.SemanticSearchPending(_))
       })
       let mentions = match reference {
+        Some(reference) if materialize =>
+          mentions +
+          [
+            {
+              ref_: @mention_context.SemanticSearchPending(reference),
+              range: None,
+            },
+          ]
         Some(reference) =>
           mentions +
           [{ ref_: @mention_context.SemanticSearch(reference), range: None, }]
         None => mentions
       }
-      (@cmd.none, model.replace_conversation({ ..conv, mentions, }))
+      let next = model.replace_conversation({ ..conv, mentions, })
+      let command = match reference {
+        Some(reference) if materialize =>
+          materialize_semantic_selection(dispatch, owner, reference)
+        _ => @cmd.none
+      }
+      (command, next)
     }
     // Intercepted like the comment above: which dock tab a tree click opens
     // is the strip's business. The dock opens (or re-activates) the tab,
@@ -3825,6 +3938,13 @@ fn update_msg(
         return (@cmd.none, model)
       }
       if conv.is_archived_read_only() || model.scheduled_session_read_only(conv) {
+        return (@cmd.none, model)
+      }
+      // A large selection is not allowed to degrade to a prompt marker while
+      // its immutable JSONL snapshot is still being written.
+      if conv.mentions.any(mention => {
+          mention.ref_ is @mention_context.SemanticSearchPending(_)
+        }) {
         return (@cmd.none, model)
       }
       let checkout = model.conversation_placement(conv)
