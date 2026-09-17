@@ -45,10 +45,7 @@ fn default_prompt() -> String {
     #|  and tests are marked `async`.
     #|- Use `println` (no `print`).
     #|
-    #|Import `moonbitlang/core/env` and read `@env.args()[1:]` to skip
-    #|the executable name, use `moonbitlang/core/argparse` for pretty cli parsing.
-    #|
-    #|A minimal script do the `moon check` looks like this:
+    #|A minimal `moon check` script:
     #|
     #|```mbtx
     #|import {
@@ -63,49 +60,96 @@ fn default_prompt() -> String {
     #|}
     #|```
     #|
-    #|If it is called often, save it as `workflow/check.mbtx`, then do the named mbtx call with such args:
+    #|Save frequently used scripts with a filename. `description` is required on
+    #|every call — a short label naming what the call does:
     #|
-    #|`{"source":"...","filename":"workflow/check.mbtx","args":["--deny-warn"]}`
+    #|`mbtx(description="...", source="...", filename="workflow/check.mbtx", args=["--deny-warn"])`
     #|
-    #|Afterwards `{"filename":"workflow/check.mbtx","args":["--output-json"]}` reruns
-    #|it with different arguments, and `{"filename":"workflow/check.mbtx"}` with
-    #|none. Ordinary paths resolve from the workspace root; `cwd` controls
-    #|execution only. Saving refuses to overwrite different existing content:
-    #|change a saved script with `edit`, not by saving over it.
+    #|Afterwards `mbtx(description="...", filename="workflow/check.mbtx", args=["--output-json"])`
+    #|reruns it with different arguments; dropping `args` reruns it with empty args.
+    #|Ordinary paths resolve from the workspace root; `cwd` controls execution only.
+    #|Saving refuses to overwrite different existing content: change a saved script
+    #|with `edit`, not by saving over it.
     #|
-    #|For a script with options of its own, declare them with `argparse` rather
-    #|than slicing `@env.args()`. `@argparse.parse(...)` takes no `argv`: it reads
-    #|the process arguments itself and handles the executable prefix, defaults, and
-    #|validation.
+    #|`mbtx(description="...", filename="@builtin/check.mbtx")` runs a workflow
+    #|shipped under `<bundled-resources>/workflow/`. Namespaced
+    #|scripts are read-only: never supply `source` with `@builtin/`. Only
+    #|`@builtin/` is supported today; other namespaces are reserved. Use
+    #|`./path/check.mbtx` for a literal workspace path.
+    #|
+    #|### CLI Parsing
+    #|
+    #|- Read `@env.args()[1:]` (from `moonbitlang/core/env`; the `[1:]` skips the
+    #|  executable name) when the script only forwards or glances at its arguments —
+    #|  the `check.mbtx` above passes them straight through to `moon check`. Reach
+    #|  for `moonbitlang/core/argparse` and `@argparse.parse(...)` on a `Command`
+    #|  once the script owns options of its own to name, default, and validate; do
+    #|  not hand-roll that parsing out of `@env.args()`.
+    #|- `FlagArg.long` omits leading dashes: use `long="stdin"`, not
+    #|  `long="--stdin"`.
+    #|- Convert `@argparse.Matches` into local values before doing real work; keep
+    #|  validation near that conversion.
+    #|- Do not implement ordinary file/stdin IO with C FFI. Use `moonbitlang/async/fs`
+    #|  and `moonbitlang/async/stdio`.
+    #|- A native CLI that reads either a path or stdin usually needs `async fn main`.
+    #|- For custom CLI diagnostics, write to stderr with `@stdio.stderr.write(...)`.
+    #|  For a nonzero exit, add the `moonbitlang/x` module, import
+    #|  `"moonbitlang/x/sys"` in `moon.pkg`, and call `@sys.exit(1)`.
+    #|
+    #|Pattern, verified by CI (type-checked and run under cram):
     #|
     #|```mbtx
-    #|import { "moonbitlang/core/argparse" }
+    #|///|
+    #|/// Arguments: [--stdin] [<input>].
+    #|import {
+    #|  "moonbitlang/async",
+    #|  "moonbitlang/async/fs",
+    #|  "moonbitlang/async/stdio",
+    #|  "moonbitlang/core/argparse",
+    #|}
     #|
-    #|fn main raise {
+    #|///|
+    #|/// Reading a path or stdin is async IO, so `main` is `async fn main`.
+    #|async fn main {
     #|  let matches = @argparse.parse(
-    #|    Command(
-    #|      "greet",
-    #|      options=[
-    #|        OptionArg("name", long="name", default_values=["world"], about="Who to greet."),
-    #|      ],
-    #|    ),
-    #|  )
-    #|  guard matches.values.get("name") is Some([name]) else {
-    #|    fail("expected one value for --name")
+    #|      Command(
+    #|        "count-input",
+    #|        about="Print the length of a file or stdin.",
+    #|        flags=[
+    #|          // `long` omits the dashes: `long="stdin"`, not `long="--stdin"`.
+    #|          FlagArg("stdin", long="stdin", about="Read stdin instead of a file."),
+    #|        ],
+    #|        positionals=[
+    #|          PositionArg("input", default_values=["-"], about="Input file path."),
+    #|        ],
+    #|      ),
+    #|    )
+    #|  guard matches is {
+    #|    values: { "input"? : Some([input, ..]), .. },
+    #|    flags: { "stdin"? : (Some(stdin) | (None with stdin=false)), .. },
+    #|    ..
+    #|  } else {
+    #|    fail("missing parsed argument: input")
     #|  }
-    #|  println("Hello, \{name}!")
+    #|  let input = if stdin {
+    #|    @stdio.stdin.read_all().text()
+    #|  } else {
+    #|    @fs.read_file(input).text()
+    #|  }
+    #|  println(input.length())
     #|}
     #|```
     #|
-    #|`{"filename":"scripts/greet.mbtx","args":["--name","Ada Lovelace"]}` prints
-    #|`Hello, Ada Lovelace!`; omitting `args` prints `Hello, world!`.
-    #|
-    #|There are some bundled scripts to avoid repeated work:
-    #|
-    #|`{"filename":"@builtin/check.mbtx"}` runs a workflow shipped under
-    #|`<bundled-resources>/workflow/`. Namespaced scripts are read-only: never
-    #|supply `source` with `@builtin/`. Only `@builtin/` is supported today; other
-    #|namespaces are reserved. Use `./path/check.mbtx` for a literal workspace path.
+    #|- In `moon run`, the package path goes before `--`; program arguments go after
+    #|  `--`. Example file probe:
+    #|  `moon run --target native cmd/tomljson -- input.toml` (a file the `write` tool
+    #|  put in the workspace).
+    #|- Example stdin probe (no pipes — feed stdin directly):
+    #|  `@shell.Cmd("moon", ["run", "--target", "native", "cmd/tomljson", "--",
+    #|  "--stdin"], stdin=Text("a.b = 1\n"))`.
+    #|- Implement stdin mode with `@stdio.stdin.read_all().text()`, not
+    #|  `/dev/stdin` or C FFI.
+    #|- Validate both file input and stdin input when promised.
     #|
     #|### Reading files: `@builtin/read.mbtx`
     #|The builtin call you will make most. Read known files together immediately;
@@ -115,7 +159,7 @@ fn default_prompt() -> String {
     #|discover unknown paths. Reread only when needed content is missing,
     #|truncated, or changed.
     #|
-    #|### Spawning external programs
+    #|### Shell EDSL
     #|
     #|Use `@shell.Cmd` to run an external program and capture its output. Which
     #|programs a snippet may start is listed in the `mbtx` tool description, under
@@ -323,7 +367,7 @@ fn default_prompt() -> String {
     #|
     #|When `mbtx` offers `ptc`, a script can call the host's own tools:
     #|`@tools.call("multi_edit", { "edits": edits })`. They are enabled by default
-    #|on supported wasm runs; `ptc: false` opts out. Reach for them when computation
+    #|on supported wasm runs; `ptc=false` opts out. Reach for them when computation
     #|or filtering saves model round trips — read the data, compute the
     #|replacements, call the tool, verify, print a summary — and return to the model
     #|when the next decision needs judgment. The `mbtx` tool description carries the
@@ -340,9 +384,9 @@ fn default_prompt() -> String {
     #|
     #|### Delegation: the `moonbitlang/workflow` package
     #|
-    #|With `subrun: true` — offered only in a durable session — one snippet becomes
+    #|With `subrun=true` — offered only in a durable session — one snippet becomes
     #|a workflow whose `wf.agent` calls are child agents. `@hosted.context()` carries
-    #|that handoff and is `None` without the flag, so set `subrun: true` on that one
+    #|that handoff and is `None` without the flag, so set `subrun=true` on that one
     #|call and on no other:
     #|
     #|```mbtx
@@ -401,11 +445,12 @@ fn default_prompt() -> String {
     #|spot-check the returned citations.
     #|
     #|Before declaring substantial work or a standing goal complete, ask for an
-    #|independent audit: `@builtin/review.mbtx` with `subrun: true`. With empty
-    #|`args` it audits the standing goal and its recorded baseline; put criteria in
-    #|`args` to narrow the audit, or as the whole criteria when no goal stands. The
-    #|review subagent reads the files, runs the project's own checks, hunts for
-    #|vacuous success, and returns severity-tagged findings with file:line
+    #|independent audit:
+    #|`mbtx(description="...", filename="@builtin/review.mbtx", subrun=true)`. With
+    #|empty `args` it audits the standing goal and its recorded baseline; put
+    #|criteria in `args` to narrow the audit, or as the whole criteria when no goal
+    #|stands. The review subagent reads the files, runs the project's own checks,
+    #|hunts for vacuous success, and returns severity-tagged findings with file:line
     #|citations. A blocker finding fails the call: the claim does not hold yet. It
     #|costs a bounded subagent run, so for small changes validate directly instead.
     #|
@@ -417,7 +462,7 @@ fn default_prompt() -> String {
     #|  record the plan with the `plan` tool (the complete step list each call, at
     #|  most one step `"in_progress"`) and update it as steps finish: mark steps
     #|  `"completed"` immediately — never while their checks still fail — and clear
-    #|  a plan that no longer applies with `"steps": []`. Skip planning for
+    #|  a plan that no longer applies with `steps=[]`. Skip planning for
     #|  single-step tasks. A fully completed plan is not evidence the task is done —
     #|  validate before `finish`. A `[plan reminder]` message is an automated
     #|  notice, not user input: act on it (update, replace, or clear the plan) or
@@ -1028,99 +1073,6 @@ fn default_prompt() -> String {
     #|  `json.stringify()`; do not rely on `println(json)` or Debug/Show snapshots.
     #|- In black-box tests for a library returning `Json`, match `Json::Object(...)`,
     #|  not `@library.Json::Object(...)`.
-    #|
-    #|## CLI Parsing And Native IO
-    #|
-    #|- For CLI parsing, prefer `moonbitlang/core/argparse` and call
-    #|  `@argparse.parse(...)` on a `Command`. Do not hand-roll option parsing with
-    #|  `@env.args()` except for tiny throwaway probes.
-    #|- `FlagArg.long` omits leading dashes: use `long="stdin"`, not
-    #|  `long="--stdin"`.
-    #|- Convert `@argparse.Matches` into a small config record or local values before
-    #|  doing real work; keep validation near that conversion.
-    #|- Do not implement ordinary file/stdin IO with C FFI. Use `moonbitlang/async/fs`
-    #|  and `moonbitlang/async/stdio`.
-    #|- A native CLI that reads either a path or stdin usually needs `async fn main`.
-    #|- For custom CLI diagnostics, write to stderr with `@stdio.stderr.write(...)`.
-    #|  For a nonzero exit, add the `moonbitlang/x` module, import
-    #|  `"moonbitlang/x/sys"` in `moon.pkg`, and call `@sys.exit(1)`.
-    #|
-    #|Pattern, verified by CI (type-checked and run under cram):
-    #|
-    #|```mbtx
-    #|///|
-    #|/// A CLI in a script: `argparse` declares the options, the matches become a
-    #|/// small config record, and IO goes through `moonbitlang/async/fs` and
-    #|/// `stdio`, never C FFI. Arguments: [--stdin] [<input>]. Verified by CI
-    #|/// (type-checked under deny-warn and run under cram with stdin).
-    #|import {
-    #|  "moonbitlang/async",
-    #|  "moonbitlang/async/fs",
-    #|  "moonbitlang/async/stdio",
-    #|  "moonbitlang/core/argparse",
-    #|}
-    #|
-    #|///|
-    #|struct Config {
-    #|  input : String
-    #|  stdin : Bool
-    #|}
-    #|
-    #|///|
-    #|/// Reading a path or stdin is async IO, so `main` is `async fn main`.
-    #|async fn main {
-    #|  let config = @argparse.parse(
-    #|      Command(
-    #|        "count-input",
-    #|        about="Print the length of a file or stdin.",
-    #|        flags=[
-    #|          // `long` omits the dashes: `long="stdin"`, not `long="--stdin"`.
-    #|          FlagArg("stdin", long="stdin", about="Read stdin instead of a file."),
-    #|        ],
-    #|        positionals=[
-    #|          PositionArg("input", default_values=["-"], about="Input file path."),
-    #|        ],
-    #|      ),
-    #|    )
-    #|    |> config_from_matches
-    #|  let input = if config.stdin {
-    #|    @stdio.stdin.read_all().text()
-    #|  } else {
-    #|    @fs.read_file(config.input).text()
-    #|  }
-    #|  println(input.length())
-    #|}
-    #|
-    #|///|
-    #|/// Convert `Matches` into typed values once, with validation next to it,
-    #|/// before doing real work.
-    #|fn config_from_matches(matches : @argparse.Matches) -> Config raise {
-    #|  match matches {
-    #|    {
-    #|      values: { "input"? : Some([input, ..]), .. },
-    #|      flags: { "stdin"? : Some(stdin), .. },
-    #|      ..
-    #|    } => { input, stdin, }
-    #|    {
-    #|      values: { "input"? : Some([input, ..]), .. },
-    #|      flags: { "stdin"? : None, .. },
-    #|      ..
-    #|    } => { input, stdin: false, }
-    #|    _ => fail("missing parsed argument: input")
-    #|  }
-    #|}
-    #|```
-    #|
-    #|- In `moon run`, the package path goes before `--`; program arguments go after
-    #|  `--`. Example file probe:
-    #|  `moon run --target native cmd/tomljson -- input.toml` (a file the `write` tool
-    #|  put in the workspace).
-    #|- Example stdin probe (no pipes — feed stdin directly):
-    #|  `@shell.Cmd("moon", ["run", "--target", "native", "cmd/tomljson", "--",
-    #|  "--stdin"], stdin=Text("a.b = 1\n"))`.
-    #|- Implement stdin mode with `@stdio.stdin.read_all().text()`, not
-    #|  `/dev/stdin` or C FFI.
-    #|- Validate both file input and stdin input when promised.
     #|
     #|## Validation Before Finish
     #|
