@@ -3065,6 +3065,22 @@ fn update_msg(
       )
     }
     FileEditor(@fileeditor.SemanticSelectionChanged(owner~, reference~)) => {
+      // Codex owns a separate composer state from OpenSeek. The file editor
+      // still emits one shared selection event, so route it to the selected
+      // Codex task before looking for an OpenSeek conversation. The exact
+      // owner fence prevents a delayed selection from retargeting a newly
+      // selected task or a different device.
+      if model.screen is Codex {
+        guard owner.channel == model.focused &&
+          model.codex.active_id() is Some(session) &&
+          session == owner.session else {
+          return (@cmd.none, model)
+        }
+        return (
+          @cmd.none,
+          { ..model, codex: model.codex.with_semantic_selection(reference), },
+        )
+      }
       guard model.active_conversation() is Some(conv) &&
         conv.device == owner.channel &&
         conv.session_id == owner.session else {
@@ -17969,6 +17985,45 @@ test "Codex editor comments use annotation context, not textarea text or OpenSee
   // The textarea stays untouched. Codex owns the annotation chip and sends
   // its file/range/comment/quote through the shared mention envelope.
   assert_eq(once.codex.draft_text(), "")
+}
+
+///|
+test "Codex semantic selection becomes a composer chip" {
+  let dispatch = test_dispatch()
+  let reference = large_semantic_reference_for_test()
+  let codex = @codex.State::from_thread_snapshot({
+    "thread": {
+      "id": "codex-thread-semantic-selection",
+      "cwd": "/work/project",
+      "preview": "Semantic selection",
+      "turns": [],
+    },
+  })
+  let model = { ..test_model(), codex, screen: Codex, }
+  let owner : @interop.ConversationKey = {
+    channel: @interop.ChannelId::Local,
+    session: "codex-thread-semantic-selection",
+  }
+  let (_, selected) = update(
+    dispatch,
+    FileEditor(
+      @fileeditor.SemanticSelectionChanged(owner~, reference=Some(reference)),
+    ),
+    model,
+  )
+  let mentions = selected.codex_composer_input().draft.mentions
+  assert_eq(mentions.length(), 1)
+  assert_true(
+    mentions[0].ref_ is @mention_context.SemanticSearch(current) &&
+    current == reference,
+  )
+
+  let (_, cleared) = update(
+    dispatch,
+    FileEditor(@fileeditor.SemanticSelectionChanged(owner~, reference=None)),
+    selected,
+  )
+  assert_true(cleared.codex_composer_input().draft.mentions.is_empty())
 }
 
 ///|
