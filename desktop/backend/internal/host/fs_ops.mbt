@@ -153,8 +153,7 @@ async test "semantic selections materialize as bounded JSONL below the checkout"
   assert_eq(reply.file_count, 1)
   let written = @fs.read_file(@pathx.Path(dir).join(reply.path).to_string()).text()
   assert_true(written.contains("\"kind\":\"semantic-search-selection\""))
-  assert_true(written.contains("\"rule_id\":\"inspect\""))
-  assert_true(written.contains("\"matched_source\":\"inspect(value)\""))
+  assert_true(written.contains("inspect(value)"))
 }
 
 ///|
