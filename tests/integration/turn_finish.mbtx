@@ -123,9 +123,6 @@ async fn run_case(
   let mut requests = 0
   let events : Array[Json] = []
   let environment = { "DEEPSEEK": "test", "OPENSEEK_RETRY_ATTEMPTS": "1" }
-  if read {
-    environment["OPENSEEK_REFERENCES"] = root + "/share"
-  }
   @async.with_timeout(120000, () => {
     @async.with_task_group(group => {
       let (child_stdin, writer) = @process.write_to_process()
@@ -160,7 +157,9 @@ async fn run_case(
               match step {
                 1 =>
                   tool_delta(step, "mbtx", {
-                    "filename": "@builtin/read.mbtx",
+                    // The raw CLI build has no installed share directory.
+                    // Exercise reading with the checked-in workflow directly.
+                    "filename": root + "/share/workflow/read.mbtx",
                     "args": ["sample.mbt:2:3", "note.txt"],
                   })
                 2 => {
