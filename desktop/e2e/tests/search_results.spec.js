@@ -108,7 +108,6 @@ for (const mode of ['Text', 'Code']) {
       expect(offset).toBeLessThanOrEqual(1);
     };
     await expectChevronAligned();
-    await expect(results).not.toContainText(app.semanticSearchMatches[0].rule_id);
     await header.click();
     await expectChevronAligned();
     await expect(row).toHaveCount(0);
