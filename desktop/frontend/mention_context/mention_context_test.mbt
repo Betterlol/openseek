@@ -58,6 +58,8 @@ test "semantic search mentions round-trip as one aggregate reference" {
     exclude_glob: "src/generated/**",
     matches: [
       {
+        rule_id: Some("inspect-rule"),
+        description: None,
         file: "src/main.mbt",
         start_line: 4,
         start_column: 1,
@@ -66,6 +68,8 @@ test "semantic search mentions round-trip as one aggregate reference" {
         matched_source: "inspect(x)",
       },
       {
+        rule_id: Some("match-rule"),
+        description: Some("match expressions"),
         file: "src/other.mbt",
         start_line: 9,
         start_column: 1,
@@ -79,7 +83,7 @@ test "semantic search mentions round-trip as one aggregate reference" {
   let encoded = @mention_context.encode([mention], "Explain these matches")
   assert_true(
     encoded.contains(
-      "<match file=\"src/main.mbt\" lines=\"4-4\" columns=\"1-12\">\ninspect(x)\n</match>",
+      "<match file=\"src/main.mbt\" lines=\"4-4\" columns=\"1-12\" rule=\"inspect-rule\">\ninspect(x)\n</match>",
     ),
   )
   assert_false(encoded.contains("<matched_source>"))
@@ -89,6 +93,23 @@ test "semantic search mentions round-trip as one aggregate reference" {
   assert_eq(parsed.mentions, [mention])
   assert_true(@mention_context.label(mention).contains("2 patterns"))
   assert_true(@mention_context.target(mention) is None)
+}
+
+///|
+test "large semantic searches round-trip as a JSONL file reference" {
+  let mention = @mention_context.SemanticSearchArtifact({
+    path: ".openseek/agent-context/semantic-search/semantic-search-4-2.jsonl",
+    pattern_count: 2,
+    match_count: 812,
+  })
+  let encoded = @mention_context.encode([mention], "Inspect this selection")
+  assert_true(encoded.contains("<semantic_search_file"))
+  assert_true(encoded.contains("JSONL semantic-search selection snapshot"))
+  guard @mention_context.parse(encoded) is Some(parsed) else {
+    fail("expected semantic search file reference")
+  }
+  assert_eq(parsed.mentions, [mention])
+  assert_eq(parsed.task, "Inspect this selection")
 }
 
 ///|

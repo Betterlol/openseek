@@ -13,12 +13,12 @@ const InitialVisibleSearchLines : Int = 500
 const VisibleSearchLineStep : Int = 500
 
 ///|
-/// Keep one search mention bounded so adding a large selection cannot create an
-/// unexpectedly huge Composer prompt. The Search result ceiling remains 20,000.
-const MaxSemanticReferenceMatches : Int = 500
+/// Keep one inline search mention deliberately small. Larger selections are
+/// materialized as a workspace-local JSONL snapshot before they are sent.
+const MaxInlineSemanticReferenceMatches : Int = 100
 
 ///|
-const MaxSemanticReferenceSourceUnits : Int = 100000
+const MaxInlineSemanticReferenceSourceUnits : Int = 24000
 
 ///|
 enum Phase {
@@ -89,6 +89,7 @@ struct Page {
   limit_hit : Bool
   collapsed : Map[String, Bool]
   selected : Map[String, Bool]
+  semantic_selection_revision : Int
   semantic_filter : SemanticResultFilter
   visible_lines : Int
   phase : Phase
@@ -154,19 +155,20 @@ fn Page::selected_semantic_reference(
 ) -> @mention_context.SemanticSearchReference? {
   let matches = selected_semantic_hits(self.semantic.hits, self.selected)
   guard !matches.is_empty() else { return None }
-  guard self.semantic_reference_available() else { return None }
   let patterns = self.semantic.patterns.filter(pattern => {
     !pattern.trim().is_empty()
   })
   Some({
     // The root is payload data; keeping it out of the snapshot id avoids
     // serializing the same absolute path twice in the mention envelope.
-    id: "semantic-search:\{self.generation}:\{matches.length()}",
+    id: "semantic-search-\{self.generation}-\{self.semantic_selection_revision}",
     root,
     patterns,
     include_glob: self.include_glob,
     exclude_glob: self.exclude_glob,
     matches: matches.map(hit => {
+      rule_id: Some(hit.rule_id),
+      description: hit.description,
       file: hit.path,
       start_line: hit.start_line,
       start_column: hit.start_column,
@@ -180,11 +182,11 @@ fn Page::selected_semantic_reference(
 ///|
 fn Page::semantic_reference_available(self : Page) -> Bool {
   let matches = selected_semantic_hits(self.semantic.hits, self.selected)
-  matches.length() <= MaxSemanticReferenceMatches &&
+  matches.length() <= MaxInlineSemanticReferenceMatches &&
   matches
   .map(hit => hit.matched_source.length())
   .fold(init=0, (total, size) => total + size) <=
-  MaxSemanticReferenceSourceUnits
+  MaxInlineSemanticReferenceSourceUnits
 }
 
 ///|

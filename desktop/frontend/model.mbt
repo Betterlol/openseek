@@ -2112,6 +2112,18 @@ priv enum Msg {
   // composer chips, file/navigation selections update the dock strip, and a
   // `LanguageRequestFailed` uses the app-owned toast rail.
   FileEditor(@fileeditor.Msg)
+  // A large semantic-search selection is materialized in the exact checkout
+  // before it replaces the transient composer chip with a file reference.
+  SemanticSelectionMaterialized(
+    owner~ : @interop.ConversationKey,
+    reference~ : @mention_context.SemanticSearchReference,
+    artifact~ : @mention_context.SemanticSearchArtifact
+  )
+  SemanticSelectionMaterializationFailed(
+    owner~ : @interop.ConversationKey,
+    reference~ : @mention_context.SemanticSearchReference,
+    message~ : String
+  )
   // Terminal UI, host notifications, and xterm callbacks share one root-owned
   // state machine.
   Terminal(@terminal.Msg)
