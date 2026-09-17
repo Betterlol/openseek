@@ -2,13 +2,16 @@
 const TranscriptReloadMaxAttempts : Int = 3
 
 ///|
-/// Write a large selection through the Host's fixed artifact path. The
-/// callback carries the complete reference and owner so a late reply can only
-/// replace the exact pending chip that requested it.
+/// Write a large selection through the Host only after the user submits it.
+/// The callback carries the captured draft and action so a late reply can only
+/// complete the exact send that requested it.
 fn materialize_semantic_selection(
   dispatch : @cmd.Emit[Msg],
   owner : @interop.ConversationKey,
   reference : @mention_context.SemanticSearchReference,
+  task : String,
+  mentions : Array[@composer.Mention],
+  followup : @composer.FollowupChoice?,
 ) -> @cmd.Cmd {
   let payload : @protocol.MaterializeSemanticSelectionPayload = {
     root: reference.root,
@@ -49,11 +52,18 @@ fn materialize_semantic_selection(
       }
       scheduler.add(
         dispatch(
-          SemanticSelectionMaterialized(owner~, reference~, artifact={
-            path: reply.path,
-            pattern_count: reference.patterns.length(),
-            match_count: reply.match_count,
-          }),
+          SemanticSelectionMaterialized(
+            owner~,
+            reference~,
+            artifact={
+              path: reply.path,
+              pattern_count: reference.patterns.length(),
+              match_count: reply.match_count,
+            },
+            task~,
+            mentions~,
+            followup~,
+          ),
         ),
       )
     })
@@ -2522,6 +2532,14 @@ fn update_msg(
           guard model.conversation_for_composer_action(identity) is Some(conv) else {
             return (@cmd.none, model)
           }
+          // The root model may already be preparing a large semantic snapshot
+          // while the component still holds its previous local draft. Ignore
+          // duplicate submit events until that preparation settles.
+          if conv.mentions.any(mention => {
+              mention.ref_ is @mention_context.SemanticSearchPending(_)
+            }) {
+            return (@cmd.none, model)
+          }
           let original_focus = model.focused
           let original_session = model.active_session
           // `Send` reads the selected conversation synchronously. Select the
@@ -3036,7 +3054,14 @@ fn update_msg(
     // place; an already-open file is activated.
     FileEditor(@fileeditor.SearchMatchSelected(path~, range~)) =>
       open_editor_at(dispatch, model, path, Some(range))
-    SemanticSelectionMaterialized(owner~, reference~, artifact~) => {
+    SemanticSelectionMaterialized(
+      owner~,
+      reference~,
+      artifact~,
+      task~,
+      mentions~,
+      followup~
+    ) => {
       guard model.find_conversation(owner.channel, owner.session) is Some(conv) else {
         return (@cmd.none, model)
       }
@@ -3045,17 +3070,43 @@ fn update_msg(
         current == reference
       })
       guard matches_pending else { return (@cmd.none, model) }
-      let mentions = conv.mentions.filter(mention => {
-          !(mention.ref_ is @mention_context.SemanticSearchPending(current) &&
-          current == reference)
-        }) +
-        [
+      // The captured draft is the value the user submitted. Replace only the
+      // matching semantic mention in that snapshot; other mentions are kept
+      // in their original order and later UI edits cannot change this send.
+      let mentions = mentions.map(mention => {
+        if mention.ref_ is @mention_context.SemanticSearch(current) &&
+          current == reference {
           {
+            ..mention,
             ref_: @mention_context.SemanticSearchArtifact(artifact),
-            range: None,
-          },
-        ]
-      (@cmd.none, model.replace_conversation({ ..conv, mentions, }))
+          }
+        } else {
+          mention
+        }
+      })
+      let target = model.replace_conversation({
+        ..conv,
+        task,
+        mentions,
+        composer_draft_present: true,
+      })
+      let original_focus = model.focused
+      let original_session = model.active_session
+      let target = {
+        ..target,
+        focused: owner.channel,
+        active_session: owner.session,
+      }
+      let submit = followup.map(choice => SendFollowup(choice)).unwrap_or(Send)
+      let (command, submitted) = update_msg(dispatch, submit, target)
+      (
+        command,
+        {
+          ..submitted,
+          focused: original_focus,
+          active_session: original_session,
+        },
+      )
     }
     SemanticSelectionMaterializationFailed(owner~, reference~, message~) => {
       guard model.find_conversation(owner.channel, owner.session) is Some(conv) &&
@@ -3065,14 +3116,21 @@ fn update_msg(
         }) else {
         return (@cmd.none, model)
       }
-      model.notify_error(
+      let mentions = conv.mentions.map(mention => {
+        if mention.ref_ is @mention_context.SemanticSearchPending(current) &&
+          current == reference {
+          { ..mention, ref_: @mention_context.SemanticSearch(reference), }
+        } else {
+          mention
+        }
+      })
+      let (toast, model) = model.notify_error(
         dispatch,
         "Could not prepare semantic-search selection: \{message}",
       )
+      (toast, model.replace_conversation({ ..conv, mentions, }))
     }
-    FileEditor(
-      @fileeditor.SemanticSelectionChanged(owner~, reference~, materialize~)
-    ) => {
+    FileEditor(@fileeditor.SemanticSelectionChanged(owner~, reference~)) => {
       guard model.active_conversation() is Some(conv) &&
         conv.device == owner.channel &&
         conv.session_id == owner.session else {
@@ -3084,26 +3142,12 @@ fn update_msg(
         mention.ref_ is @mention_context.SemanticSearchPending(_))
       })
       let mentions = match reference {
-        Some(reference) if materialize =>
-          mentions +
-          [
-            {
-              ref_: @mention_context.SemanticSearchPending(reference),
-              range: None,
-            },
-          ]
         Some(reference) =>
           mentions +
           [{ ref_: @mention_context.SemanticSearch(reference), range: None, }]
         None => mentions
       }
-      let next = model.replace_conversation({ ..conv, mentions, })
-      let command = match reference {
-        Some(reference) if materialize =>
-          materialize_semantic_selection(dispatch, owner, reference)
-        _ => @cmd.none
-      }
-      (command, next)
+      (@cmd.none, model.replace_conversation({ ..conv, mentions, }))
     }
     // Intercepted like the comment above: which dock tab a tree click opens
     // is the strip's business. The dock opens (or re-activates) the tab,
@@ -4057,6 +4101,10 @@ fn update_msg(
       (@cmd.batch([page_cmd, fetch_installed_skills(dispatch, channel)]), model)
     }
     Send | SendFollowup(_) => {
+      let followup = match msg {
+        SendFollowup(choice) => Some(choice)
+        _ => None
+      }
       let followup_behavior = match msg {
         SendFollowup(@composer.SteerNow) => FollowupSteer
         SendFollowup(@composer.QueueNext) => FollowupQueue
@@ -4087,6 +4135,49 @@ fn update_msg(
         .prompt()
         .trim()
         .to_owned()
+      let mut large_reference : @mention_context.SemanticSearchReference? = None
+      for mention in conv.mentions {
+        if mention.ref_ is @mention_context.SemanticSearch(reference) &&
+          !reference.is_inlineable() {
+          large_reference = Some(reference)
+          break
+        }
+      }
+      if conv.draft_sendable() &&
+        model.bridge_state() is Connected &&
+        model.api_ready() &&
+        checkout is Some(checkout) &&
+        !(checkout is @interop.MissingWorktree(..)) {
+        match large_reference {
+          Some(reference) => {
+            // Keep a transient chip in the root model so repeated clicks are
+            // ignored while the Host writes the immutable send snapshot.
+            let pending_mentions = conv.mentions.map(mention => {
+              if mention.ref_ is @mention_context.SemanticSearch(current) &&
+                current == reference {
+                {
+                  ..mention,
+                  ref_: @mention_context.SemanticSearchPending(reference),
+                }
+              } else {
+                mention
+              }
+            })
+            return (
+              materialize_semantic_selection(
+                dispatch,
+                { channel: conv.device, session: conv.session_id, },
+                reference,
+                conv.task,
+                conv.mentions.copy(),
+                followup,
+              ),
+              model.replace_conversation({ ..conv, mentions: pending_mentions, }),
+            )
+          }
+          None => ()
+        }
+      }
       if !conv.draft_sendable() ||
         !(model.bridge_state() is Connected) ||
         !model.api_ready() ||
@@ -8909,6 +9000,31 @@ fn running_conversation() -> Conversation {
 }
 
 ///|
+fn large_semantic_reference_for_test() -> @mention_context.SemanticSearchReference {
+  let matches : Array[@mention_context.SemanticSearchReferenceMatch] = []
+  for index in 0..<101 {
+    matches.push({
+      rule_id: Some("rule"),
+      description: Some("test rule"),
+      file: "src/file-" + index.to_string() + ".mbt",
+      start_line: 1,
+      start_column: 1,
+      end_line: 1,
+      end_column: 8,
+      matched_source: "inspect(value)",
+    })
+  }
+  {
+    id: "semantic-search-send-test",
+    root: "/work",
+    patterns: ["inspect($(x:arg))"],
+    include_glob: "",
+    exclude_glob: "",
+    matches,
+  }
+}
+
+///|
 fn test_model() -> Model {
   {
     ..initial_model(desktop=false)
@@ -13182,6 +13298,88 @@ test "send while running queues a steer instead of a prompt" {
   inspect(
     twice.active().pending_steers[0].content,
     content="focus on the tests",
+  )
+}
+
+///|
+test "large semantic selection is materialized only when sending" {
+  let dispatch = test_dispatch()
+  let reference = large_semantic_reference_for_test()
+  assert_false(reference.is_inlineable())
+  let original_mentions : Array[Mention] = [
+    { ref_: @mention_context.SemanticSearch(reference), range: None, },
+  ]
+  let drafted = test_model().replace_conversation({
+    ..test_conversation(),
+    task: "inspect selected matches",
+    mentions: original_mentions,
+  })
+  let (_, preparing) = update(dispatch, Send, drafted)
+  guard preparing.active().mentions[0].ref_
+    is @mention_context.SemanticSearchPending(pending_reference) else {
+    fail("large selection did not enter send preparation")
+  }
+  assert_eq(pending_reference, reference)
+  assert_true(preparing.active().run is NoRun(..))
+  assert_true(preparing.active().pending_prompt is None)
+
+  let (_, sent) = update(
+    dispatch,
+    SemanticSelectionMaterialized(
+      owner={ channel: @interop.ChannelId::Local, session: "desktop-test", },
+      reference~,
+      artifact={
+        path: ".openseek/agent-context/semantic-search/send-test.jsonl",
+        pattern_count: 1,
+        match_count: reference.matches.length(),
+      },
+      task="inspect selected matches",
+      mentions=original_mentions,
+      followup=None,
+    ),
+    preparing,
+  )
+  guard sent.active().run is Starting(_) else {
+    fail("materialized selection did not continue the send")
+  }
+  guard sent.active().pending_prompt is Some(pending) else {
+    fail("send did not retain its pending prompt")
+  }
+  guard pending.mentions[0].ref_
+    is @mention_context.SemanticSearchArtifact(artifact) else {
+    fail("send did not replace the semantic selection with its artifact")
+  }
+  assert_eq(
+    artifact.path,
+    ".openseek/agent-context/semantic-search/send-test.jsonl",
+  )
+}
+
+///|
+test "failed semantic materialization restores a retryable inline reference" {
+  let dispatch = test_dispatch()
+  let reference = large_semantic_reference_for_test()
+  let drafted = test_model().replace_conversation({
+    ..test_conversation(),
+    task: "retry this selection",
+    mentions: [
+      { ref_: @mention_context.SemanticSearch(reference), range: None, },
+    ],
+  })
+  let (_, preparing) = update(dispatch, Send, drafted)
+  let (_, retryable) = update(
+    dispatch,
+    SemanticSelectionMaterializationFailed(
+      owner={ channel: @interop.ChannelId::Local, session: "desktop-test", },
+      reference~,
+      message="disk full",
+    ),
+    preparing,
+  )
+  assert_true(
+    retryable.active().mentions[0].ref_
+    is @mention_context.SemanticSearch(restored) &&
+    restored == reference,
   )
 }
 

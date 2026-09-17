@@ -2902,7 +2902,6 @@ fn update_inner(
                 reference=next.search.selected_semantic_reference(
                   ctx.root().map(root => root.path).unwrap_or(""),
                 ),
-                materialize=!next.search.semantic_reference_available(),
               ),
             ),
           )

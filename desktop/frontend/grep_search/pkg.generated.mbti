@@ -119,7 +119,6 @@ pub fn State::park(Self) -> Self
 pub fn State::reset_checkout(Self) -> Self
 pub fn State::selected_semantic_hits(Self) -> Array[@protocol.SemanticSearchHit]
 pub fn State::selected_semantic_reference(Self, String) -> @mention_context.SemanticSearchReference?
-pub fn State::semantic_reference_available(Self) -> Bool
 pub fn State::subscription(Self, Input, @cmd.Emit[Msg]) -> @sub.Sub
 
 type TextSearchState derive(Eq)

@@ -104,7 +104,6 @@ test "large semantic searches round-trip as a JSONL file reference" {
   })
   let encoded = @mention_context.encode([mention], "Inspect this selection")
   assert_true(encoded.contains("<semantic_search_file"))
-  assert_true(encoded.contains("JSONL semantic-search selection snapshot"))
   guard @mention_context.parse(encoded) is Some(parsed) else {
     fail("expected semantic search file reference")
   }

@@ -83,6 +83,26 @@ pub(all) struct SemanticSearchReference {
 } derive(Eq, Debug)
 
 ///|
+/// Small selections stay in the prompt as structured XML. Larger selections
+/// are materialized only when the user sends, so the composer never creates
+/// files merely because a search row was toggled.
+const MaxInlineSemanticReferenceMatches : Int = 100
+
+///|
+const MaxInlineSemanticReferenceSourceUnits : Int = 24000
+
+///|
+pub fn SemanticSearchReference::is_inlineable(
+  self : SemanticSearchReference,
+) -> Bool {
+  self.matches.length() <= MaxInlineSemanticReferenceMatches &&
+  self.matches
+  .map(match_ => match_.matched_source.length())
+  .fold(init=0, (total, size) => total + size) <=
+  MaxInlineSemanticReferenceSourceUnits
+}
+
+///|
 pub(all) struct SemanticSearchReferenceMatch {
   rule_id : String?
   description : String?
