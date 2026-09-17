@@ -118,6 +118,7 @@ pub(all) struct SemanticSearchReference {
   matches : Array[SemanticSearchReferenceMatch]
 } derive(Eq, @debug.Debug)
 pub fn SemanticSearchReference::equal(Self, Self) -> Bool
+pub fn SemanticSearchReference::is_inlineable(Self) -> Bool
 pub fn SemanticSearchReference::not_equal(Self, Self) -> Bool
 pub fn SemanticSearchReference::to_repr(Self) -> @debug.Repr
 

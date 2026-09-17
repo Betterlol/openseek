@@ -13,14 +13,6 @@ const InitialVisibleSearchLines : Int = 500
 const VisibleSearchLineStep : Int = 500
 
 ///|
-/// Keep one inline search mention deliberately small. Larger selections are
-/// materialized as a workspace-local JSONL snapshot before they are sent.
-const MaxInlineSemanticReferenceMatches : Int = 100
-
-///|
-const MaxInlineSemanticReferenceSourceUnits : Int = 24000
-
-///|
 enum Phase {
   Idle
   Debouncing
@@ -177,21 +169,6 @@ fn Page::selected_semantic_reference(
       matched_source: hit.matched_source,
     }),
   })
-}
-
-///|
-fn Page::semantic_reference_available(self : Page) -> Bool {
-  let matches = selected_semantic_hits(self.semantic.hits, self.selected)
-  matches.length() <= MaxInlineSemanticReferenceMatches &&
-  matches
-  .map(hit => hit.matched_source.length())
-  .fold(init=0, (total, size) => total + size) <=
-  MaxInlineSemanticReferenceSourceUnits
-}
-
-///|
-pub fn State::semantic_reference_available(self : State) -> Bool {
-  self.page.semantic_reference_available()
 }
 
 ///|

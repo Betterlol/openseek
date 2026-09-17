@@ -2072,12 +2072,16 @@ priv enum Msg {
   // composer chips, file/navigation selections update the dock strip, and a
   // `LanguageRequestFailed` uses the app-owned toast rail.
   FileEditor(@fileeditor.Msg)
-  // A large semantic-search selection is materialized in the exact checkout
-  // before it replaces the transient composer chip with a file reference.
+  // A large semantic-search selection is materialized only while preparing a
+  // send. The captured draft/action travels with the reply so later composer
+  // edits cannot change the prompt that the user already submitted.
   SemanticSelectionMaterialized(
     owner~ : @interop.ConversationKey,
     reference~ : @mention_context.SemanticSearchReference,
-    artifact~ : @mention_context.SemanticSearchArtifact
+    artifact~ : @mention_context.SemanticSearchArtifact,
+    task~ : String,
+    mentions~ : Array[Mention],
+    followup~ : @composer.FollowupChoice?
   )
   SemanticSelectionMaterializationFailed(
     owner~ : @interop.ConversationKey,
