@@ -2971,14 +2971,18 @@ fn update_msg(
       mentions~,
       followup~
     ) => {
-      guard model.find_conversation(owner.channel, owner.session) is Some(conv) else {
+      guard model.find_conversation(owner.channel, owner.session) is Some(conv) &&
+        conv.pending_semantic_submission is Some(pending) &&
+        pending.reference == reference else {
         return (@cmd.none, model)
       }
-      let matches_pending = conv.mentions.any(mention => {
-        mention.ref_ is @mention_context.SemanticSearchPending(current) &&
-        current == reference
+      // Keep only mentions added after this send began as the next draft.
+      // The submitted snapshot is taken from the captured `mentions` below;
+      // visible selection changes are independent and must survive beside the
+      // newly submitted turn.
+      let next_mentions = conv.mentions.filter(mention => {
+        !pending.visible_mentions.any(existing => existing.ref_ == mention.ref_)
       })
-      guard matches_pending else { return (@cmd.none, model) }
       // The captured draft is the value the user submitted. Replace only the
       // matching semantic mention in that snapshot; other mentions are kept
       // in their original order and later UI edits cannot change this send.
@@ -2998,6 +3002,7 @@ fn update_msg(
         task,
         mentions,
         composer_draft_present: true,
+        pending_semantic_submission: None,
       })
       let original_focus = model.focused
       let original_session = model.active_session
@@ -3008,6 +3013,21 @@ fn update_msg(
       }
       let submit = followup.map(choice => SendFollowup(choice)).unwrap_or(Send)
       let (command, submitted) = update_msg(dispatch, submit, target)
+      let next_task = if conv.task == pending.task { "" } else { conv.task }
+      let submitted = if !next_task.is_blank() || !next_mentions.is_empty() {
+        match submitted.find_conversation(owner.channel, owner.session) {
+          Some(sent_conv) =>
+            submitted.replace_conversation({
+              ..sent_conv,
+              task: next_task,
+              mentions: next_mentions,
+              composer_draft_present: true,
+            })
+          None => submitted
+        }
+      } else {
+        submitted
+      }
       (
         command,
         {
@@ -3019,10 +3039,8 @@ fn update_msg(
     }
     SemanticSelectionMaterializationFailed(owner~, reference~, message~) => {
       guard model.find_conversation(owner.channel, owner.session) is Some(conv) &&
-        conv.mentions.any(mention => {
-          mention.ref_ is @mention_context.SemanticSearchPending(current) &&
-          current == reference
-        }) else {
+        conv.pending_semantic_submission is Some(pending) &&
+        pending.reference == reference else {
         return (@cmd.none, model)
       }
       let mentions = conv.mentions.map(mention => {
@@ -3037,7 +3055,14 @@ fn update_msg(
         dispatch,
         "Could not prepare semantic-search selection: \{message}",
       )
-      (toast, model.replace_conversation({ ..conv, mentions, }))
+      (
+        toast,
+        model.replace_conversation({
+          ..conv,
+          mentions,
+          pending_semantic_submission: None,
+        }),
+      )
     }
     FileEditor(@fileeditor.SemanticSelectionChanged(owner~, reference~)) => {
       guard model.active_conversation() is Some(conv) &&
@@ -3046,6 +3071,13 @@ fn update_msg(
         return (@cmd.none, model)
       }
       let mentions = conv.mentions.filter(mention => {
+        let keep_pending = match mention.ref_ {
+          @mention_context.SemanticSearchPending(current) =>
+            conv.pending_semantic_submission is Some(pending) &&
+            current == pending.reference
+          _ => false
+        }
+        keep_pending ||
         !(mention.ref_ is @mention_context.SemanticSearch(_) ||
         mention.ref_ is @mention_context.SemanticSearchArtifact(_) ||
         mention.ref_ is @mention_context.SemanticSearchPending(_))
@@ -3992,7 +4024,8 @@ fn update_msg(
       // its immutable JSONL snapshot is still being written.
       if conv.mentions.any(mention => {
           mention.ref_ is @mention_context.SemanticSearchPending(_)
-        }) {
+        }) ||
+        conv.pending_semantic_submission is Some(_) {
         return (@cmd.none, model)
       }
       let checkout = model.conversation_placement(conv)
@@ -4035,6 +4068,13 @@ fn update_msg(
                 mention
               }
             })
+            let pending_semantic_submission : PendingSemanticSubmission = {
+              reference,
+              task: conv.task,
+              mentions: conv.mentions.copy(),
+              visible_mentions: pending_mentions.copy(),
+              followup,
+            }
             return (
               materialize_semantic_selection(
                 dispatch,
@@ -4044,7 +4084,11 @@ fn update_msg(
                 conv.mentions.copy(),
                 followup,
               ),
-              model.replace_conversation({ ..conv, mentions: pending_mentions, }),
+              model.replace_conversation({
+                ..conv,
+                mentions: pending_mentions,
+                pending_semantic_submission: Some(pending_semantic_submission),
+              }),
             )
           }
           None => ()
@@ -13040,6 +13084,86 @@ test "large semantic selection is materialized only when sending" {
     artifact.path,
     ".openseek/agent-context/semantic-search/send-test.jsonl",
   )
+}
+
+///|
+test "changing selection during materialization preserves the submitted snapshot" {
+  let dispatch = test_dispatch()
+  let reference = large_semantic_reference_for_test()
+  let original_mentions : Array[Mention] = [
+    { ref_: @mention_context.SemanticSearch(reference), range: None, },
+  ]
+  let drafted = test_model().replace_conversation({
+    ..test_conversation(),
+    task: "send the original selection",
+    mentions: original_mentions,
+  })
+  let (_, preparing) = update(dispatch, Send, drafted)
+  assert_true(preparing.active().pending_semantic_submission is Some(_))
+
+  let next_reference = {
+    ..reference,
+    id: "semantic-search-next-draft",
+    matches: [reference.matches[0]],
+  }
+  let (_, changed) = update(
+    dispatch,
+    FileEditor(
+      @fileeditor.SemanticSelectionChanged(
+        owner={ channel: @interop.ChannelId::Local, session: "desktop-test", },
+        reference=Some(next_reference),
+      ),
+    ),
+    preparing,
+  )
+  assert_true(changed.active().pending_semantic_submission is Some(_))
+  assert_true(
+    changed.active().mentions.any(mention => {
+      mention.ref_ is @mention_context.SemanticSearchPending(current) &&
+      current == reference
+    }),
+  )
+  assert_true(
+    changed.active().mentions.any(mention => {
+      mention.ref_ is @mention_context.SemanticSearch(current) &&
+      current == next_reference
+    }),
+  )
+
+  let (_, sent) = update(
+    dispatch,
+    SemanticSelectionMaterialized(
+      owner={ channel: @interop.ChannelId::Local, session: "desktop-test", },
+      reference~,
+      artifact={
+        path: ".openseek/agent-context/semantic-search/original.jsonl",
+        pattern_count: 1,
+        match_count: reference.matches.length(),
+      },
+      task="send the original selection",
+      mentions=original_mentions,
+      followup=None,
+    ),
+    changed,
+  )
+  guard sent.active().pending_prompt is Some(pending) else {
+    fail("materialized original selection did not send")
+  }
+  guard pending.mentions[0].ref_
+    is @mention_context.SemanticSearchArtifact(original_artifact) else {
+    fail("the sent prompt did not retain the original artifact")
+  }
+  assert_eq(
+    original_artifact.path,
+    ".openseek/agent-context/semantic-search/original.jsonl",
+  )
+  assert_true(
+    sent.active().mentions.any(mention => {
+      mention.ref_ is @mention_context.SemanticSearch(current) &&
+      current == next_reference
+    }),
+  )
+  assert_true(sent.active().pending_semantic_submission is None)
 }
 
 ///|
