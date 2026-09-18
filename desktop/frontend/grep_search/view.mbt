@@ -571,7 +571,7 @@ fn search_body(
       },
     ),
   )
-  let selected_count = page.selected.values().filter(value => value).length()
+  let selected_count = page.selected.length()
   if page.mode is Semantic && selected_count > 0 {
     children.push(
       @html.div(class="search-selection-toolbar", [
@@ -666,7 +666,7 @@ fn semantic_hit_view(
   open_match : (String, @common.Range) -> @cmd.Cmd,
 ) -> @html.Html {
   let key = semantic_hit_key(hit)
-  let selected = page.selected.get(key).unwrap_or(false)
+  let selected = page.selected.contains(key)
   @html.div(
     class=if selected {
       "search-semantic-hit selected"
@@ -718,9 +718,7 @@ fn semantic_file_group_view(
     hit.rule_id == pattern && hit.path == group.path
   })
   let all_selected = !all_hits.is_empty() &&
-    all_hits.all(hit => {
-      page.selected.get(semantic_hit_key(hit)).unwrap_or(false)
-    })
+    all_hits.all(hit => page.selected.contains(semantic_hit_key(hit)))
   @html.div(class="search-file-group", [
     @html.button(
       class="search-file-header",
@@ -787,9 +785,7 @@ fn semantic_pattern_group_view(
   }
   let all_hits = page.semantic.hits.filter(hit => hit.rule_id == group.pattern)
   let all_selected = !all_hits.is_empty() &&
-    all_hits.all(hit => {
-      page.selected.get(semantic_hit_key(hit)).unwrap_or(false)
-    })
+    all_hits.all(hit => page.selected.contains(semantic_hit_key(hit)))
   @html.div(class="search-semantic-pattern-group", [
     @html.button(
       class="search-semantic-pattern-header",

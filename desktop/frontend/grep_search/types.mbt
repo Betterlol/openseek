@@ -80,7 +80,8 @@ struct Page {
   file_count : Int
   limit_hit : Bool
   collapsed : Map[String, Bool]
-  selected : Map[String, Bool]
+  // Copy before changing membership so earlier state snapshots stay intact.
+  selected : Set[String]
   semantic_selection_revision : Int
   semantic_filter : SemanticResultFilter
   visible_lines : Int

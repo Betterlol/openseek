@@ -1042,7 +1042,10 @@ priv struct PendingPrompt {
 /// file. `visible_mentions` is the draft projection shown while preparation is
 /// pending; it lets the completion callback preserve later selection changes
 /// as the next draft instead of treating them as a cancellation.
+/// This record owns the submitted draft and action. Replies carry only its
+/// submission id and result; retries get a new id even for the same selection.
 priv struct PendingSemanticSubmission {
+  submission_id : String
   reference : @mention_context.SemanticSearchReference
   task : String
   mentions : Array[Mention]
@@ -2091,19 +2094,16 @@ priv enum Msg {
   // `LanguageRequestFailed` uses the app-owned toast rail.
   FileEditor(@fileeditor.Msg)
   // A large semantic-search selection is materialized only while preparing a
-  // send. The captured draft/action travels with the reply so later composer
-  // edits cannot change the prompt that the user already submitted.
+  // send. The reply identifies the pending snapshot; later composer edits
+  // cannot change the captured draft or action stored in that snapshot.
   SemanticSelectionMaterialized(
     owner~ : @interop.ConversationKey,
-    reference~ : @mention_context.SemanticSearchReference,
-    artifact~ : @mention_context.SemanticSearchArtifact,
-    task~ : String,
-    mentions~ : Array[Mention],
-    followup~ : @composer.FollowupChoice?
+    submission_id~ : String,
+    artifact~ : @mention_context.SemanticSearchArtifact
   )
   SemanticSelectionMaterializationFailed(
     owner~ : @interop.ConversationKey,
-    reference~ : @mention_context.SemanticSearchReference,
+    submission_id~ : String,
     message~ : String
   )
   // Terminal UI, host notifications, and xterm callbacks share one root-owned

@@ -12,9 +12,9 @@ fn semantic_hit_key(hit : @protocol.SemanticSearchHit) -> String {
 /// projection, so it remains valid if the presentation is rearranged later.
 fn selected_semantic_hits(
   hits : Array[@protocol.SemanticSearchHit],
-  selected : Map[String, Bool],
+  selected : Set[String],
 ) -> Array[@protocol.SemanticSearchHit] {
-  hits.filter(hit => selected.get(semantic_hit_key(hit)).unwrap_or(false))
+  hits.filter(hit => selected.contains(semantic_hit_key(hit)))
 }
 
 ///|
