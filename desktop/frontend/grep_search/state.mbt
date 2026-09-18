@@ -23,7 +23,7 @@ fn fresh_page() -> Page {
     file_count: 0,
     limit_hit: false,
     collapsed: Map([]),
-    selected: Map([]),
+    selected: Set([]),
     semantic_selection_revision: 0,
     semantic_filter: AllSemanticResults,
     visible_lines: InitialVisibleSearchLines,
@@ -88,7 +88,7 @@ fn State::schedule(
       ..page,
       text: { ..page.text, matches: [], },
       semantic: { ..page.semantic, hits: [], partial: false, },
-      selected: Map([]),
+      selected: Set([]),
       match_count: 0,
       file_count: 0,
       limit_hit: false,
@@ -101,7 +101,7 @@ fn State::schedule(
       ..page,
       text: page.text,
       semantic: { ..page.semantic, hits: [], partial: false, },
-      selected: Map([]),
+      selected: Set([]),
       match_count: if page.mode is Semantic {
         0
       } else {
@@ -163,7 +163,7 @@ pub fn State::handle(self : State, msg : Msg, input : Input) -> State {
           match_count: 0,
           file_count: 0,
           collapsed: Map([]),
-          selected: Map([]),
+          selected: Set([]),
         },
         input,
         immediate=false,
@@ -377,7 +377,7 @@ pub fn State::handle(self : State, msg : Msg, input : Input) -> State {
         ..self,
         page: {
           ..page,
-          selected: Map([]),
+          selected: Set([]),
           semantic_selection_revision: if changed {
             page.semantic_selection_revision + 1
           } else {
@@ -416,65 +416,21 @@ pub fn State::handle(self : State, msg : Msg, input : Input) -> State {
       { ..self, page: { ..page, collapsed, }, }
     }
     ToggleSemanticPattern(pattern) => {
-      let selected = page.selected.copy()
       let hits = page.semantic.hits.filter(hit => hit.rule_id == pattern)
-      let all_selected = !hits.is_empty() &&
-        hits.all(hit => selected.get(semantic_hit_key(hit)).unwrap_or(false))
-      for hit in hits {
-        let hit_key = semantic_hit_key(hit)
-        if all_selected {
-          selected.remove(hit_key)
-        } else {
-          selected[hit_key] = true
-        }
-      }
       {
         ..self,
-        page: {
-          ..page,
-          selected,
-          semantic_selection_revision: page.semantic_selection_revision + 1,
-        },
+        page: page.toggle_semantic_selection(hits.map(semantic_hit_key)),
       }
     }
-    ToggleSemanticHit(key) => {
-      let selected = page.selected.copy()
-      if selected.get(key).unwrap_or(false) {
-        selected.remove(key)
-      } else {
-        selected[key] = true
-      }
-      {
-        ..self,
-        page: {
-          ..page,
-          selected,
-          semantic_selection_revision: page.semantic_selection_revision + 1,
-        },
-      }
-    }
+    ToggleSemanticHit(key) =>
+      { ..self, page: page.toggle_semantic_selection([key]), }
     ToggleSemanticFile(pattern, path) => {
-      let selected = page.selected.copy()
       let hits = page.semantic.hits.filter(hit => {
         hit.rule_id == pattern && hit.path == path
       })
-      let all_selected = !hits.is_empty() &&
-        hits.all(hit => selected.get(semantic_hit_key(hit)).unwrap_or(false))
-      for hit in hits {
-        let key = semantic_hit_key(hit)
-        if all_selected {
-          selected.remove(key)
-        } else {
-          selected[key] = true
-        }
-      }
       {
         ..self,
-        page: {
-          ..page,
-          selected,
-          semantic_selection_revision: page.semantic_selection_revision + 1,
-        },
+        page: page.toggle_semantic_selection(hits.map(semantic_hit_key)),
       }
     }
     SetSemanticResultFilter(filter) =>
@@ -666,12 +622,32 @@ fn Page::active_highlights(self : Page, path : String) -> EditorHighlights? {
 }
 
 ///|
+/// Toggle one hit or a whole group. A partially selected group becomes fully
+/// selected; a fully selected group is cleared. Keep prior pages unchanged.
+fn Page::toggle_semantic_selection(self : Page, keys : Array[String]) -> Page {
+  let selected = self.selected.copy()
+  let all_selected = !keys.is_empty() && keys.all(key => selected.contains(key))
+  for key in keys {
+    if all_selected {
+      selected.remove(key)
+    } else {
+      selected.add(key)
+    }
+  }
+  {
+    ..self,
+    selected,
+    semantic_selection_revision: self.semantic_selection_revision + 1,
+  }
+}
+
+///|
 fn Page::clear_results(self : Page) -> Page {
   {
     ..self,
     text: { ..self.text, matches: [], },
     semantic: { ..self.semantic, hits: [], partial: false, },
-    selected: Map([]),
+    selected: Set([]),
     match_count: 0,
     file_count: 0,
     limit_hit: false,
