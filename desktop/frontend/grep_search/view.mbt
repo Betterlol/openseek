@@ -153,7 +153,7 @@ fn query_key_attrs(
   .aria_keyshortcuts("Meta+Shift+F Control+Shift+F")
   .data_set("focus-owner", "")
   .on_keydown(event => {
-    if event.key() == "Enter" {
+    if event.key() == "Enter" && !event.shift_key() {
       event.prevent_default()
       emit(Submit)
     } else {
@@ -691,22 +691,22 @@ fn page_view(
     @html.div(class="search-query-row", [
       mode_control(locale~, page.mode, emit),
       if page.mode is Text {
-        @html.input(
-          input_type=@html.InputType::Text,
+        @html.textarea(
           value=page.text.query,
           placeholder=ui(locale, SearchLabel),
           on_input=emit.map(value => QueryChanged(value)),
           attrs=query_key_attrs(locale~, emit),
+          "",
         )
       } else {
-        @html.input(
-          input_type=@html.InputType::Text,
+        @html.textarea(
           value=page.semantic.patterns[0],
           placeholder="inspect($(x:arg))",
           on_input=emit.map(value => PatternChanged(0, value)),
           attrs=@html.Attrs::build()
             .aria_label(ui(locale, PatternLabel))
             .data_set("focus-owner", ""),
+          "",
         )
       },
       if page.mode is Semantic {
@@ -734,14 +734,14 @@ fn page_view(
         if index > 0 {
           patterns.push(
             @html.div(class="search-semantic-source", [
-              @html.input(
-                input_type=@html.InputType::Text,
+              @html.textarea(
                 value=pattern,
                 placeholder="inspect($(x:arg))",
                 on_input=emit.map(value => PatternChanged(index, value)),
                 attrs=@html.Attrs::build()
                   .aria_label(ui(locale, PatternLabel))
                   .data_set("focus-owner", ""),
+                "",
               ),
               @html.button(on_click=emit(RemovePattern(index)), "−"),
             ]),
