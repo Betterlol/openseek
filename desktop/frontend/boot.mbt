@@ -571,6 +571,9 @@ fn main {
             )
           }),
           open_session: emit.map(session => OpenSessionHere(session)),
+          open_review_changes: emit.map(selection => {
+            TranscriptReviewChangesOpened(slot~, selection~)
+          }),
           choose_project: emit.map(project => ProjectMenuProjectChosen(project)),
           new_project: emit(AddProjectRequested),
           toggle_project_menu: emit(ToggleSelectMenu(ProjectMenu)),
