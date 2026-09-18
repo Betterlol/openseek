@@ -753,7 +753,23 @@ fn user_message_view(
     body.push(@html.div(class="user-images", pictures))
   }
   // The overview rail and scroll watcher share this stable turn anchor.
-  @html.div(class="msg user", id?=anchor, [@html.div(class="user-bubble", body)])
+  @html.div(
+    class="msg user",
+    id?=anchor,
+    [
+      @html.div(class="user-bubble", body),
+      ..if !content.is_empty() {
+        [
+          @markdown.copy_button(
+            content,
+            class="user-message-copy",
+            title="Copy message",
+            label="Copy user message",
+          ),
+        ]
+      },
+    ],
+  )
 }
 
 ///|
@@ -969,15 +985,11 @@ fn assistant_message_view(
   // the separate streaming view are not turn-ending answers.
   if show_actions {
     let actions = [
-      @html.button(
+      @markdown.copy_button(
+        content,
         class="assistant-message-copy",
-        type_="button",
         title="Copy Markdown",
-        on_click=@clipboard.copy(@clipboard.Text(content)),
-        attrs=@html.Attrs::build().aria_label(
-          "Copy assistant message as Markdown",
-        ),
-        @icons.icon(@icons.icon_copy),
+        label="Copy assistant message as Markdown",
       ),
     ]
     // The durable row is committed only after its complete message becomes
