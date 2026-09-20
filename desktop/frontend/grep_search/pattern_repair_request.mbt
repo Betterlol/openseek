@@ -76,7 +76,9 @@ fn pattern_repair_request_loader(
                 PatternRepairUnavailable(
                   root=request.root,
                   generation=request.generation,
+                  candidate_pattern=reply.candidate_pattern,
                   message=reply.message,
+                  trace=reply.trace,
                 ),
               ),
             )
@@ -87,6 +89,7 @@ fn pattern_repair_request_loader(
                 PatternRepairTimedOut(
                   root=request.root,
                   generation=request.generation,
+                  trace=reply.trace,
                 ),
               ),
             )
@@ -98,6 +101,7 @@ fn pattern_repair_request_loader(
                   generation=request.generation,
                   candidate_pattern=reply.candidate_pattern,
                   diagnostic=reply.message,
+                  trace=reply.trace,
                 ),
               ),
             )

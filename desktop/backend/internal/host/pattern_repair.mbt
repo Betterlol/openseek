@@ -5,16 +5,43 @@
 const PatternRepairWallTimeoutMs = 180_000
 
 ///|
+const PatternRepairTraceMaxItems : Int = 16
+
+///|
+const PatternRepairTraceMaxItemUnits : Int = 240
+
+///|
+const PatternRepairTraceOmitted : String = "Earlier events omitted"
+
+///|
 priv enum PatternRepairProcessOutcome {
-  Finished(Int, String, String)
-  TimedOut
+  Finished(Int, String, (String, String)?, Bool, String?, Array[String])
+  TimedOut(Array[String])
 }
 
 ///|
 priv enum PatternRepairCandidateOutcome {
-  Candidate(String, String)
-  TimedOut
-  Failed(String)
+  Candidate(String, String, Array[String])
+  TimedOut(Array[String])
+  Failed(String, Array[String])
+}
+
+///|
+fn pattern_repair_trace_push(trace : Array[String], value : String) -> Unit {
+  let value = value.trim().to_owned()
+  guard !value.is_empty() else { return }
+  let value = if value.length() > PatternRepairTraceMaxItemUnits {
+    value[:PatternRepairTraceMaxItemUnits].to_owned() + "..."
+  } else {
+    value
+  }
+  if trace.length() < PatternRepairTraceMaxItems {
+    trace.push(value)
+  } else {
+    trace[0] = PatternRepairTraceOmitted
+    let _ = trace.remove(1)
+    trace.push(value)
+  }
 }
 
 ///|
@@ -25,6 +52,9 @@ async fn run_pattern_repair_process(
   cwd : String,
   env : Map[String, String],
 ) -> PatternRepairProcessOutcome {
+  // Retain a bounded trace incrementally so a wall timeout can still return
+  // the events observed before the child was cancelled.
+  let trace : Ref[Array[String]] = { val: [], }
   let result = @async.with_timeout_opt(PatternRepairWallTimeoutMs, () => {
     @async.with_task_group(group => {
       let (stdin_reader, stdin_writer) = @process.write_to_process()
@@ -51,9 +81,47 @@ async fn run_pattern_repair_process(
       stdin_writer.write(input)
       let stdout_task = group.spawn(() => {
         defer stdout_reader.close()
-        stdout_reader.read_all().text() catch {
-          _ => ""
+        let mut candidate : (String, String)? = None
+        let mut provider_timed_out = false
+        let mut agent_error : String? = None
+        for ;; {
+          let line = stdout_reader.read_until("\n") catch { _ => None }
+          guard line is Some(line) else { break }
+          let json = @json.parse(line.trim()) catch { _ => continue }
+          if json is { "subrun_report": report, .. } {
+            match report {
+              {
+                "candidate_pattern": String(pattern),
+                "message": String(message),
+                ..
+              } => {
+                candidate = Some((pattern, message))
+                pattern_repair_trace_push(trace.val, "Candidate submitted")
+              }
+              _ => {
+                agent_error = Some(
+                  pattern_repair_diagnostic(report.stringify()),
+                )
+                pattern_repair_trace_push(
+                  trace.val,
+                  "Agent returned a malformed submission report",
+                )
+              }
+            }
+            continue
+          }
+          let (timed_out, event_error) = pattern_repair_record_event(
+            json,
+            trace.val,
+          )
+          if timed_out {
+            provider_timed_out = true
+          }
+          if event_error is Some(error) {
+            agent_error = Some(pattern_repair_diagnostic(error))
+          }
         }
+        (candidate, provider_timed_out, agent_error)
       })
       let stderr_task = group.spawn(() => {
         defer stderr_reader.close()
@@ -63,14 +131,22 @@ async fn run_pattern_repair_process(
       })
       let code = process.wait()
       stdin_writer.close()
-      let stdout = stdout_task.wait()
+      let (candidate, provider_timed_out, agent_error) = stdout_task.wait()
       let stderr = stderr_task.wait()
-      (code, stdout, stderr)
+      (code, stderr, candidate, provider_timed_out, agent_error)
     })
   })
   match result {
-    Some((code, stdout, stderr)) => Finished(code, stdout, stderr)
-    None => TimedOut
+    Some((code, stderr, candidate, provider_timed_out, agent_error)) =>
+      Finished(
+        code,
+        stderr,
+        candidate,
+        provider_timed_out,
+        agent_error,
+        trace.val.copy(),
+      )
+    None => TimedOut(trace.val.copy())
   }
 }
 
@@ -80,7 +156,9 @@ async fn run_pattern_repair_process(
 /// raw provider/agent diagnostic instead of a Host-side error classification.
 fn pattern_repair_agent_error(json : Json) -> String? {
   guard json is { "event": String(event), .. } else { return None }
-  if event == "turn_failed" {
+  if event == "turn_failed" ||
+    event == "agent_setup_failed" ||
+    event == "command_error" {
     match json {
       { "error": String(error), .. } => Some(error)
       _ => Some(json.stringify())
@@ -93,6 +171,90 @@ fn pattern_repair_agent_error(json : Json) -> String? {
   } else {
     None
   }
+}
+
+///|
+/// Reduce the child JSONL stream to safe, bounded repair events. Assistant
+/// and reasoning content, tool arguments, and unrelated event payloads are
+/// never retained in the trace.
+fn pattern_repair_record_event(
+  json : Json,
+  trace : Array[String],
+) -> (Bool, String?) {
+  guard json is { "event": String(event), .. } else { return (false, None) }
+  if event == "agent_step" {
+    if json is { "step": Number(step, ..), .. } {
+      pattern_repair_trace_push(trace, "Agent step \{step.to_int()}")
+    }
+    return (false, None)
+  }
+  if event == "stream_retry" {
+    if json
+      is {
+        "attempt": Number(attempt, ..),
+        "max_attempts": Number(max_attempts, ..),
+        ..
+      } {
+      pattern_repair_trace_push(
+        trace,
+        "Provider retry \{attempt.to_int()}/\{max_attempts.to_int()}",
+      )
+    }
+    return (false, None)
+  }
+  if event == "tool_result" {
+    guard json
+      is {
+        "tool_name": String(tool_name),
+        "content": String(content),
+        "is_error": is_error,
+        ..
+      } else {
+      return (false, None)
+    }
+    if tool_name == "validate_pattern" {
+      let result = @json.parse(content) catch { _ => Json::null() }
+      if result is { "valid": True, .. } {
+        pattern_repair_trace_push(trace, "validate_pattern: passed")
+      } else if result
+        is { "valid": False, "diagnostic": String(diagnostic), .. } {
+        pattern_repair_trace_push(
+          trace,
+          "validate_pattern: failed — \{diagnostic}",
+        )
+      } else if is_error is True {
+        pattern_repair_trace_push(trace, "validate_pattern: \{content}")
+      } else {
+        pattern_repair_trace_push(trace, "validate_pattern: returned")
+      }
+    } else if tool_name == "submit_pattern_repair" {
+      pattern_repair_trace_push(trace, "submit_pattern_repair: returned")
+    }
+    return (false, None)
+  }
+  if event == "provider_request_timed_out" {
+    pattern_repair_trace_push(trace, "Provider request timed out")
+    return (true, None)
+  }
+  if pattern_repair_agent_error(json) is Some(error) {
+    let summary = if event == "max_steps_exhausted" {
+      "Agent step limit exhausted"
+    } else if event == "agent_finished" {
+      "Agent turn finished without a submission"
+    } else if event == "context_yield" {
+      "Agent yielded at its context limit"
+    } else if event == "agent_aborted" {
+      match json {
+        { "reason": String(reason), .. } => "Agent aborted: \{reason}"
+        _ => "Agent aborted"
+      }
+    } else {
+      error
+    }
+    pattern_repair_trace_push(trace, summary)
+    return (false, Some(error))
+  }
+  (false, None)
 }
 
 ///|
@@ -112,6 +274,56 @@ test "pattern repair preserves raw agent failure diagnostics" {
     pattern_repair_agent_error({ "event": "provider_request_timed_out" })
     is None,
   )
+}
+
+///|
+test "pattern repair trace keeps validation outcomes and omits model content" {
+  let trace : Array[String] = []
+  let _ = pattern_repair_record_event(
+    {
+      "event": "tool_result",
+      "tool_name": "validate_pattern",
+      "is_error": false,
+      "content": "{\"valid\":false,\"diagnostic\":\"expected expression\"}",
+    },
+    trace,
+  )
+  let _ = pattern_repair_record_event(
+    { "event": "reasoning_delta", "content": "private reasoning" },
+    trace,
+  )
+  assert_eq(trace, ["validate_pattern: failed — expected expression"])
+}
+
+///|
+test "pattern repair trace records steps and raw terminal errors" {
+  let trace : Array[String] = []
+  let _ = pattern_repair_record_event(
+    { "event": "agent_step", "step": 3 },
+    trace,
+  )
+  let (timed_out, failure) = pattern_repair_record_event(
+    {
+      "event": "turn_failed",
+      "error": "provider response could not be decoded",
+    },
+    trace,
+  )
+  assert_false(timed_out)
+  assert_eq(failure, Some("provider response could not be decoded"))
+  assert_eq(trace, ["Agent step 3", "provider response could not be decoded"])
+}
+
+///|
+test "pattern repair trace remains bounded and retains recent events" {
+  let trace : Array[String] = []
+  let final_step = PatternRepairTraceMaxItems + 2
+  for step in 1..<=final_step {
+    pattern_repair_trace_push(trace, "Agent step \{step}")
+  }
+  assert_eq(trace.length(), PatternRepairTraceMaxItems)
+  assert_eq(trace[0], PatternRepairTraceOmitted)
+  assert_eq(trace[trace.length() - 1], "Agent step \{final_step}")
 }
 
 ///|
@@ -150,46 +362,24 @@ async fn request_pattern_repair_candidate(
   ) catch {
     error if @async.is_being_cancelled() || @async.is_cancellation_error(error) =>
       raise error
-    error => return Failed("\{error}")
+    error => return Failed("\{error}", [])
   }
-  guard process is Finished(code, stdout, stderr) else { return TimedOut }
-  let mut provider_timed_out = false
-  let mut agent_error : String? = if code == 0 || stderr.trim().is_empty() {
-    None
-  } else {
-    Some(pattern_repair_diagnostic(stderr))
-  }
-  for line in stdout.split("\n") {
-    let json = @json.parse(line.trim()) catch { _ => continue }
-    if json is { "event": String("provider_request_timed_out"), .. } {
-      provider_timed_out = true
-      continue
-    }
-    if pattern_repair_agent_error(json) is Some(error) {
-      agent_error = Some(pattern_repair_diagnostic(error))
-      continue
-    }
-    guard json is { "subrun_report": report, .. } else { continue }
-    guard report
-      is {
-        "candidate_pattern": String(candidate),
-        "message": String(message),
-        ..
+  match process {
+    TimedOut(trace) => TimedOut(trace)
+    Finished(code, stderr, candidate, provider_timed_out, agent_error, trace) =>
+      if candidate is Some((candidate, message)) {
+        Candidate(candidate, message, trace)
+      } else if provider_timed_out {
+        TimedOut(trace)
+      } else if agent_error is Some(error) {
+        Failed(error, trace)
+      } else if !stderr.trim().is_empty() {
+        Failed(pattern_repair_diagnostic(stderr), trace)
+      } else if code != 0 {
+        Failed("Pattern Repair Agent process exited with code \{code}.", trace)
       } else {
-      return Failed(pattern_repair_diagnostic(report.stringify()))
-    }
-    return Candidate(candidate, message)
-  }
-  if provider_timed_out {
-    TimedOut
-  } else if agent_error is Some(error) {
-    Failed(error)
-  } else if !stdout.trim().is_empty() {
-    Failed(pattern_repair_diagnostic(stdout))
-  } else if code != 0 {
-    Failed("Pattern Repair Agent process exited with code \{code}.")
-  } else {
-    Failed("Pattern Repair Agent did not produce a subrun report.")
+        Failed("Pattern Repair Agent did not produce a subrun report.", trace)
+      }
   }
 }
 
@@ -199,6 +389,7 @@ fn pattern_repair_failure(
   validation_status : @protocol.PatternRepairStatus,
   candidate_pattern : String?,
   message : String,
+  trace : Array[String],
 ) -> @protocol.PatternRepairReply {
   {
     root: payload.root,
@@ -207,6 +398,7 @@ fn pattern_repair_failure(
     valid: false,
     validation_status,
     message,
+    trace,
   }
 }
 
@@ -222,6 +414,7 @@ async fn pattern_repair_op(
       Unavailable,
       None,
       "Pattern Repair Agent is unavailable.",
+      [],
     )
   }
   let root = WirePath::parse(payload.root).absolute
@@ -234,16 +427,18 @@ async fn pattern_repair_op(
     model=payload.model,
     thinking=payload.thinking,
   )
-  let (candidate, message) = match candidate {
-    Candidate(candidate, message) => (candidate, message)
-    TimedOut =>
+  let (candidate, message, trace) = match candidate {
+    Candidate(candidate, message, trace) => (candidate, message, trace)
+    TimedOut(trace) =>
       return pattern_repair_failure(
         payload,
         TimedOut,
         None,
         "Pattern repair timed out while contacting the AI provider. Check your connection or provider endpoint, then retry.",
+        trace,
       )
-    Failed(error) => return pattern_repair_failure(payload, Failed, None, error)
+    Failed(error, trace) =>
+      return pattern_repair_failure(payload, Failed, None, error, trace)
   }
   match validate_pattern_repair_candidate(root, candidate) {
     PatternRepairValid =>
@@ -254,17 +449,32 @@ async fn pattern_repair_op(
         valid: true,
         validation_status: Passed,
         message,
+        trace,
       }
-    PatternRepairUnavailable =>
+    PatternRepairUnavailable => {
+      pattern_repair_trace_push(trace, "Host validation: unavailable")
       {
         root: payload.root,
         generation: payload.generation,
         candidate_pattern: Some(candidate),
         valid: false,
         validation_status: Unavailable,
-        message,
+        message: "Host-side pattern validation is unavailable; candidate was not applied.",
+        trace,
       }
-    PatternRepairInvalid(diagnostic) =>
-      pattern_repair_failure(payload, Failed, Some(candidate), diagnostic)
+    }
+    PatternRepairInvalid(diagnostic) => {
+      pattern_repair_trace_push(
+        trace,
+        "Host validation: failed — \{diagnostic}",
+      )
+      pattern_repair_failure(
+        payload,
+        Failed,
+        Some(candidate),
+        diagnostic,
+        trace,
+      )
+    }
   }
 }

@@ -83,7 +83,9 @@ test "Code search repairs one pattern without a composer or preview" {
       PatternRepairUnavailable(
         root=root.path,
         generation=semantic.page.generation,
+        candidate_pattern=None,
         message="DeepSeek API key is required; add it in Settings or set DEEPSEEK",
+        trace=[],
       ),
       input,
     )
@@ -96,7 +98,11 @@ test "Code search repairs one pattern without a composer or preview" {
   let timed_out = semantic
     .handle(FixPattern, input)
     .handle(
-      PatternRepairTimedOut(root=root.path, generation=semantic.page.generation),
+      PatternRepairTimedOut(
+        root=root.path,
+        generation=semantic.page.generation,
+        trace=["Agent step 2", "Provider request timed out"],
+      ),
       input,
     )
   let timed_out_html = render_search(timed_out, input)
@@ -106,6 +112,8 @@ test "Code search repairs one pattern without a composer or preview" {
     ),
   )
   assert_true(timed_out_html.contains("Retry pattern repair"))
+  assert_true(timed_out_html.contains("Show repair details"))
+  assert_true(timed_out_html.contains("Provider request timed out"))
   let validation_failed = semantic
     .handle(FixPattern, input)
     .handle(
@@ -114,6 +122,10 @@ test "Code search repairs one pattern without a composer or preview" {
         generation=semantic.page.generation,
         candidate_pattern=Some("let mut $(name:id) = $(value:exp)"),
         diagnostic="raw moongrep diagnostic: expected a complete expression",
+        trace=[
+          "Agent step 1", "validate_pattern: failed — expected a complete expression",
+          "Agent step 2",
+        ],
       ),
       input,
     )
@@ -129,6 +141,12 @@ test "Code search repairs one pattern without a composer or preview" {
     ),
   )
   assert_true(validation_failed_html.contains("Show repair details"))
+  assert_true(validation_failed_html.contains("Repair trace"))
+  assert_true(
+    validation_failed_html.contains(
+      "validate_pattern: failed — expected a complete expression",
+    ),
+  )
   assert_true(
     validation_failed_html.contains("Candidate pattern (not applied)"),
   )

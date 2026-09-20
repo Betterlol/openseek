@@ -997,6 +997,27 @@ html:is(
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.search-pattern-repair-candidate,
+.search-pattern-repair-trace {
+  margin-top: 8px;
+}
+.search-pattern-repair-candidate-value {
+  margin: 4px 0 0;
+  max-height: 100px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.search-pattern-repair-trace-list {
+  margin: 4px 0 0;
+  padding-left: 20px;
+  max-height: 180px;
+  overflow: auto;
+  color: var(--color-text-muted);
+}
+.search-pattern-repair-trace-list li {
+  overflow-wrap: anywhere;
+}
 .pattern-repair-button.is-loading {
   cursor: progress;
   opacity: .72;

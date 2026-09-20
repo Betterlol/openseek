@@ -83,6 +83,7 @@ struct Page {
   /// A rejected candidate is retained for diagnosis, but is never applied to
   /// the active semantic pattern.
   pattern_repair_candidate : String?
+  pattern_repair_trace : Array[String]
   generation : Int
   delay_ms : Int
 } derive(Eq)
@@ -144,13 +145,24 @@ pub(all) enum Msg {
     generation~ : Int,
     candidate_pattern~ : String
   )
-  PatternRepairUnavailable(root~ : String, generation~ : Int, message~ : String)
-  PatternRepairTimedOut(root~ : String, generation~ : Int)
+  PatternRepairUnavailable(
+    root~ : String,
+    generation~ : Int,
+    candidate_pattern~ : String?,
+    message~ : String,
+    trace~ : Array[String]
+  )
+  PatternRepairTimedOut(
+    root~ : String,
+    generation~ : Int,
+    trace~ : Array[String]
+  )
   PatternRepairValidationFailed(
     root~ : String,
     generation~ : Int,
     candidate_pattern~ : String?,
-    diagnostic~ : String
+    diagnostic~ : String,
+    trace~ : Array[String]
   )
   PatternRepairFailed(root~ : String, generation~ : Int)
   IncludeChanged(String)

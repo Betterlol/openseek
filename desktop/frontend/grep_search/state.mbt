@@ -28,6 +28,7 @@ fn fresh_page() -> Page {
     pattern_repair_phase: PatternRepairIdle,
     pattern_repair_message: None,
     pattern_repair_candidate: None,
+    pattern_repair_trace: [],
     generation: 0,
     delay_ms: SearchDebounceMs,
   }
@@ -154,6 +155,7 @@ pub fn State::handle(self : State, msg : Msg, input : Input) -> State {
           pattern_repair_phase: PatternRepairIdle,
           pattern_repair_message: None,
           pattern_repair_candidate: None,
+          pattern_repair_trace: [],
           match_count: 0,
           file_count: 0,
           collapsed: Map([]),
@@ -197,6 +199,7 @@ pub fn State::handle(self : State, msg : Msg, input : Input) -> State {
             pattern_repair_phase: PatternRepairRequested,
             pattern_repair_message: None,
             pattern_repair_candidate: None,
+            pattern_repair_trace: [],
           },
         }
       } else if page.mode is Semantic {
@@ -207,6 +210,7 @@ pub fn State::handle(self : State, msg : Msg, input : Input) -> State {
             pattern_repair_phase: PatternRepairInputRequired,
             pattern_repair_message: Some("Enter a pattern before repairing it."),
             pattern_repair_candidate: None,
+            pattern_repair_trace: [],
           },
         }
       } else {
@@ -228,6 +232,7 @@ pub fn State::handle(self : State, msg : Msg, input : Input) -> State {
             pattern_repair_phase: PatternRepairIdle,
             pattern_repair_message: None,
             pattern_repair_candidate: None,
+            pattern_repair_trace: [],
           },
           input,
           immediate=true,
@@ -235,7 +240,13 @@ pub fn State::handle(self : State, msg : Msg, input : Input) -> State {
       } else {
         self
       }
-    PatternRepairUnavailable(root~, generation~, message~) =>
+    PatternRepairUnavailable(
+      root~,
+      generation~,
+      candidate_pattern~,
+      message~,
+      trace~
+    ) =>
       if page.mode is Semantic &&
         input.root_text() == root &&
         page.generation == generation &&
@@ -246,13 +257,14 @@ pub fn State::handle(self : State, msg : Msg, input : Input) -> State {
             ..page,
             pattern_repair_phase: PatternRepairUnavailable,
             pattern_repair_message: Some(message),
-            pattern_repair_candidate: None,
+            pattern_repair_candidate: candidate_pattern,
+            pattern_repair_trace: trace,
           },
         }
       } else {
         self
       }
-    PatternRepairTimedOut(root~, generation~) =>
+    PatternRepairTimedOut(root~, generation~, trace~) =>
       if page.mode is Semantic &&
         input.root_text() == root &&
         page.generation == generation &&
@@ -264,6 +276,7 @@ pub fn State::handle(self : State, msg : Msg, input : Input) -> State {
             pattern_repair_phase: PatternRepairTimedOut,
             pattern_repair_message: None,
             pattern_repair_candidate: None,
+            pattern_repair_trace: trace,
           },
         }
       } else {
@@ -273,7 +286,8 @@ pub fn State::handle(self : State, msg : Msg, input : Input) -> State {
       root~,
       generation~,
       candidate_pattern~,
-      diagnostic~
+      diagnostic~,
+      trace~
     ) =>
       if page.mode is Semantic &&
         input.root_text() == root &&
@@ -290,6 +304,7 @@ pub fn State::handle(self : State, msg : Msg, input : Input) -> State {
             pattern_repair_phase: PatternRepairValidationFailed,
             pattern_repair_message: Some(diagnostic),
             pattern_repair_candidate: rejected_candidate,
+            pattern_repair_trace: trace,
           },
         }
       } else {
@@ -307,6 +322,7 @@ pub fn State::handle(self : State, msg : Msg, input : Input) -> State {
             pattern_repair_phase: PatternRepairFailed,
             pattern_repair_message: None,
             pattern_repair_candidate: None,
+            pattern_repair_trace: [],
           },
         }
       } else {
@@ -328,6 +344,7 @@ pub fn State::handle(self : State, msg : Msg, input : Input) -> State {
           pattern_repair_phase: PatternRepairIdle,
           pattern_repair_message: None,
           pattern_repair_candidate: None,
+          pattern_repair_trace: [],
         },
         input,
         immediate=false,
@@ -345,6 +362,7 @@ pub fn State::handle(self : State, msg : Msg, input : Input) -> State {
           pattern_repair_phase: PatternRepairIdle,
           pattern_repair_message: None,
           pattern_repair_candidate: None,
+          pattern_repair_trace: [],
         },
       }
     RemovePattern(index) => {
@@ -359,6 +377,7 @@ pub fn State::handle(self : State, msg : Msg, input : Input) -> State {
           pattern_repair_phase: PatternRepairIdle,
           pattern_repair_message: None,
           pattern_repair_candidate: None,
+          pattern_repair_trace: [],
         },
         input,
         immediate=false,
@@ -597,6 +616,7 @@ fn Page::clear_results(self : Page) -> Page {
     pattern_repair_phase: PatternRepairIdle,
     pattern_repair_message: None,
     pattern_repair_candidate: None,
+    pattern_repair_trace: [],
   }
 }
 

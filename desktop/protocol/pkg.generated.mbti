@@ -1793,6 +1793,7 @@ pub(all) struct PatternRepairReply {
   valid : Bool
   validation_status : PatternRepairStatus
   message : String
+  trace : Array[String]
 } derive(Eq, @debug.Debug)
 pub fn PatternRepairReply::equal(Self, Self) -> Bool
 pub fn PatternRepairReply::from_json(Json, @json.JsonPath) -> Self raise @json.JsonDecodeError

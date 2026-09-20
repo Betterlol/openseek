@@ -48,9 +48,9 @@ pub(all) enum Msg {
   ToggleDetails
   FixPattern
   PatternRepaired(root~ : String, generation~ : Int, candidate_pattern~ : String)
-  PatternRepairUnavailable(root~ : String, generation~ : Int, message~ : String)
-  PatternRepairTimedOut(root~ : String, generation~ : Int)
-  PatternRepairValidationFailed(root~ : String, generation~ : Int, candidate_pattern~ : String?, diagnostic~ : String)
+  PatternRepairUnavailable(root~ : String, generation~ : Int, candidate_pattern~ : String?, message~ : String, trace~ : Array[String])
+  PatternRepairTimedOut(root~ : String, generation~ : Int, trace~ : Array[String])
+  PatternRepairValidationFailed(root~ : String, generation~ : Int, candidate_pattern~ : String?, diagnostic~ : String, trace~ : Array[String])
   PatternRepairFailed(root~ : String, generation~ : Int)
   IncludeChanged(String)
   ExcludeChanged(String)

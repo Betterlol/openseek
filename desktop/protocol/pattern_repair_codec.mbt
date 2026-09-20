@@ -87,6 +87,7 @@ pub impl FromJson for PatternRepairReply with fn from_json(json, path) {
       path.add_key("validation_status"),
     ),
     message: object.required_string("message"),
+    trace: object.required_string_array("trace"),
   }
 }
 
@@ -101,6 +102,7 @@ pub impl ToJson for PatternRepairReply with fn to_json(self) {
     "valid": self.valid,
     "validation_status": self.validation_status.wire(),
     "message": self.message,
+    "trace": self.trace.to_json(),
   }
   if self.candidate_pattern is Some(candidate) {
     fields["candidate_pattern"] = Json(candidate)
