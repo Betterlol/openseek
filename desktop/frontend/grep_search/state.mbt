@@ -371,21 +371,15 @@ pub fn State::handle(self : State, msg : Msg, input : Input) -> State {
       }
       { ..self, page: { ..page, collapsed, }, }
     }
-    ClearSelection => {
-      let changed = !page.selected.is_empty()
+    ClearSelection =>
       {
         ..self,
         page: {
           ..page,
           selected: Set([]),
-          semantic_selection_revision: if changed {
-            page.semantic_selection_revision + 1
-          } else {
-            page.semantic_selection_revision
-          },
+          semantic_selection_revision: page.semantic_selection_revision + 1,
         },
       }
-    }
     ShowMore =>
       {
         ..self,
@@ -405,30 +399,13 @@ pub fn State::handle(self : State, msg : Msg, input : Input) -> State {
       }
       { ..self, page: { ..page, collapsed, }, }
     }
-    TogglePattern(pattern) => {
-      let key = semantic_pattern_key(pattern)
-      let collapsed = page.collapsed.copy()
-      if collapsed.get(key).unwrap_or(false) {
-        collapsed.remove(key)
-      } else {
-        collapsed[key] = true
-      }
-      { ..self, page: { ..page, collapsed, }, }
-    }
-    ToggleSemanticPattern(pattern) =>
-      {
-        ..self,
-        page: page.toggle_semantic_selection(
-          page.semantic_hits_in(pattern~).map(semantic_hit_key),
-        ),
-      }
     ToggleSemanticHit(key) =>
       { ..self, page: page.toggle_semantic_selection([key]), }
-    ToggleSemanticFile(pattern, path) =>
+    ToggleSemanticGroup(pattern~, path~) =>
       {
         ..self,
         page: page.toggle_semantic_selection(
-          page.semantic_hits_in(pattern~, path~).map(semantic_hit_key),
+          page.semantic_hits_in(pattern~, path?).map(semantic_hit_key),
         ),
       }
     SetSemanticResultFilter(filter) =>

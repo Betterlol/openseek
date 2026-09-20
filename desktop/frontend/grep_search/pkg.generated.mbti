@@ -67,10 +67,8 @@ pub(all) enum Msg {
   ClearSelection
   ShowMore
   ToggleFile(String)
-  TogglePattern(String)
   ToggleSemanticHit(String)
-  ToggleSemanticPattern(String)
-  ToggleSemanticFile(String, String)
+  ToggleSemanticGroup(pattern~ : String, path~ : String?)
   SetSemanticResultFilter(SemanticResultFilter)
   RequestStarted(owner~ : @interop.ConversationKey, root~ : String, generation~ : Int)
   Loaded(owner~ : @interop.ConversationKey, root~ : String, generation~ : Int, reply~ : @protocol.SearchTextReply)

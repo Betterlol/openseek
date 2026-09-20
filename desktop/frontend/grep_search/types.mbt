@@ -127,27 +127,20 @@ pub fn State::selected_semantic_reference(
   self : State,
   root : String,
 ) -> @mention_context.SemanticSearchReference? {
-  self.page.selected_semantic_reference(root)
-}
-
-///|
-fn Page::selected_semantic_reference(
-  self : Page,
-  root : String,
-) -> @mention_context.SemanticSearchReference? {
-  let matches = selected_semantic_hits(self.semantic.hits, self.selected)
+  let page = self.page
+  let matches = selected_semantic_hits(page.semantic.hits, page.selected)
   guard !matches.is_empty() else { return None }
-  let patterns = self.semantic.patterns.filter(pattern => {
+  let patterns = page.semantic.patterns.filter(pattern => {
     !pattern.trim().is_empty()
   })
   Some({
     // The root is payload data; keeping it out of the snapshot id avoids
     // serializing the same absolute path twice in the mention envelope.
-    id: "semantic-search-\{self.generation}-\{self.semantic_selection_revision}",
+    id: "semantic-search-\{page.generation}-\{page.semantic_selection_revision}",
     root,
     patterns,
-    include_glob: self.include_glob,
-    exclude_glob: self.exclude_glob,
+    include_glob: page.include_glob,
+    exclude_glob: page.exclude_glob,
     matches: matches.map(hit => {
       rule_id: hit.rule_id,
       description: hit.description,
@@ -220,10 +213,9 @@ pub(all) enum Msg {
   ClearSelection
   ShowMore
   ToggleFile(String)
-  TogglePattern(String)
   ToggleSemanticHit(String)
-  ToggleSemanticPattern(String)
-  ToggleSemanticFile(String, String)
+  // A pattern group, or one file within it.
+  ToggleSemanticGroup(pattern~ : String, path~ : String?)
   SetSemanticResultFilter(SemanticResultFilter)
   RequestStarted(
     owner~ : @interop.ConversationKey,

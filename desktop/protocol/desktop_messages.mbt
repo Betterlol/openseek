@@ -561,7 +561,7 @@ pub(all) struct SemanticSelectionMatch {
   end_line : Int
   end_column : Int
   matched_source : String
-} derive(Debug, Eq)
+} derive(Debug, Eq, FromJson, ToJson)
 
 ///|
 /// Materialize one large semantic-search selection below the supplied checkout.
@@ -573,7 +573,7 @@ pub(all) struct MaterializeSemanticSelectionPayload {
   include_glob : String
   exclude_glob : String
   matches : Array[SemanticSelectionMatch]
-} derive(Debug, Eq)
+} derive(Debug, Eq, FromJson, ToJson)
 
 ///|
 pub(all) struct StatFilesPayload {

@@ -1,6 +1,30 @@
 import { test, expect } from '@playwright/test';
 import { DesktopBrowserHarness } from './support/desktop_browser_harness.js';
 
+const method = 'fs.materialize_semantic_selection';
+const path = '.openseek/agent-context/semantic-search/selection.jsonl';
+const codexModels = [{ id: 'gpt-5.4-codex', displayName: 'GPT-5.4 Codex', isDefault: true,
+  defaultReasoningEffort: 'medium', supportedReasoningEfforts: [{ reasoningEffort: 'medium', description: 'Balanced' }] }];
+
+// 101 matches cross the inline limit; the real frontend must request a file.
+const largeSelection = () => Array.from({ length: 101 }, (_, index) => ({
+  path: 'src/main.mbt', rule_id: 'inspect($(x:arg))',
+  start_line: index + 1, start_column: 1, end_line: index + 1, end_column: 11,
+  matched_source: 'inspect(x)', source_context: [],
+}));
+
+async function openCodeSearch(page) {
+  await page.keyboard.press(await page.evaluate(() =>
+    navigator.platform.includes('Mac') ? 'Meta+Shift+F' : 'Control+Shift+F'));
+  await page.getByRole('button', { name: 'Code search', exact: true }).click();
+  await page.getByRole('textbox', { name: 'pattern', exact: true }).fill('inspect($(x:arg))');
+}
+
+async function selectWholePattern(page) {
+  await openCodeSearch(page);
+  await page.getByLabel('Select pattern', { exact: true }).click();
+}
+
 test('semantic selection follows match, file, and pattern controls', async ({ page }) => {
   const app = new DesktopBrowserHarness(page);
   app.semanticSearchMatches = ['src/main.mbt', 'src/main.mbt', 'src/other.mbt'].map((path, index) => ({
@@ -11,11 +35,7 @@ test('semantic selection follows match, file, and pattern controls', async ({ pa
   await app.install();
   await app.goto();
   await app.openSession();
-  const shortcut = await page.evaluate(() =>
-    navigator.platform.includes('Mac') ? 'Meta+Shift+F' : 'Control+Shift+F');
-  await page.keyboard.press(shortcut);
-  await page.getByRole('button', { name: 'Code search', exact: true }).click();
-  await page.getByRole('textbox', { name: 'pattern', exact: true }).fill('inspect($(x:arg))');
+  await openCodeSearch(page);
 
   const results = page.locator('.search-results');
   const chip = page.locator('.mention-chip');
@@ -50,13 +70,7 @@ test('semantic selection follows match, file, and pattern controls', async ({ pa
 
 test('large semantic selection retries and sends its original draft while later selection changes survive', async ({ page }) => {
   const app = new DesktopBrowserHarness(page);
-  // 101 matches cross the inline limit; the real frontend must request a file.
-  app.semanticSearchMatches = Array.from({ length: 101 }, (_, index) => ({
-    path: 'src/main.mbt', rule_id: 'inspect($(x:arg))',
-    start_line: index + 1, start_column: 1, end_line: index + 1, end_column: 11,
-    matched_source: 'inspect(x)', source_context: [],
-  }));
-  const method = 'fs.materialize_semantic_selection';
+  app.semanticSearchMatches = largeSelection();
   const materialization = Promise.withResolvers();
   const replyFor = app.replyFor.bind(app);
   app.replyFor = request => request.method === method ? materialization.promise : replyFor(request);
@@ -64,12 +78,7 @@ test('large semantic selection retries and sends its original draft while later 
   await app.install();
   await app.goto();
   await app.openSession();
-  const shortcut = await page.evaluate(() =>
-    navigator.platform.includes('Mac') ? 'Meta+Shift+F' : 'Control+Shift+F');
-  await page.keyboard.press(shortcut);
-  await page.getByRole('button', { name: 'Code search', exact: true }).click();
-  await page.getByRole('textbox', { name: 'pattern', exact: true }).fill('inspect($(x:arg))');
-  await page.getByLabel('Select pattern', { exact: true }).click();
+  await selectWholePattern(page);
   const chips = page.locator('.mention-chip');
   await expect(chips).toContainText('101 matches');
   expect(app.requests.filter(request => request.method === method)).toHaveLength(0);
@@ -94,7 +103,6 @@ test('large semantic selection retries and sends its original draft while later 
   await page.getByRole('button', { name: 'Deselect match', exact: true }).first().click();
   await expect(chips.filter({ hasText: '100 matches' })).toHaveCount(1);
   expect(app.requests.filter(request => request.method === 'agent.start')).toHaveLength(0);
-  const path = '.openseek/agent-context/semantic-search/selection.jsonl';
   materialization.resolve({ path, match_count: 101, file_count: 1 });
   await expect.poll(() => app.requests.find(request => request.method === 'agent.start')?.params.task)
     .toContain(`<semantic_search_file path="${path}" patterns="1" matches="101">`);
@@ -111,14 +119,10 @@ test('large semantic selection retries and sends its original draft while later 
 
 test('queued message Edit waits for semantic preparation so the send keeps its draft and target', async ({ page }) => {
   const app = new DesktopBrowserHarness(page);
-  app.semanticSearchMatches = Array.from({ length: 101 }, (_, index) => ({
-    path: 'src/main.mbt', rule_id: 'inspect($(x:arg))',
-    start_line: index + 1, start_column: 1, end_line: index + 1, end_column: 11,
-    matched_source: 'inspect(x)', source_context: [],
-  }));
+  app.semanticSearchMatches = largeSelection();
   const materialization = Promise.withResolvers();
   const replyFor = app.replyFor.bind(app);
-  app.replyFor = request => request.method === 'fs.materialize_semantic_selection'
+  app.replyFor = request => request.method === method
     ? materialization.promise : replyFor(request);
   await app.install();
   await app.goto();
@@ -135,18 +139,13 @@ test('queued message Edit waits for semantic preparation so the send keeps its d
   const queued = page.locator('.queued-input-row');
   await expect(queued).toContainText('Queued draft to preserve');
 
-  await page.keyboard.press(await page.evaluate(() =>
-    navigator.platform.includes('Mac') ? 'Meta+Shift+F' : 'Control+Shift+F'));
-  await page.getByRole('button', { name: 'Code search', exact: true }).click();
-  await page.getByRole('textbox', { name: 'pattern', exact: true }).fill('inspect($(x:arg))');
-  await page.getByLabel('Select pattern', { exact: true }).click();
+  await selectWholePattern(page);
   await composer.fill('Inspect the original selection');
   await page.getByTitle('Steer the running task', { exact: true }).click();
   await expect(composer).toBeDisabled();
   // Edit is inert while the frozen draft waits for its file.
   await queued.getByTitle('Edit', { exact: true }).click();
   await expect(composer).toHaveValue('Inspect the original selection');
-  const path = '.openseek/agent-context/semantic-search/selection.jsonl';
   materialization.resolve({ path, match_count: 101, file_count: 1 });
   await expect(composer).toBeEnabled();
   await expect(composer).toHaveValue('');
@@ -168,8 +167,7 @@ test('queued message Edit waits for semantic preparation so the send keeps its d
 for (const provider of ['OpenSeek new chat', 'OpenSeek session', 'Codex']) {
   test(`${provider} semantic chip opens the selected search results`, async ({ page }) => {
     const app = new DesktopBrowserHarness(page);
-    app.codexModels = [{ id: 'gpt-5.4-codex', displayName: 'GPT-5.4 Codex', isDefault: true,
-      defaultReasoningEffort: 'medium', supportedReasoningEfforts: [{ reasoningEffort: 'medium', description: 'Balanced' }] }];
+    app.codexModels = codexModels;
     app.semanticSearchMatches = [1, 2].map(line => ({
       path: 'src/main.mbt', rule_id: 'inspect($(x:arg))',
       start_line: line, start_column: 1, end_line: line, end_column: 11,
@@ -183,10 +181,7 @@ for (const provider of ['OpenSeek new chat', 'OpenSeek session', 'Codex']) {
     } else if (provider === 'OpenSeek session') {
       await app.openSession();
     }
-    await page.keyboard.press(await page.evaluate(() =>
-      navigator.platform.includes('Mac') ? 'Meta+Shift+F' : 'Control+Shift+F'));
-    await page.getByRole('button', { name: 'Code search', exact: true }).click();
-    await page.getByRole('textbox', { name: 'pattern', exact: true }).fill('inspect($(x:arg))');
+    await openCodeSearch(page);
     await page.getByRole('button', { name: 'Select match', exact: true }).first().click();
     const chip = page.locator('.mention-chip .mention-jump');
     await expect(chip).toContainText('1 matches');
@@ -209,17 +204,10 @@ for (const provider of ['OpenSeek new chat', 'OpenSeek session', 'Codex']) {
 for (const worktree of [false, true]) {
   test(`Codex materializes large selections before start and steer (${worktree ? 'worktree' : 'local'})`, async ({ page }) => {
     const app = new DesktopBrowserHarness(page);
-    app.codexModels = [{ id: 'gpt-5.4-codex', displayName: 'GPT-5.4 Codex', isDefault: true,
-      defaultReasoningEffort: 'medium', supportedReasoningEfforts: [{ reasoningEffort: 'medium', description: 'Balanced' }] }];
-    app.semanticSearchMatches = Array.from({ length: 101 }, (_, index) => ({
-      path: 'src/main.mbt', rule_id: 'inspect($(x:arg))',
-      start_line: index + 1, start_column: 1, end_line: index + 1, end_column: 11,
-      matched_source: 'inspect(x)', source_context: [],
-    }));
-    const method = 'fs.materialize_semantic_selection';
-    const root = worktree ? '/workspace/worktrees/semantic-e2e' : '/workspace';
-    const path = '.openseek/agent-context/semantic-search/selection.jsonl';
-    const replyFor = app.replyFor.bind(app);
+    app.codexModels = codexModels;
+    app.semanticSearchMatches = largeSelection();
+      const root = worktree ? '/workspace/worktrees/semantic-e2e' : '/workspace';
+      const replyFor = app.replyFor.bind(app);
     app.replyFor = request => {
       if (request.method === method) return { path, match_count: 101, file_count: 1 };
       if (request.method === 'worktree.create') return { name: 'semantic-e2e', worktrees: [{
@@ -236,11 +224,7 @@ for (const worktree of [false, true]) {
     await page.getByRole('button', { name: 'Model', exact: true }).click();
     await page.getByRole('option', { name: 'GPT-5.4 Codex' }).click();
     if (worktree) await page.locator('button.composer-worktree').click();
-    await page.keyboard.press(await page.evaluate(() =>
-      navigator.platform.includes('Mac') ? 'Meta+Shift+F' : 'Control+Shift+F'));
-    await page.getByRole('button', { name: 'Code search', exact: true }).click();
-    await page.getByRole('textbox', { name: 'pattern', exact: true }).fill('inspect($(x:arg))');
-    await page.getByLabel('Select pattern', { exact: true }).click();
+    await selectWholePattern(page);
     const composer = page.locator('#task');
     await composer.fill('Inspect selected matches');
     expect(app.requests.filter(request => request.method === method)).toHaveLength(0);
@@ -257,11 +241,7 @@ for (const worktree of [false, true]) {
     expect(app.requests.filter(request => request.method === method).map(request => request.params.root)).toEqual([root, root]);
     await expect(page.locator('.mention-chip')).toHaveCount(0);
     // The new thread has its own search state; select again for a running turn.
-    await page.keyboard.press(await page.evaluate(() =>
-      navigator.platform.includes('Mac') ? 'Meta+Shift+F' : 'Control+Shift+F'));
-    await page.getByRole('button', { name: 'Code search', exact: true }).click();
-    await page.getByRole('textbox', { name: 'pattern', exact: true }).fill('inspect($(x:arg))');
-    await page.getByLabel('Select pattern', { exact: true }).click();
+    await selectWholePattern(page);
     await expect(page.locator('.mention-chip')).toContainText('101 matches');
     await composer.fill('Inspect these too');
     await page.getByTitle('Steer the running task', { exact: true }).click();
@@ -276,22 +256,13 @@ for (const worktree of [false, true]) {
 for (const clear of [false, true]) {
   test(`failed preparation restores the ${clear ? 'cleared' : 'latest'} selection`, async ({ page }) => {
     const app = new DesktopBrowserHarness(page);
-    app.semanticSearchMatches = Array.from({ length: 101 }, (_, index) => ({
-      path: 'src/main.mbt', rule_id: 'inspect($(x:arg))',
-      start_line: index + 1, start_column: 1, end_line: index + 1, end_column: 11,
-      matched_source: 'inspect(x)', source_context: [],
-    }));
-    const method = 'fs.materialize_semantic_selection';
-    app.rpcErrors.set(method, 'disk full');
+    app.semanticSearchMatches = largeSelection();
+      app.rpcErrors.set(method, 'disk full');
     app.rpcDelays.set(method, 1500);
     await app.install();
     await app.goto();
     await app.openSession();
-    await page.keyboard.press(await page.evaluate(() =>
-      navigator.platform.includes('Mac') ? 'Meta+Shift+F' : 'Control+Shift+F'));
-    await page.getByRole('button', { name: 'Code search', exact: true }).click();
-    await page.getByRole('textbox', { name: 'pattern', exact: true }).fill('inspect($(x:arg))');
-    await page.getByLabel('Select pattern', { exact: true }).click();
+    await selectWholePattern(page);
     const composer = page.locator('#task');
     const chips = page.locator('.mention-chip');
     await composer.fill('Inspect selected matches');

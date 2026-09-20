@@ -142,7 +142,10 @@ test "Code search groups semantic hits by pattern before file" {
   let html = render_search(ready, input)
   assert_eq(html.split("class=\"search-semantic-pattern-header\"").length(), 3)
   assert_eq(html.split("class=\"search-file-header\"").length(), 3)
-  let collapsed = ready.handle(TogglePattern(first.rule_id), input)
+  let collapsed = ready.handle(
+    ToggleFile(semantic_pattern_key(first.rule_id)),
+    input,
+  )
   let collapsed_html = render_search(collapsed, input)
   assert_true(collapsed_html.contains("aria-expanded=\"false\""))
   assert_eq(
@@ -197,9 +200,10 @@ test "semantic selected-only view keeps the original selected hits" {
     SetSemanticResultFilter(SelectedSemanticResults),
     input,
   )
-  assert_true(
-    render_search(filtered, input).contains("Showing selected matches"),
-  )
+  let html = render_search(filtered, input)
+  assert_true(html.contains("1 selected"))
+  assert_true(html.contains("Show all"))
+  assert_false(html.contains("Show selected"))
 }
 
 ///|

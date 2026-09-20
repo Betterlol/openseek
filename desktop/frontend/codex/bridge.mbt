@@ -724,19 +724,13 @@ fn State::prompt_text(self : State) -> String {
 ///|
 fn State::mention_input(self : State, mention : @composer.Mention) -> Json? {
   match mention.ref_ {
-    @mention_context.File(path~) => {
+    @mention_context.File(path~)
+    | @mention_context.SemanticSearchArtifact({ path, .. }) => {
       let name = match [..path.split("/")] {
         [] => path
         [.., last] => last.to_owned()
       }
       Some({ "type": "mention", "name": name, "path": path })
-    }
-    @mention_context.SemanticSearchArtifact(artifact) => {
-      let name = match [..artifact.path.split("/")] {
-        [] => artifact.path
-        [.., last] => last.to_owned()
-      }
-      Some({ "type": "mention", "name": name, "path": artifact.path })
     }
     @mention_context.Skill(name~) => {
       guard self.active_context() is Some(context) &&

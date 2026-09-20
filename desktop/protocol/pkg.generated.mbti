@@ -1918,27 +1918,23 @@ pub(all) struct MaterializeSemanticSelectionPayload {
   include_glob : String
   exclude_glob : String
   matches : Array[SemanticSelectionMatch]
-} derive(Eq, @debug.Debug)
+} derive(Eq, ToJson, @debug.Debug, @json.FromJson)
 pub fn MaterializeSemanticSelectionPayload::equal(Self, Self) -> Bool
 pub fn MaterializeSemanticSelectionPayload::from_json(Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
 pub fn MaterializeSemanticSelectionPayload::not_equal(Self, Self) -> Bool
 pub fn MaterializeSemanticSelectionPayload::to_json(Self) -> Json
 pub fn MaterializeSemanticSelectionPayload::to_repr(Self) -> @debug.Repr
-pub impl ToJson for MaterializeSemanticSelectionPayload
-pub impl @json.FromJson for MaterializeSemanticSelectionPayload
 
 pub(all) struct MaterializeSemanticSelectionReply {
   path : String
   match_count : Int
   file_count : Int
-} derive(Eq, @debug.Debug)
+} derive(Eq, ToJson, @debug.Debug, @json.FromJson)
 pub fn MaterializeSemanticSelectionReply::equal(Self, Self) -> Bool
 pub fn MaterializeSemanticSelectionReply::from_json(Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
 pub fn MaterializeSemanticSelectionReply::not_equal(Self, Self) -> Bool
 pub fn MaterializeSemanticSelectionReply::to_json(Self) -> Json
 pub fn MaterializeSemanticSelectionReply::to_repr(Self) -> @debug.Repr
-pub impl ToJson for MaterializeSemanticSelectionReply
-pub impl @json.FromJson for MaterializeSemanticSelectionReply
 
 pub(all) struct MoonIdeCodeLens {
   range : LspRange
@@ -2647,14 +2643,12 @@ pub(all) struct SemanticSelectionMatch {
   end_line : Int
   end_column : Int
   matched_source : String
-} derive(Eq, @debug.Debug)
+} derive(Eq, ToJson, @debug.Debug, @json.FromJson)
 pub fn SemanticSelectionMatch::equal(Self, Self) -> Bool
 pub fn SemanticSelectionMatch::from_json(Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
 pub fn SemanticSelectionMatch::not_equal(Self, Self) -> Bool
 pub fn SemanticSelectionMatch::to_json(Self) -> Json
 pub fn SemanticSelectionMatch::to_repr(Self) -> @debug.Repr
-pub impl ToJson for SemanticSelectionMatch
-pub impl @json.FromJson for SemanticSelectionMatch
 
 pub(all) struct SessionAssistantMessage {
   content : String

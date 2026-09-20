@@ -611,28 +611,27 @@ fn search_body(
     ),
   )
   let selected_count = page.selected.length()
-  if page.mode is Semantic && selected_count > 0 {
-    children.push(
-      @html.div(class="search-selection-toolbar", [
-        @html.span("\{selected_count} selected"),
-        @html.button(
-          on_click=emit(SetSemanticResultFilter(SelectedSemanticResults)),
-          "Show selected",
-        ),
-        @html.button(on_click=emit(ClearSelection), "Clear selection"),
-      ]),
-    )
-  }
-  if page.mode is Semantic && page.semantic_filter is SelectedSemanticResults {
-    children.push(
-      @html.div(class="search-selection-toolbar", [
-        @html.span("Showing selected matches"),
-        @html.button(
-          on_click=emit(SetSemanticResultFilter(AllSemanticResults)),
-          "Show all",
-        ),
-      ]),
-    )
+  if page.mode is Semantic {
+    let filtered = page.semantic_filter is SelectedSemanticResults
+    if selected_count > 0 || filtered {
+      children.push(
+        @html.div(class="search-selection-toolbar", [
+          @html.span("\{selected_count} selected"),
+          if filtered {
+            @html.button(
+              on_click=emit(SetSemanticResultFilter(AllSemanticResults)),
+              "Show all",
+            )
+          } else {
+            @html.button(
+              on_click=emit(SetSemanticResultFilter(SelectedSemanticResults)),
+              "Show selected",
+            )
+          },
+          @html.button(on_click=emit(ClearSelection), "Clear selection"),
+        ]),
+      )
+    }
   }
   if summary.limit_hit {
     children.push(
@@ -818,7 +817,7 @@ fn semantic_file_group_view(
         semantic_group_select_view(
           page.semantic_group_selected(pattern~, path~),
           "file",
-          ToggleSemanticFile(pattern, path),
+          ToggleSemanticGroup(pattern~, path=Some(path)),
           emit,
         ),
       ],
@@ -852,7 +851,7 @@ fn semantic_pattern_group_view(
       title=pattern,
       attrs=@html.Attrs::build()
         .aria_expanded((!collapsed).to_string())
-        .on_click(_ => emit(TogglePattern(pattern))),
+        .on_click(_ => emit(ToggleFile(semantic_pattern_key(pattern)))),
       [
         @html.span(
           class="search-file-chevron",
@@ -868,7 +867,7 @@ fn semantic_pattern_group_view(
         semantic_group_select_view(
           page.semantic_group_selected(pattern~),
           "pattern",
-          ToggleSemanticPattern(pattern),
+          ToggleSemanticGroup(pattern~, path=None),
           emit,
         ),
       ],
