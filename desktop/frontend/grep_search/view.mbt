@@ -285,6 +285,49 @@ fn pattern_repair_failure_label(page : Page) -> String {
 }
 
 ///|
+fn pattern_repair_details(page : Page) -> @html.Html {
+  let has_candidate = page.pattern_repair_candidate is Some(_)
+  let has_diagnostic = page.pattern_repair_phase
+    is PatternRepairValidationFailed &&
+    page.pattern_repair_message is Some(_)
+  guard has_candidate || has_diagnostic || !page.pattern_repair_trace.is_empty() else {
+    return @html.nothing
+  }
+  let candidate = match page.pattern_repair_candidate {
+    Some(candidate) =>
+      @html.div(class="search-pattern-repair-candidate", [
+        @html.p("Candidate pattern (not applied)"),
+        @html.pre(class="search-pattern-repair-candidate-value", candidate),
+      ])
+    None => @html.nothing
+  }
+  let diagnostic = if page.pattern_repair_phase is PatternRepairValidationFailed {
+    match page.pattern_repair_message {
+      Some(diagnostic) =>
+        @html.pre(class="search-pattern-repair-diagnostic", diagnostic)
+      None => @html.nothing
+    }
+  } else {
+    @html.nothing
+  }
+  let trace = if page.pattern_repair_trace.is_empty() {
+    @html.nothing
+  } else {
+    let rows = page.pattern_repair_trace.map(item => @html.li(item))
+    @html.div(class="search-pattern-repair-trace", [
+      @html.p("Repair trace"),
+      @html.ol(class="search-pattern-repair-trace-list", rows),
+    ])
+  }
+  @html.details(class="search-pattern-repair-details", [
+    @html.summary("Show repair details"),
+    candidate,
+    diagnostic,
+    trace,
+  ])
+}
+
+///|
 fn pattern_repair_notice(
   locale? : @i18n.Locale = English,
   page : Page,
@@ -310,31 +353,7 @@ fn pattern_repair_notice(
         attrs=@html.Attrs::build().role("alert"),
         pattern_repair_failure_label(page),
       ),
-      if page.pattern_repair_phase is PatternRepairValidationFailed {
-        let candidate = match page.pattern_repair_candidate {
-          Some(candidate) =>
-            @html.div(class="search-pattern-repair-candidate", [
-              @html.p("Candidate pattern (not applied)"),
-              @html.pre(
-                class="search-pattern-repair-candidate-value",
-                candidate,
-              ),
-            ])
-          None => @html.nothing
-        }
-        let diagnostic = match page.pattern_repair_message {
-          Some(diagnostic) =>
-            @html.pre(class="search-pattern-repair-diagnostic", diagnostic)
-          None => @html.nothing
-        }
-        @html.details(class="search-pattern-repair-details", [
-          @html.summary("Show repair details"),
-          candidate,
-          diagnostic,
-        ])
-      } else {
-        @html.nothing
-      },
+      pattern_repair_details(page),
     ])
   } else {
     @html.nothing

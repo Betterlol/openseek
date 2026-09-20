@@ -42,9 +42,11 @@ test "pattern repair reply decodes its closed status" {
     "valid": false,
     "validation_status": "unavailable",
     "message": "Pattern Repair settings are unavailable.",
+    "trace": ["Agent step 1"],
   })
   assert_true(reply.validation_status is Unavailable)
   assert_true(reply.candidate_pattern is Some("inspect($_)"))
+  assert_eq(reply.trace, ["Agent step 1"])
   @debug.assert_eq(reply.to_json(), {
     "root": "/work/project",
     "generation": 3,
@@ -52,6 +54,7 @@ test "pattern repair reply decodes its closed status" {
     "valid": false,
     "validation_status": "unavailable",
     "message": "Pattern Repair settings are unavailable.",
+    "trace": ["Agent step 1"],
   })
 }
 
@@ -64,6 +67,7 @@ test "pattern repair reply preserves a timeout as a distinct outcome" {
     "valid": false,
     "validation_status": "timed_out",
     "message": "Pattern repair timed out while contacting the AI provider. Check your connection or provider endpoint, then retry.",
+    "trace": ["validate_pattern: failed — expected expression"],
   })
   assert_true(reply.validation_status is TimedOut)
 }
@@ -76,13 +80,16 @@ test "pattern repair failure replies may omit an unsubmitted candidate" {
     "valid": false,
     "validation_status": "failed",
     "message": "max_steps_exhausted",
+    "trace": ["Agent step limit exhausted"],
   })
   assert_true(reply.candidate_pattern is None)
+  assert_eq(reply.trace, ["Agent step limit exhausted"])
   @debug.assert_eq(reply.to_json(), {
     "root": "/work/project",
     "generation": 3,
     "valid": false,
     "validation_status": "failed",
     "message": "max_steps_exhausted",
+    "trace": ["Agent step limit exhausted"],
   })
 }

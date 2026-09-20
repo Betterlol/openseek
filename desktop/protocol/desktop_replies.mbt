@@ -1433,6 +1433,8 @@ pub(all) struct PatternRepairReply {
   valid : Bool
   validation_status : PatternRepairStatus
   message : String
+  /// Bounded, content-filtered progress retained for failure diagnosis.
+  trace : Array[String]
 } derive(Debug, Eq)
 
 ///|
