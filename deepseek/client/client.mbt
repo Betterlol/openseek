@@ -143,10 +143,6 @@ struct StreamHandler {
   on_content_delta : async (String) -> Unit
   on_reasoning_delta : async (String) -> Unit
   on_retry : ((Int, Int, String) -> Unit)?
-  // This is deliberately a closed signal rather than the provider's error
-  // text: consumers can recover from a timeout without receiving request,
-  // endpoint, or transport diagnostics.
-  on_timeout : (() -> Unit)?
 }
 
 ///|
@@ -155,9 +151,8 @@ pub fn StreamHandler::StreamHandler(
   on_content_delta~ : async (String) -> Unit,
   on_reasoning_delta? : async (String) -> Unit = _ => (),
   on_retry? : (Int, Int, String) -> Unit,
-  on_timeout? : () -> Unit,
 ) -> StreamHandler {
-  { on_content_delta, on_reasoning_delta, on_retry, on_timeout, }
+  { on_content_delta, on_reasoning_delta, on_retry, }
 }
 
 ///|
@@ -304,13 +299,7 @@ pub async fn Client::chat(
         ) catch {
           error if @async.is_being_cancelled() ||
             @async.is_cancellation_error(error) => raise error
-          error => {
-            if error is IdleTimeout(_, _) &&
-              stream.on_timeout is Some(on_timeout) {
-              on_timeout()
-            }
-            fail(progress.failure_message(self, error))
-          }
+          error => fail(progress.failure_message(self, error))
         }
       }
     }

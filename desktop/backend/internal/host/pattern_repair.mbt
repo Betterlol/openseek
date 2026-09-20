@@ -1,8 +1,10 @@
 ///|
-/// A bounded wall clock prevents a provider or its retries from holding the
-/// search UI indefinitely. The provider has its own shorter idle timeout;
-/// this remains the final guard for stalled process setup and future clients.
-const PatternRepairWallTimeoutMs = 180_000
+/// Bound the complete Host Agent run, including setup, provider retries, and
+/// candidate submission.
+const PatternRepairWallTimeoutSeconds : Int = 120
+
+///|
+const PatternRepairWallTimeoutMs : Int = PatternRepairWallTimeoutSeconds * 1000
 
 ///|
 const PatternRepairTraceMaxItems : Int = 16
@@ -15,7 +17,7 @@ const PatternRepairTraceOmitted : String = "Earlier events omitted"
 
 ///|
 priv enum PatternRepairProcessOutcome {
-  Finished(Int, String, (String, String)?, Bool, String?, Array[String])
+  Finished(Int, String, (String, String)?, String?, Array[String])
   TimedOut(Array[String])
 }
 
@@ -82,7 +84,6 @@ async fn run_pattern_repair_process(
       let stdout_task = group.spawn(() => {
         defer stdout_reader.close()
         let mut candidate : (String, String)? = None
-        let mut provider_timed_out = false
         let mut agent_error : String? = None
         for ;; {
           let line = stdout_reader.read_until("\n") catch { _ => None }
@@ -110,18 +111,12 @@ async fn run_pattern_repair_process(
             }
             continue
           }
-          let (timed_out, event_error) = pattern_repair_record_event(
-            json,
-            trace.val,
-          )
-          if timed_out {
-            provider_timed_out = true
-          }
+          let event_error = pattern_repair_record_event(json, trace.val)
           if event_error is Some(error) {
             agent_error = Some(pattern_repair_diagnostic(error))
           }
         }
-        (candidate, provider_timed_out, agent_error)
+        (candidate, agent_error)
       })
       let stderr_task = group.spawn(() => {
         defer stderr_reader.close()
@@ -131,29 +126,28 @@ async fn run_pattern_repair_process(
       })
       let code = process.wait()
       stdin_writer.close()
-      let (candidate, provider_timed_out, agent_error) = stdout_task.wait()
+      let (candidate, agent_error) = stdout_task.wait()
       let stderr = stderr_task.wait()
-      (code, stderr, candidate, provider_timed_out, agent_error)
+      (code, stderr, candidate, agent_error)
     })
   })
   match result {
-    Some((code, stderr, candidate, provider_timed_out, agent_error)) =>
-      Finished(
-        code,
-        stderr,
-        candidate,
-        provider_timed_out,
-        agent_error,
-        trace.val.copy(),
+    Some((code, stderr, candidate, agent_error)) =>
+      Finished(code, stderr, candidate, agent_error, trace.val.copy())
+    None => {
+      pattern_repair_trace_push(
+        trace.val,
+        "Host Agent timed out after \{PatternRepairWallTimeoutSeconds} seconds",
       )
-    None => TimedOut(trace.val.copy())
+      TimedOut(trace.val.copy())
+    }
   }
 }
 
 ///|
 /// Keep the child's original terminal event available to the UI. Event names
 /// are only used to identify terminal events; the displayed value remains the
-/// raw provider/agent diagnostic instead of a Host-side error classification.
+/// raw agent diagnostic instead of a Host-side error classification.
 fn pattern_repair_agent_error(json : Json) -> String? {
   guard json is { "event": String(event), .. } else { return None }
   if event == "turn_failed" ||
@@ -177,16 +171,13 @@ fn pattern_repair_agent_error(json : Json) -> String? {
 /// Reduce the child JSONL stream to safe, bounded repair events. Assistant
 /// and reasoning content, tool arguments, and unrelated event payloads are
 /// never retained in the trace.
-fn pattern_repair_record_event(
-  json : Json,
-  trace : Array[String],
-) -> (Bool, String?) {
-  guard json is { "event": String(event), .. } else { return (false, None) }
+fn pattern_repair_record_event(json : Json, trace : Array[String]) -> String? {
+  guard json is { "event": String(event), .. } else { return None }
   if event == "agent_step" {
     if json is { "step": Number(step, ..), .. } {
       pattern_repair_trace_push(trace, "Agent step \{step.to_int()}")
     }
-    return (false, None)
+    return None
   }
   if event == "stream_retry" {
     if json
@@ -200,7 +191,7 @@ fn pattern_repair_record_event(
         "Provider retry \{attempt.to_int()}/\{max_attempts.to_int()}",
       )
     }
-    return (false, None)
+    return None
   }
   if event == "tool_result" {
     guard json
@@ -210,7 +201,7 @@ fn pattern_repair_record_event(
         "is_error": is_error,
         ..
       } else {
-      return (false, None)
+      return None
     }
     if tool_name == "validate_pattern" {
       let result = @json.parse(content) catch { _ => Json::null() }
@@ -230,11 +221,7 @@ fn pattern_repair_record_event(
     } else if tool_name == "submit_pattern_repair" {
       pattern_repair_trace_push(trace, "submit_pattern_repair: returned")
     }
-    return (false, None)
-  }
-  if event == "provider_request_timed_out" {
-    pattern_repair_trace_push(trace, "Provider request timed out")
-    return (true, None)
+    return None
   }
   if pattern_repair_agent_error(json) is Some(error) {
     let summary = if event == "max_steps_exhausted" {
@@ -252,9 +239,9 @@ fn pattern_repair_record_event(
       error
     }
     pattern_repair_trace_push(trace, summary)
-    return (false, Some(error))
+    return Some(error)
   }
-  (false, None)
+  None
 }
 
 ///|
@@ -270,10 +257,6 @@ test "pattern repair preserves raw agent failure diagnostics" {
     Some(diagnostic) => assert_true(diagnostic.contains("max_steps_exhausted"))
     None => assert_true(false)
   }
-  assert_true(
-    pattern_repair_agent_error({ "event": "provider_request_timed_out" })
-    is None,
-  )
 }
 
 ///|
@@ -302,14 +285,13 @@ test "pattern repair trace records steps and raw terminal errors" {
     { "event": "agent_step", "step": 3 },
     trace,
   )
-  let (timed_out, failure) = pattern_repair_record_event(
+  let failure = pattern_repair_record_event(
     {
       "event": "turn_failed",
       "error": "provider response could not be decoded",
     },
     trace,
   )
-  assert_false(timed_out)
   assert_eq(failure, Some("provider response could not be decoded"))
   assert_eq(trace, ["Agent step 3", "provider response could not be decoded"])
 }
@@ -366,11 +348,9 @@ async fn request_pattern_repair_candidate(
   }
   match process {
     TimedOut(trace) => TimedOut(trace)
-    Finished(code, stderr, candidate, provider_timed_out, agent_error, trace) =>
+    Finished(code, stderr, candidate, agent_error, trace) =>
       if candidate is Some((candidate, message)) {
         Candidate(candidate, message, trace)
-      } else if provider_timed_out {
-        TimedOut(trace)
       } else if agent_error is Some(error) {
         Failed(error, trace)
       } else if !stderr.trim().is_empty() {
@@ -434,7 +414,7 @@ async fn pattern_repair_op(
         payload,
         TimedOut,
         None,
-        "Pattern repair timed out while contacting the AI provider. Check your connection or provider endpoint, then retry.",
+        "Pattern Repair Agent timed out after \{PatternRepairWallTimeoutSeconds} seconds. Try again.",
         trace,
       )
     Failed(error, trace) =>

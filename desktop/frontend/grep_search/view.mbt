@@ -271,7 +271,7 @@ fn pattern_repair_failure_label(page : Page) -> String {
         "Pattern repair is unavailable. Check Settings and retry.",
       )
     PatternRepairTimedOut =>
-      "Pattern repair timed out while contacting the AI provider. Check your connection or provider endpoint, then retry."
+      "Pattern Repair Agent timed out after 120 seconds. Try again."
     PatternRepairValidationFailed =>
       "Pattern repair failed. The current pattern was not changed."
     _ => "Pattern repair failed. Update the pattern or retry."
