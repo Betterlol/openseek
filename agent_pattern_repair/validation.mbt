@@ -38,11 +38,19 @@ fn pattern_repair_validator_from_environment() -> Result[
 }
 
 ///|
+/// Raised when Host-side validation rejects the candidate pattern (or the
+/// validator is unavailable). The payload is the parser diagnostic the Agent
+/// can use to repair the pattern.
+priv suberror PatternValidationError {
+  PatternValidationError(String)
+}
+
+///|
 async fn run_pattern_repair_validator(
   validator : PatternRepairValidator,
-  pattern : String,
-  workspace_root : String,
-) -> Result[String, String] {
+  pattern~ : String,
+  workspace_root~ : String,
+) -> Unit {
   let args = validator.prefix_args.copy()
   args.append(["dump", "--expr", pattern, "--strict-check", "--exit-code"])
   let (code, stdout, stderr) = @async.with_task_group(group => {
@@ -82,11 +90,11 @@ async fn run_pattern_repair_validator(
     let code = process.wait()
     (code, stdout_task.wait(), stderr_task.wait())
   }) catch {
-    _ => return Err("Pattern validation is unavailable.")
+    error if @async.is_being_cancelled() || @async.is_cancellation_error(error) =>
+      raise error
+    _ => raise PatternValidationError("Pattern validation is unavailable.")
   }
-  if code == 0 {
-    Ok("")
-  } else {
+  if code != 0 {
     let detail = if !stderr.trim().is_empty() { stderr } else { stdout }
     let detail = detail.trim().to_owned()
     let diagnostic = if detail.is_empty() {
@@ -96,7 +104,7 @@ async fn run_pattern_repair_validator(
     } else {
       detail
     }
-    Err(diagnostic)
+    raise PatternValidationError(diagnostic)
   }
 }
 
@@ -125,15 +133,19 @@ async fn validate_pattern_tool_action(
     Ok(validator) => validator
     Err(message) => return @agent_tool.respond(message, is_error=true)
   }
-  match run_pattern_repair_validator(validator, pattern, workspace_root) {
-    Ok(_) => {
-      validated_pattern.val = Some(pattern)
-      @agent_tool.respond(({ "valid": true } : Json).stringify())
-    }
-    Err(diagnostic) =>
+  try {
+    run_pattern_repair_validator(validator, pattern~, workspace_root~)
+    validated_pattern.val = Some(pattern)
+    @agent_tool.respond(({ "valid": true } : Json).stringify())
+  } catch {
+    PatternValidationError(diagnostic) =>
       @agent_tool.respond(
         ({ "valid": false, "diagnostic": diagnostic } : Json).stringify(),
       )
+    error if @async.is_being_cancelled() || @async.is_cancellation_error(error) =>
+      raise error
+    _ =>
+      @agent_tool.respond("Pattern validation is unavailable.", is_error=true)
   }
 }
 
