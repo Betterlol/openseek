@@ -231,18 +231,39 @@ test('review context survives regrouping and a partial group changes only on exp
   await expect(popup).toBeHidden();
   await expect(page.locator('.composer-changes .changes-chip .mention-jump')).toBeFocused();
   await contextButtons(page).click();
-  await expect(page.getByRole('menuitem', { name: 'Add remaining changes' })).toBeVisible();
-  const menu = page.getByRole('menu');
-  const sash = await page.locator('.moonbit-diff-editor-sash:visible').boundingBox();
-  const menuBounds = await menu.boundingBox();
-  const point = { x: sash.x + sash.width / 2, y: menuBounds.y + menuBounds.height / 2 };
-  expect(point.x).toBeGreaterThan(menuBounds.x);
-  expect(point.x).toBeLessThan(menuBounds.x + menuBounds.width);
-  expect(await menu.evaluate((node, point) => node.contains(document.elementFromPoint(point.x, point.y)), point))
-    .toBe(true);
+  const menu = page.locator('.review-hunk-context-menu');
+  const addRemaining = menu.getByRole('menuitem', { name: 'Add remaining changes' });
+  await expect(menu).toBeVisible();
+  await expect(menu).toHaveAttribute('role', 'menu');
+  await expect(addRemaining).toBeVisible();
+  const geometry = await page.evaluate(() => {
+    const menu = document.querySelector('.review-hunk-context-menu');
+    const sash = [...document.querySelectorAll('.moonbit-diff-editor-sash')]
+      .find(element => {
+        const bounds = element.getBoundingClientRect();
+        return bounds.width > 0 && bounds.height > 0;
+      });
+    if (!menu || !sash) return null;
+    const menuBounds = menu.getBoundingClientRect();
+    const sashBounds = sash.getBoundingClientRect();
+    const point = {
+      x: sashBounds.x + sashBounds.width / 2,
+      y: menuBounds.y + menuBounds.height / 2,
+    };
+    return {
+      menuLeft: menuBounds.x,
+      menuRight: menuBounds.right,
+      pointX: point.x,
+      menuContainsPoint: menu.contains(document.elementFromPoint(point.x, point.y)),
+    };
+  });
+  expect(geometry).not.toBeNull();
+  expect(geometry.pointX).toBeGreaterThan(geometry.menuLeft);
+  expect(geometry.pointX).toBeLessThan(geometry.menuRight);
+  expect(geometry.menuContainsPoint).toBe(true);
   await page.screenshot({ path: testInfo.outputPath('partial-context.png') });
   await page.keyboard.press('ArrowDown');
-  await expect(page.getByRole('menuitem', { name: 'Add remaining changes' })).toBeFocused();
+  await expect(addRemaining).toBeFocused();
   await page.keyboard.press('Enter');
   await expect(contextButtons(page)).toHaveText('In context');
   await expect(contextButtons(page)).toBeFocused();
@@ -254,7 +275,9 @@ test('review context survives regrouping and a partial group changes only on exp
   await expect(contextButtons(page)).toHaveCount(1);
   await expect(contextButtons(page)).toHaveText('Partly in context');
   await contextButtons(page).click();
-  await page.getByRole('menuitem', { name: 'Remove included changes' }).click();
+  await page.locator('.review-hunk-context-menu')
+    .getByRole('menuitem', { name: 'Remove included changes' })
+    .click();
   await expect(page.locator('.composer-changes .changes-chip')).toHaveCount(0);
   await expect(contextButtons(page)).toHaveText('Add to context');
   expect(app.pageErrors).toEqual([]);
