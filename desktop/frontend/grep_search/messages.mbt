@@ -12,21 +12,7 @@ priv enum UiMessage {
   RegularExpression
   RepairingPattern
   FixPattern
-  PatternRepair
-  NoHistory
-  PatternInstruction
-  RepairInstruction
-  SubmitRepair
-  SubmitLabel
   ThinkingLabel
-  ValidationPassed
-  ValidationUnavailable
-  ValidationFailed
-  ValidationUnknown
-  SuggestedPattern
-  RequiresValidation
-  UsePattern
-  DiscardLabel
   InvalidRegex
   InvalidGlob
   UnreadableWorkspace
@@ -109,92 +95,11 @@ fn ui(locale : @i18n.Locale, message : UiMessage) -> String {
     (SimplifiedChinese, FixPattern) => "修复模式"
     (TraditionalChinese, FixPattern) => "修復模式"
     (Japanese, FixPattern) => "パターンを修正"
-    (English, PatternRepair) => "PATTERN REPAIR"
-    (Spanish, PatternRepair) => "REPARACIÓN DE PATRÓN"
-    (SimplifiedChinese, PatternRepair) => "模式修复"
-    (TraditionalChinese, PatternRepair) => "模式修復"
-    (Japanese, PatternRepair) => "パターンの修正"
-    (English, NoHistory) => "One request, no history"
-    (Spanish, NoHistory) => "Una solicitud, sin historial"
-    (SimplifiedChinese, NoHistory) => "单次请求，不保留历史"
-    (TraditionalChinese, NoHistory) => "單次請求，不保留歷史"
-    (Japanese, NoHistory) =>
-      "単発のリクエスト、履歴は保持されません"
-    (English, PatternInstruction) =>
-      "What should this pattern match? e.g. allow labelled arguments"
-    (Spanish, PatternInstruction) =>
-      "¿Qué debe encontrar este patrón? Por ejemplo, permitir argumentos con etiqueta"
-    (SimplifiedChinese, PatternInstruction) =>
-      "此模式应匹配什么？例如：允许标签参数"
-    (TraditionalChinese, PatternInstruction) =>
-      "此模式應匹配什麼？例如：允許標籤引數"
-    (Japanese, PatternInstruction) =>
-      "何に一致するパターンですか？例：ラベル付き引数を許可"
-    (English, RepairInstruction) => "Pattern repair instruction"
-    (Spanish, RepairInstruction) => "Instrucción de reparación del patrón"
-    (SimplifiedChinese, RepairInstruction) => "模式修复说明"
-    (TraditionalChinese, RepairInstruction) => "模式修復說明"
-    (Japanese, RepairInstruction) => "パターン修正の説明"
-    (English, SubmitRepair) => "Submit pattern repair"
-    (Spanish, SubmitRepair) => "Enviar reparación del patrón"
-    (SimplifiedChinese, SubmitRepair) => "提交模式修复"
-    (TraditionalChinese, SubmitRepair) => "提交模式修復"
-    (Japanese, SubmitRepair) => "パターン修正を送信"
-    (English, SubmitLabel) => "Submit"
-    (Spanish, SubmitLabel) => "Enviar"
-    (SimplifiedChinese, SubmitLabel) => "提交"
-    (TraditionalChinese, SubmitLabel) => "提交"
-    (Japanese, SubmitLabel) => "送信"
     (English, ThinkingLabel) => "Thinking"
     (Spanish, ThinkingLabel) => "Pensando"
     (SimplifiedChinese, ThinkingLabel) => "思考中"
     (TraditionalChinese, ThinkingLabel) => "思考中"
     (Japanese, ThinkingLabel) => "思考中"
-    (English, ValidationPassed) => "Validation passed"
-    (Spanish, ValidationPassed) => "Validación superada"
-    (SimplifiedChinese, ValidationPassed) => "验证通过"
-    (TraditionalChinese, ValidationPassed) => "驗證透過"
-    (Japanese, ValidationPassed) => "検証済み"
-    (English, ValidationUnavailable) => "Validation unavailable"
-    (Spanish, ValidationUnavailable) => "Validación no disponible"
-    (SimplifiedChinese, ValidationUnavailable) => "验证不可用"
-    (TraditionalChinese, ValidationUnavailable) => "驗證不可用"
-    (Japanese, ValidationUnavailable) => "検証できません"
-    (English, ValidationFailed) => "Validation failed"
-    (Spanish, ValidationFailed) => "Validación fallida"
-    (SimplifiedChinese, ValidationFailed) => "验证失败"
-    (TraditionalChinese, ValidationFailed) => "驗證失敗"
-    (Japanese, ValidationFailed) => "検証に失敗しました"
-    (English, ValidationUnknown) => "Validation status unknown"
-    (Spanish, ValidationUnknown) => "Estado de validación desconocido"
-    (SimplifiedChinese, ValidationUnknown) => "验证状态未知"
-    (TraditionalChinese, ValidationUnknown) => "驗證狀態未知"
-    (Japanese, ValidationUnknown) => "検証状態が不明です"
-    (English, SuggestedPattern) => "SUGGESTED PATTERN"
-    (Spanish, SuggestedPattern) => "PATRÓN SUGERIDO"
-    (SimplifiedChinese, SuggestedPattern) => "建议的模式"
-    (TraditionalChinese, SuggestedPattern) => "建議的模式"
-    (Japanese, SuggestedPattern) => "提案されたパターン"
-    (English, RequiresValidation) =>
-      "This candidate cannot be applied until validation passes."
-    (Spanish, RequiresValidation) =>
-      "No se puede aplicar este candidato hasta que supere la validación."
-    (SimplifiedChinese, RequiresValidation) =>
-      "通过验证后才能应用此候选模式。"
-    (TraditionalChinese, RequiresValidation) =>
-      "透過驗證後才能應用此候選模式。"
-    (Japanese, RequiresValidation) =>
-      "検証に成功した候補のみ適用できます。"
-    (English, UsePattern) => "Use pattern"
-    (Spanish, UsePattern) => "Usar patrón"
-    (SimplifiedChinese, UsePattern) => "使用此模式"
-    (TraditionalChinese, UsePattern) => "使用此模式"
-    (Japanese, UsePattern) => "このパターンを使用"
-    (English, DiscardLabel) => "Discard"
-    (Spanish, DiscardLabel) => "Descartar"
-    (SimplifiedChinese, DiscardLabel) => "放弃"
-    (TraditionalChinese, DiscardLabel) => "放棄"
-    (Japanese, DiscardLabel) => "破棄"
     (English, InvalidRegex) => "Invalid regular expression"
     (Spanish, InvalidRegex) => "Expresión regular no válida"
     (SimplifiedChinese, InvalidRegex) => "正则表达式无效"
