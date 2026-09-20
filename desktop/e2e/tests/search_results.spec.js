@@ -107,18 +107,15 @@ test('code search repairs a pattern in one click', async ({ page }) => {
   const app = new DesktopBrowserHarness(page);
   const replyFor = app.replyFor.bind(app);
   let repairRequest;
-  app.rpcDelays.set('pattern.repair', 30);
+  let resolveRepairReply;
+  let signalRepairRequest;
+  const repairReply = new Promise(resolve => { resolveRepairReply = resolve; });
+  const repairRequestStarted = new Promise(resolve => { signalRepairRequest = resolve; });
   app.replyFor = request => {
     if (request.method === 'pattern.repair') {
       repairRequest = request.params;
-      return {
-        root: request.params.root,
-        generation: request.params.generation,
-        candidate_pattern: 'inspect($_)',
-        valid: true,
-        validation_status: 'passed',
-        message: 'Repaired.',
-      };
+      signalRepairRequest();
+      return repairReply;
     }
     return replyFor(request);
   };
@@ -133,14 +130,35 @@ test('code search repairs a pattern in one click', async ({ page }) => {
   await pattern.fill('inspect($(x:arg');
   await expect(page.getByRole('button', { name: 'Fix Pattern', exact: true })).toBeVisible();
   const repair = page.locator('.pattern-repair-button');
-  await repair.click();
-  await expect(repair).toBeDisabled();
-  await expect(page.locator('.search-pattern-repair-status')).toHaveText('Repairing pattern…');
+  const repairStatus = page.locator('.search-pattern-repair-status');
+  try {
+    await repair.click();
+    await expect(repair).toBeDisabled();
+    await repairRequestStarted;
+    await expect(repairStatus).toContainText('Thinking');
+    expect(repairRequest).toMatchObject({
+      pattern: 'inspect($(x:arg',
+      instruction: 'Repair this MoonBit pattern with the smallest syntax-only change.',
+    });
+    expect(repairRequest.root).toBeTruthy();
+    expect(Number.isInteger(repairRequest.generation)).toBe(true);
+    expect(app.requests.filter(request => request.method === 'pattern.repair')).toHaveLength(1);
+  } finally {
+    if (repairRequest) {
+      resolveRepairReply({
+        root: repairRequest.root,
+        generation: repairRequest.generation,
+        candidate_pattern: 'inspect($_)',
+        valid: true,
+        validation_status: 'passed',
+        message: 'Repaired.',
+        trace: [],
+      });
+    }
+  }
   await expect(pattern).toHaveValue('inspect($_)');
-  await expect(page.locator('.search-pattern-repair-status')).toBeHidden();
-  expect(repairRequest.instruction).toBe(
-    'Repair this MoonBit pattern with the smallest syntax-only change.',
-  );
+  await expect(repairStatus).toBeHidden();
+  await expect(repair).toBeEnabled();
   await expect.poll(() => app.requests
     .filter(request => request.method === 'fs.search_semantic')
     .at(-1)?.params?.patterns?.[0]).toBe('inspect($_)');
