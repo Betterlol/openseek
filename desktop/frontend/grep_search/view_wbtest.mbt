@@ -101,19 +101,17 @@ test "Code search repairs one pattern without a composer or preview" {
       PatternRepairTimedOut(
         root=root.path,
         generation=semantic.page.generation,
-        trace=["Agent step 2", "Provider request timed out"],
+        trace=["Agent step 2", "Host Agent timed out after 120 seconds"],
       ),
       input,
     )
   let timed_out_html = render_search(timed_out, input)
   assert_true(
-    timed_out_html.contains(
-      "Pattern repair timed out while contacting the AI provider.",
-    ),
+    timed_out_html.contains("Pattern Repair Agent timed out after 120 seconds."),
   )
   assert_true(timed_out_html.contains("Retry pattern repair"))
   assert_true(timed_out_html.contains("Show repair details"))
-  assert_true(timed_out_html.contains("Provider request timed out"))
+  assert_true(timed_out_html.contains("Host Agent timed out after 120 seconds"))
   let validation_failed = semantic
     .handle(FixPattern, input)
     .handle(

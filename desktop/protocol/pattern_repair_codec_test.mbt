@@ -66,7 +66,7 @@ test "pattern repair reply preserves a timeout as a distinct outcome" {
     "candidate_pattern": "inspect($_)",
     "valid": false,
     "validation_status": "timed_out",
-    "message": "Pattern repair timed out while contacting the AI provider. Check your connection or provider endpoint, then retry.",
+    "message": "Pattern Repair Agent timed out after 120 seconds. Try again.",
     "trace": ["validate_pattern: failed — expected expression"],
   })
   assert_true(reply.validation_status is TimedOut)
