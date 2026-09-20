@@ -139,3 +139,70 @@ test('Codex semantic chip opens the selected search results', async ({ page }) =
   await expect(page.locator('.search-semantic-hit')).toHaveCount(2);
   expect(app.pageErrors).toEqual([]);
 });
+
+for (const worktree of [false, true]) {
+  test(`Codex materializes large selections before start and steer (${worktree ? 'worktree' : 'local'})`, async ({ page }) => {
+    const app = new DesktopBrowserHarness(page);
+    app.codexModels = [{ id: 'gpt-5.4-codex', displayName: 'GPT-5.4 Codex', isDefault: true,
+      defaultReasoningEffort: 'medium', supportedReasoningEfforts: [{ reasoningEffort: 'medium', description: 'Balanced' }] }];
+    app.semanticSearchMatches = Array.from({ length: 101 }, (_, index) => ({
+      path: 'src/main.mbt', rule_id: 'inspect($(x:arg))',
+      start_line: index + 1, start_column: 1, end_line: index + 1, end_column: 11,
+      matched_source: 'inspect(x)', source_context: [],
+    }));
+    const method = 'fs.materialize_semantic_selection';
+    const root = worktree ? '/workspace/worktrees/semantic-e2e' : '/workspace';
+    const path = '.openseek/agent-context/semantic-search/selection.jsonl';
+    const replyFor = app.replyFor.bind(app);
+    app.replyFor = request => {
+      if (request.method === method) return { path, match_count: 101, file_count: 1 };
+      if (request.method === 'worktree.create') return { name: 'semantic-e2e', worktrees: [{
+        name: 'semantic-e2e', branch: 'test', base: 'main', path: root, present: true,
+        codex_thread: 'codex-thread-e2e',
+      }] };
+      if (request.method === 'codex.thread.resume') return { thread: { id: 'codex-thread-e2e', cwd: root, turns: [] } };
+      if (request.method === 'codex.turn.steer') return { turnId: 'codex-turn-e2e' };
+      return replyFor(request);
+    };
+    app.rpcErrors.set(method, 'disk full');
+    await app.install();
+    await app.goto();
+    await page.getByRole('button', { name: 'Model', exact: true }).click();
+    await page.getByRole('option', { name: 'GPT-5.4 Codex' }).click();
+    if (worktree) await page.locator('button.composer-worktree').click();
+    await page.keyboard.press(await page.evaluate(() =>
+      navigator.platform.includes('Mac') ? 'Meta+Shift+F' : 'Control+Shift+F'));
+    await page.getByRole('button', { name: 'Code search', exact: true }).click();
+    await page.getByRole('textbox', { name: 'pattern', exact: true }).fill('inspect($(x:arg))');
+    await page.getByLabel('Select pattern', { exact: true }).click();
+    const composer = page.locator('#task');
+    await composer.fill('Inspect selected matches');
+    expect(app.requests.filter(request => request.method === method)).toHaveLength(0);
+    await page.getByTitle('Send', { exact: true }).click();
+    await expect(page.getByText('Codex turn: disk full', { exact: true })).toBeVisible();
+    await expect(composer).toHaveValue('Inspect selected matches');
+    expect(app.requests.filter(request => request.method === 'codex.turn.start')).toHaveLength(0);
+    app.rpcErrors.delete(method);
+    await page.getByTitle('Send', { exact: true }).click();
+    await expect.poll(() => app.requests.filter(request => request.method === 'codex.turn.start').length).toBe(1);
+    const started = app.requests.find(request => request.method === 'codex.turn.start');
+    expect(started.params.input).toContainEqual({ type: 'mention', name: 'selection.jsonl', path: `${root}/${path}` });
+    expect(JSON.stringify(started.params.input)).not.toContain('<match file=');
+    expect(app.requests.filter(request => request.method === method).map(request => request.params.root)).toEqual([root, root]);
+    await expect(page.locator('.mention-chip')).toHaveCount(0);
+    // The new thread has its own search state; select again for a running turn.
+    await page.keyboard.press(await page.evaluate(() =>
+      navigator.platform.includes('Mac') ? 'Meta+Shift+F' : 'Control+Shift+F'));
+    await page.getByRole('button', { name: 'Code search', exact: true }).click();
+    await page.getByRole('textbox', { name: 'pattern', exact: true }).fill('inspect($(x:arg))');
+    await page.getByLabel('Select pattern', { exact: true }).click();
+    await expect(page.locator('.mention-chip')).toContainText('101 matches');
+    await composer.fill('Inspect these too');
+    await page.getByTitle('Steer the running task', { exact: true }).click();
+    await expect.poll(() => app.requests.filter(request => request.method === 'codex.turn.steer').length).toBe(1);
+    const steered = app.requests.find(request => request.method === 'codex.turn.steer');
+    expect(steered.params.input).toContainEqual({ type: 'mention', name: 'selection.jsonl', path: `${root}/${path}` });
+    expect(JSON.stringify(steered.params.input)).not.toContain('<match file=');
+    expect(app.pageErrors).toEqual([]);
+  });
+}

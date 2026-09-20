@@ -435,51 +435,107 @@ fn State::send(
 ) -> @cmd.Cmd {
   guard self.active_thread() is Some(active) else { return @cmd.none }
   guard !self.input_empty() else { return @cmd.none }
-  let inputs = self.turn_inputs()
-  if self.active_turn_id() is Some(turn_id) {
-    CodexTurnSteerReply(active.id).request(
-      dispatch,
-      channel,
-      @commands.codex_turn_steer,
-      { thread_id: active.id, input: inputs, expected_turn_id: turn_id, },
-    )
-  } else {
-    if self.placement.wants_fresh() && active.turns.is_empty() {
-      let workspace = active.project_root.unwrap_or_else(() => {
-        active.cwd.unwrap_or("")
-      })
-      return self.start_turn_in_new_worktree(
-        dispatch, channel, active, workspace, inputs,
-      )
-    }
-    let model = self.selected_model.trim().to_owned()
-    let effort = self.selected_effort.trim().to_owned()
-    CodexTurnStartReply(active.id).request(
-      dispatch,
-      channel,
-      @commands.codex_turn_start,
-      {
-        thread_id: active.id,
-        input: inputs,
-        model: if model.is_empty() {
-          None
-        } else {
-          Some(model)
-        },
-        effort: if effort.is_empty() {
-          None
-        } else {
-          Some(effort)
-        },
-        // A sibling frontend may have received the host's registry commit
-        // while this send was waiting for thread/resume. Reassert that exact
-        // binding instead of relying on another client's `turn/start` to
-        // update app-server cwd first.
-        cwd: self.registry_turn_cwd(),
-        permission_mode: self.permission_mode(),
-      },
-    )
+  if self.active_turn_id() is None &&
+    self.placement.wants_fresh() &&
+    active.turns.is_empty() {
+    let workspace = active.project_root.unwrap_or_else(() => {
+      active.cwd.unwrap_or("")
+    })
+    return self.start_turn_in_new_worktree(dispatch, channel, active, workspace)
   }
+  let turn_id = self.active_turn_id()
+  let kind = match turn_id {
+    Some(_) => CodexTurnSteerReply(active.id)
+    None => CodexTurnStartReply(active.id)
+  }
+  @cmd.custom_cmd(scheduler => {
+    @js.async_run(() => {
+      let inputs = self.materialized_turn_inputs(channel, active.cwd) catch {
+        error => {
+          scheduler.add(
+            dispatch(Failed(kind~, message=@interop.bridge_error_text(error))),
+          )
+          return
+        }
+      }
+      let command = if turn_id is Some(turn_id) {
+        kind.request(dispatch, channel, @commands.codex_turn_steer, {
+          thread_id: active.id,
+          input: inputs,
+          expected_turn_id: turn_id,
+        })
+      } else {
+        let model = self.selected_model.trim().to_owned()
+        let effort = self.selected_effort.trim().to_owned()
+        kind.request(dispatch, channel, @commands.codex_turn_start, {
+          thread_id: active.id,
+          input: inputs,
+          model: if model.is_empty() {
+            None
+          } else {
+            Some(model)
+          },
+          effort: if effort.is_empty() {
+            None
+          } else {
+            Some(effort)
+          },
+          cwd: self.registry_turn_cwd(),
+          permission_mode: self.permission_mode(),
+        })
+      }
+      scheduler.add(command)
+    })
+  })
+}
+
+///|
+/// Materialize from the captured send state, using the checkout that will
+/// receive this turn. Keep the editable draft intact if preparation fails.
+async fn State::materialized_turn_inputs(
+  self : State,
+  channel : @interop.ChannelId,
+  cwd : String?,
+) -> Array[Json] {
+  let mentions : Array[@composer.Mention] = []
+  for mention in self.mentions {
+    if mention.ref_ is @mention_context.SemanticSearch(reference) &&
+      !reference.is_inlineable() {
+      let root = cwd.unwrap_or(reference.root)
+      let reply : @protocol.MaterializeSemanticSelectionReply = @interop.bridge_request(
+        channel,
+        @commands.fs_materialize_semantic_selection,
+        {
+          root,
+          artifact_id: reference.id,
+          patterns: reference.patterns,
+          include_glob: reference.include_glob,
+          exclude_glob: reference.exclude_glob,
+          matches: reference.matches.map(hit => {
+            rule_id: hit.rule_id,
+            description: hit.description,
+            file: hit.file,
+            start_line: hit.start_line,
+            start_column: hit.start_column,
+            end_line: hit.end_line,
+            end_column: hit.end_column,
+            matched_source: hit.matched_source,
+          }),
+        },
+      )
+      mentions.push({
+        ..mention,
+        ref_: @mention_context.SemanticSearchArtifact({
+          path: "\{root}/\{reply.path}",
+          pattern_count: reference.patterns.length(),
+          match_count: reply.match_count,
+        }),
+      })
+    } else {
+      mentions.push(mention)
+    }
+  }
+  { ..self, mentions, }.turn_inputs()
 }
 
 ///|
@@ -529,7 +585,6 @@ fn State::start_turn_in_new_worktree(
   channel : @interop.ChannelId,
   active : CodexThread,
   workspace : String,
-  inputs : Array[Json],
 ) -> @cmd.Cmd {
   let thread_id = active.id
   let model = self.selected_model.trim().to_owned()
@@ -578,6 +633,22 @@ fn State::start_turn_in_new_worktree(
               ),
             )
             return
+          }
+          let inputs = self.materialized_turn_inputs(
+            channel,
+            Some(worktree.path),
+          ) catch {
+            error => {
+              scheduler.add(
+                dispatch(
+                  Failed(
+                    kind=CodexWorktreeTurnReply(thread_id, worktree),
+                    message=@interop.bridge_error_text(error),
+                  ),
+                ),
+              )
+              return
+            }
           }
           let reply : @protocol.CodexTurnReply = @interop.codex_request(
             channel,
