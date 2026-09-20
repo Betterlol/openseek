@@ -2893,7 +2893,7 @@ fn update_inner(
       })
       let selection_changed = next.search.selected_semantic_hits() !=
         state.search.selected_semantic_hits()
-      let selection_command = if selection_changed && next.search.is_semantic() {
+      let selection_command = if selection_changed {
         @cmd.custom_cmd(scheduler => {
           scheduler.add(
             dispatch(

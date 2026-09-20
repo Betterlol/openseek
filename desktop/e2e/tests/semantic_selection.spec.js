@@ -39,6 +39,12 @@ test('semantic selection follows match, file, and pattern controls', async ({ pa
   await results.getByRole('button', { name: 'Clear selection', exact: true }).click();
   await expect(results.getByRole('button', { name: 'Select match', exact: true })).toHaveCount(3);
   await expect(chip).toHaveCount(0);
+  await results.getByRole('button', { name: 'Select match', exact: true }).first().click();
+  await expect(chip).toContainText('1 matches');
+  await page.getByRole('button', { name: 'Text search', exact: true }).click();
+  await expect(chip).toHaveCount(0);
+  await page.getByRole('button', { name: 'Code search', exact: true }).click();
+  await expect(chip).toHaveCount(0);
   expect(app.pageErrors).toEqual([]);
 });
 
