@@ -1381,7 +1381,7 @@ pub(all) struct MaterializeSemanticSelectionReply {
   path : String
   match_count : Int
   file_count : Int
-} derive(Debug, Eq, FromJson, ToJson)
+} derive(Debug, Eq)
 
 ///|
 pub impl ToJson for ReadFileReply with fn to_json(self) {
