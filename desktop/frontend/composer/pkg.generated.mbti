@@ -102,6 +102,7 @@ pub fn Draft::to_repr(Self) -> @debug.Repr
 pub fn Draft::user_item(Self) -> @transcript.ItemKind
 pub fn Draft::with_mention(Self, Mention) -> Self
 pub fn Draft::with_review_changes(Self, @mention_context.ReviewChanges, adding~ : Bool) -> Self
+pub fn Draft::with_semantic_selection(Self, @mention_context.SemanticSearchReference?, preparing? : @mention_context.SemanticSearchReference?) -> Self
 
 pub(all) enum FileIndex {
   FileIndexEmpty(epoch~ : Int)

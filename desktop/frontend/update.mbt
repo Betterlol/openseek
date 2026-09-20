@@ -3170,25 +3170,22 @@ fn update_msg(
         conv.session_id == owner.session else {
         return (@cmd.none, model)
       }
-      let mentions = conv.mentions.filter(mention => {
-        let keep_pending = match mention.ref_ {
-          @mention_context.SemanticSearchPending(current) =>
-            conv.pending_semantic_submission is Some(pending) &&
-            current == pending.reference
-          _ => false
-        }
-        keep_pending ||
-        !(mention.ref_ is @mention_context.SemanticSearch(_) ||
-        mention.ref_ is @mention_context.SemanticSearchArtifact(_) ||
-        mention.ref_ is @mention_context.SemanticSearchPending(_))
-      })
-      let mentions = match reference {
-        Some(reference) =>
-          mentions +
-          [{ ref_: @mention_context.SemanticSearch(reference), range: None, }]
-        None => mentions
+      let draft : @composer.Draft = {
+        task: conv.task,
+        mentions: conv.mentions,
+        images: [],
       }
-      (@cmd.none, model.replace_conversation({ ..conv, mentions, }))
+      // Keep the in-flight snapshot while replacing only the next selection.
+      let next = draft.with_semantic_selection(
+        reference,
+        preparing=conv.pending_semantic_submission.map(pending => {
+          pending.reference
+        }),
+      )
+      (
+        @cmd.none,
+        model.replace_conversation({ ..conv, mentions: next.mentions, }),
+      )
     }
     // Intercepted like the comment above: which dock tab a tree click opens
     // is the strip's business. The dock opens (or re-activates) the tab,

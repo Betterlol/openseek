@@ -308,6 +308,33 @@ fn Input::completion(
 }
 
 ///|
+/// Replace the live search selection while retaining unrelated mentions.
+/// The caller may protect the snapshot currently being prepared for sending;
+/// every other semantic mention belongs to the selection being replaced.
+pub fn Draft::with_semantic_selection(
+  self : Draft,
+  reference : @mention_context.SemanticSearchReference?,
+  preparing? : @mention_context.SemanticSearchReference? = None,
+) -> Draft {
+  let mentions = self.mentions.filter(mention => {
+    match mention.ref_ {
+      @mention_context.SemanticSearch(_)
+      | @mention_context.SemanticSearchArtifact(_) => false
+      @mention_context.SemanticSearchPending(current) =>
+        preparing == Some(current)
+      _ => true
+    }
+  })
+  if reference is Some(reference) {
+    mentions.push({
+      ref_: @mention_context.SemanticSearch(reference),
+      range: None,
+    })
+  }
+  { ..self, mentions, }
+}
+
+///|
 /// Review selections are root-authored, just like editor feedback. Ordinary
 /// local chips keep their exact selection ranges while these are reconciled.
 pub fn Draft::with_review_changes(
