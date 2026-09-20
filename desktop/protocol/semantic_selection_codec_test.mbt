@@ -1,6 +1,7 @@
 ///|
 test "semantic selection codecs omit absent metadata and ignore unknown fields" {
   let wire_match : Json = {
+    "rule_id": "rule",
     "file": "main.mbt",
     "start_line": 1,
     "start_column": 1,
@@ -10,23 +11,18 @@ test "semantic selection codecs omit absent metadata and ignore unknown fields" 
   }
   guard wire_match is Object(fields) else { fail("expected object") }
   let with_metadata = fields.copy()
-  with_metadata["rule_id"] = Json::null()
   with_metadata["description"] = Json::null()
   with_metadata["future"] = Json(true)
-  let hit : @protocol.SemanticSelectionMatchPayload = @json.from_json(
+  let hit : @protocol.SemanticSelectionMatch = @json.from_json(
     Json(with_metadata),
   )
   @debug.assert_eq(hit.to_json(), wire_match)
-  let missing : @protocol.SemanticSelectionMatchPayload = @json.from_json(
-    wire_match,
-  )
+  let missing : @protocol.SemanticSelectionMatch = @json.from_json(wire_match)
   assert_eq(missing, hit)
-  with_metadata["rule_id"] = Json("rule")
   with_metadata["description"] = Json("description")
-  let present : @protocol.SemanticSelectionMatchPayload = @json.from_json(
+  let present : @protocol.SemanticSelectionMatch = @json.from_json(
     Json(with_metadata),
   )
-  assert_eq(present.rule_id, Some("rule"))
   assert_eq(present.description, Some("description"))
   let payload : @protocol.MaterializeSemanticSelectionPayload = @json.from_json({
       "root": "/workspace",
@@ -60,6 +56,7 @@ test "semantic selection codecs omit absent metadata and ignore unknown fields" 
 ///|
 test "semantic selection codecs reject missing null and malformed required fields" {
   let match_fields : Map[String, Json] = {
+    "rule_id": Json("rule"),
     "file": Json("main.mbt"),
     "start_line": Json(1),
     "start_column": Json(1),
@@ -93,9 +90,7 @@ test "semantic selection codecs reject missing null and malformed required field
         let accepted = try {
           if fields.contains("file") {
             ignore(
-              (
-                @json.from_json(Json(invalid)) :
-                @protocol.SemanticSelectionMatchPayload),
+              (@json.from_json(Json(invalid)) : @protocol.SemanticSelectionMatch),
             )
           } else if fields.contains("root") {
             ignore(
@@ -118,14 +113,12 @@ test "semantic selection codecs reject missing null and malformed required field
       }
     }
   }
-  for key in ["rule_id", "description"] {
-    let invalid = match_fields.copy()
-    invalid[key] = Json(7)
-    let decoded : @protocol.SemanticSelectionMatchPayload? = Some(
-      @json.from_json(Json(invalid)),
-    ) catch {
-      _ => None
-    }
-    assert_eq(decoded, None)
+  let invalid = match_fields.copy()
+  invalid["description"] = Json(7)
+  let decoded : @protocol.SemanticSelectionMatch? = Some(
+    @json.from_json(Json(invalid)),
+  ) catch {
+    _ => None
   }
+  assert_eq(decoded, None)
 }

@@ -121,19 +121,8 @@ pub fn State::empty() -> State {
 }
 
 ///|
-/// Return the semantic hits currently selected in the Search explorer.
-pub fn State::selected_semantic_hits(
-  self : State,
-) -> Array[@protocol.SemanticSearchHit] {
-  selected_semantic_hits(self.page.semantic.hits, self.page.selected)
-}
-
-///|
-pub fn State::is_semantic(self : State) -> Bool {
-  self.page.mode is Semantic
-}
-
-///|
+/// The semantic hits currently selected in the Search explorer as one
+/// composer mention, or `None` when nothing is selected.
 pub fn State::selected_semantic_reference(
   self : State,
   root : String,
@@ -160,7 +149,7 @@ fn Page::selected_semantic_reference(
     include_glob: self.include_glob,
     exclude_glob: self.exclude_glob,
     matches: matches.map(hit => {
-      rule_id: Some(hit.rule_id),
+      rule_id: hit.rule_id,
       description: hit.description,
       file: hit.path,
       start_line: hit.start_line,

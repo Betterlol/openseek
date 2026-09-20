@@ -78,20 +78,19 @@ test('large semantic selection retries and sends its original draft while later 
   await composer.fill('Inspect the original selection');
   await page.getByTitle('Send', { exact: true }).click();
   await expect(page.getByText('Could not prepare semantic-search selection: disk full', { exact: true })).toBeVisible();
-  await expect(chips).not.toContainText('preparing');
+  await expect(composer).toBeEnabled();
   await expect(composer).toHaveValue('Inspect the original selection');
   expect(app.requests.filter(request => request.method === 'agent.start')).toHaveLength(0);
 
   app.rpcErrors.delete(method);
   await page.getByTitle('Send', { exact: true }).click();
-  await expect(chips).toContainText('preparing file');
+  await expect(composer).toBeDisabled();
   await expect.poll(() => app.requests.filter(request => request.method === method).length).toBe(2);
   const attempts = app.requests.filter(request => request.method === method);
   expect(attempts[1].params).toEqual(attempts[0].params);
   expect(attempts[1].params.matches).toHaveLength(101);
 
   // Preparing disables text input, but search selection remains interactive.
-  await expect(composer).toBeDisabled();
   await page.getByRole('button', { name: 'Deselect match', exact: true }).first().click();
   await expect(chips.filter({ hasText: '100 matches' })).toHaveCount(1);
   expect(app.requests.filter(request => request.method === 'agent.start')).toHaveLength(0);
@@ -101,7 +100,6 @@ test('large semantic selection retries and sends its original draft while later 
     .toContain(`<semantic_search_file path="${path}" patterns="1" matches="101">`);
   const sent = app.requests.find(request => request.method === 'agent.start').params.task;
   expect(sent).toContain('Inspect the original selection');
-  expect(sent).not.toContain('semantic_search_pending');
   await expect(composer).toBeEnabled();
   await expect(composer).toHaveValue('');
   await expect(chips).toHaveCount(1);
@@ -110,6 +108,62 @@ test('large semantic selection retries and sends its original draft while later 
   expect(app.pageErrors).toEqual([]);
 });
 
+
+test('queued message Edit waits for semantic preparation so the send keeps its draft and target', async ({ page }) => {
+  const app = new DesktopBrowserHarness(page);
+  app.semanticSearchMatches = Array.from({ length: 101 }, (_, index) => ({
+    path: 'src/main.mbt', rule_id: 'inspect($(x:arg))',
+    start_line: index + 1, start_column: 1, end_line: index + 1, end_column: 11,
+    matched_source: 'inspect(x)', source_context: [],
+  }));
+  const materialization = Promise.withResolvers();
+  const replyFor = app.replyFor.bind(app);
+  app.replyFor = request => request.method === 'fs.materialize_semantic_selection'
+    ? materialization.promise : replyFor(request);
+  await app.install();
+  await app.goto();
+  await app.openSession();
+  const composer = page.locator('#task');
+  await composer.fill('Start a turn');
+  await page.getByTitle('Send', { exact: true }).click();
+  const choice = page.getByRole('button', { name: 'Follow-up action', exact: true });
+  await expect(choice).toContainText('Steer now');
+  await composer.fill('Queued draft to preserve');
+  await choice.click();
+  await page.getByRole('option', { name: 'Queue next', exact: true }).click();
+  await composer.press('Enter');
+  const queued = page.locator('.queued-input-row');
+  await expect(queued).toContainText('Queued draft to preserve');
+
+  await page.keyboard.press(await page.evaluate(() =>
+    navigator.platform.includes('Mac') ? 'Meta+Shift+F' : 'Control+Shift+F'));
+  await page.getByRole('button', { name: 'Code search', exact: true }).click();
+  await page.getByRole('textbox', { name: 'pattern', exact: true }).fill('inspect($(x:arg))');
+  await page.getByLabel('Select pattern', { exact: true }).click();
+  await composer.fill('Inspect the original selection');
+  await page.getByTitle('Steer the running task', { exact: true }).click();
+  await expect(composer).toBeDisabled();
+  // Edit is inert while the frozen draft waits for its file.
+  await queued.getByTitle('Edit', { exact: true }).click();
+  await expect(composer).toHaveValue('Inspect the original selection');
+  const path = '.openseek/agent-context/semantic-search/selection.jsonl';
+  materialization.resolve({ path, match_count: 101, file_count: 1 });
+  await expect(composer).toBeEnabled();
+  await expect(composer).toHaveValue('');
+  await expect.poll(() => app.requests.find(request => request.method === 'agent.steer')?.params.text)
+    .toContain(`<semantic_search_file path="${path}" patterns="1" matches="101">`);
+  expect(app.requests.find(request => request.method === 'agent.steer').params.text)
+    .toContain('Inspect the original selection');
+  expect(app.requests.filter(request => request.method === 'agent.queue' && request.params.action === 'edit'))
+    .toHaveLength(0);
+  await expect(queued).toContainText('Queued draft to preserve');
+  await queued.getByTitle('Edit', { exact: true }).click();
+  await expect(composer).toHaveValue('Queued draft to preserve');
+  await composer.fill('Edited after preparation');
+  await page.getByTitle('Save queued message', { exact: true }).click();
+  await expect(queued).toContainText('Edited after preparation');
+  expect(app.pageErrors).toEqual([]);
+});
 
 for (const provider of ['OpenSeek new chat', 'OpenSeek session', 'Codex']) {
   test(`${provider} semantic chip opens the selected search results`, async ({ page }) => {
@@ -242,7 +296,7 @@ for (const clear of [false, true]) {
     const chips = page.locator('.mention-chip');
     await composer.fill('Inspect selected matches');
     await page.getByTitle('Send', { exact: true }).click();
-    await expect(chips).toContainText('preparing file');
+    await expect(composer).toBeDisabled();
     if (clear) await page.getByRole('button', { name: 'Clear selection', exact: true }).click();
     else await page.getByRole('button', { name: 'Deselect match', exact: true }).first().click();
     await expect(page.getByText('Could not prepare semantic-search selection: disk full', { exact: true })).toBeVisible();
@@ -254,7 +308,6 @@ for (const clear of [false, true]) {
     const sent = app.requests.find(request => request.method === 'agent.start').params.task;
     expect(sent.match(/<match file=/g) || []).toHaveLength(clear ? 0 : 100);
     expect(sent).not.toContain('semantic_search_file');
-    expect(sent).not.toContain('semantic_search_pending');
     expect(app.requests.filter(request => request.method === method)).toHaveLength(1);
     expect(app.pageErrors).toEqual([]);
   });

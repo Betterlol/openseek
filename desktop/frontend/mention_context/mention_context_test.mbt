@@ -58,7 +58,7 @@ test "semantic search mentions round-trip as one aggregate reference" {
     exclude_glob: "src/generated/**",
     matches: [
       {
-        rule_id: Some("inspect-rule"),
+        rule_id: "inspect-rule",
         description: None,
         file: "src/main.mbt",
         start_line: 4,
@@ -68,7 +68,7 @@ test "semantic search mentions round-trip as one aggregate reference" {
         matched_source: "inspect(x)",
       },
       {
-        rule_id: Some("match-rule"),
+        rule_id: "match-rule",
         description: Some("match expressions"),
         file: "src/other.mbt",
         start_line: 9,
@@ -109,31 +109,6 @@ test "large semantic searches round-trip as a JSONL file reference" {
   }
   assert_eq(parsed.mentions, [mention])
   assert_eq(parsed.task, "Inspect this selection")
-}
-
-///|
-test "parse accepts the legacy semantic match wrapper" {
-  let content =
-    #|<user_mentions>
-    #|<semantic_search id="legacy" root="/work" include="" exclude="">
-    #|<pattern>
-    #|inspect($(x:arg))
-    #|</pattern>
-    #|<match pattern="inspect($(x:arg))" file="src/main.mbt" lines="4-4" columns="1-12">
-    #|<matched_source>
-    #|inspect(x)
-    #|</matched_source>
-    #|</match>
-    #|</semantic_search>
-    #|</user_mentions>
-  guard @mention_context.parse(content) is Some(parsed) else {
-    fail("expected legacy semantic-search envelope")
-  }
-  guard parsed.mentions is [@mention_context.SemanticSearch(reference)] else {
-    fail("expected one semantic-search mention")
-  }
-  assert_eq(reference.matches.length(), 1)
-  assert_eq(reference.matches[0].matched_source, "inspect(x)")
 }
 
 ///|

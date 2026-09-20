@@ -505,23 +505,7 @@ async fn State::materialized_turn_inputs(
       let reply : @protocol.MaterializeSemanticSelectionReply = @interop.bridge_request(
         channel,
         @commands.fs_materialize_semantic_selection,
-        {
-          root,
-          artifact_id: reference.id,
-          patterns: reference.patterns,
-          include_glob: reference.include_glob,
-          exclude_glob: reference.exclude_glob,
-          matches: reference.matches.map(hit => {
-            rule_id: hit.rule_id,
-            description: hit.description,
-            file: hit.file,
-            start_line: hit.start_line,
-            start_column: hit.start_column,
-            end_line: hit.end_line,
-            end_column: hit.end_column,
-            matched_source: hit.matched_source,
-          }),
-        },
+        reference.materialize_payload(root~),
       )
       mentions.push({
         ..mention,
@@ -775,7 +759,6 @@ fn State::mention_input(self : State, mention : @composer.Mention) -> Json? {
     }
     @mention_context.Symbol(..)
     | @mention_context.SemanticSearch(_)
-    | @mention_context.SemanticSearchPending(_)
     | @mention_context.Annotation(..)
     | @mention_context.ReviewChanges(_) =>
       Some({

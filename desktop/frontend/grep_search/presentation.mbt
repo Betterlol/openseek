@@ -18,115 +18,86 @@ fn selected_semantic_hits(
 }
 
 ///|
-/// Presentation identity is kept separate from the hit identity so a future
-/// File -> Pattern projection can reuse selection state and only change the
-/// grouping pass.
-priv enum SemanticPresentationKey {
-  Pattern(String)
-  File(String, String)
-}
-
-///|
+/// Collapse keys for the Pattern -> File presentation, kept separate from the
+/// hit identity so a different grouping can reuse the selection state.
 fn semantic_pattern_key(pattern : String) -> String {
-  semantic_presentation_key(Pattern(pattern))
+  "semantic-pattern:\{pattern}"
 }
 
 ///|
 fn semantic_file_key(pattern : String, path : String) -> String {
-  semantic_presentation_key(File(pattern, path))
+  "semantic-file:\{pattern}:\{path}"
 }
 
 ///|
-fn semantic_presentation_key(key : SemanticPresentationKey) -> String {
-  match key {
-    Pattern(pattern) => "semantic-pattern:\{pattern}"
-    File(pattern, path) => "semantic-file:\{pattern}:\{path}"
-  }
-}
-
-///|
-priv struct SemanticFileGroup {
-  path : String
+/// One level of the presentation: the hits sharing a key, in their original
+/// order. `count` stays authoritative after `hits` is cut to the DOM budget.
+priv struct SemanticGroup {
+  key : String
   hits : Array[@protocol.SemanticSearchHit]
   count : Int
 }
 
 ///|
-priv struct SemanticPatternGroup {
-  pattern : String
-  hits : Array[@protocol.SemanticSearchHit]
-  count : Int
-}
-
-///|
-/// Project the flat semantic result set into the current Pattern -> File
-/// presentation. The source array remains untouched, so another projection
-/// can be added without changing search state or protocol data.
-fn semantic_pattern_groups(
+/// Project the flat result set by `key`, first occurrence first. The source
+/// array remains untouched, so another projection can be added without
+/// changing search state or protocol data.
+fn semantic_groups(
   hits : Array[@protocol.SemanticSearchHit],
-) -> Array[SemanticPatternGroup] {
-  let groups : Array[SemanticPatternGroup] = []
-  let indexes : Map[String, Int] = Map([])
+  key : (@protocol.SemanticSearchHit) -> String,
+) -> Array[SemanticGroup] {
+  let grouped : Map[String, Array[@protocol.SemanticSearchHit]] = Map([])
   for hit in hits {
-    match indexes.get(hit.rule_id) {
-      Some(index) => {
-        let group = groups[index]
-        let rows = group.hits
-        rows.push(hit)
-        groups[index] = { ..group, hits: rows, count: group.count + 1, }
-      }
-      None => {
-        indexes[hit.rule_id] = groups.length()
-        groups.push({ pattern: hit.rule_id, hits: [hit], count: 1, })
-      }
-    }
+    grouped.get_or_init(key(hit), () => []).push(hit)
   }
-  groups
+  grouped
+  .iter()
+  .map(entry => { key: entry.0, hits: entry.1, count: entry.1.length(), })
+  .collect()
 }
 
 ///|
-fn semantic_file_groups(
-  hits : Array[@protocol.SemanticSearchHit],
-) -> Array[SemanticFileGroup] {
-  let groups : Array[SemanticFileGroup] = []
-  let indexes : Map[String, Int] = Map([])
-  for hit in hits {
-    match indexes.get(hit.path) {
-      Some(index) => {
-        let group = groups[index]
-        let rows = group.hits
-        rows.push(hit)
-        groups[index] = { ..group, hits: rows, count: group.count + 1, }
-      }
-      None => {
-        indexes[hit.path] = groups.length()
-        groups.push({ path: hit.path, hits: [hit], count: 1, })
-      }
-    }
-  }
-  groups
-}
-
-///|
-/// Apply the DOM budget after the outer projection. Counts on each group stay
-/// authoritative while only the visible hit rows are copied for rendering.
+/// Apply the DOM budget after the pattern projection. Counts on each group
+/// stay authoritative while only the visible hit rows are copied for
+/// rendering.
 fn visible_semantic_pattern_groups(
   hits : Array[@protocol.SemanticSearchHit],
   visible_lines : Int,
-) -> Array[SemanticPatternGroup] {
-  let visible : Array[SemanticPatternGroup] = []
+) -> Array[SemanticGroup] {
+  let visible : Array[SemanticGroup] = []
   let mut remaining = visible_lines.max(0)
-  for group in semantic_pattern_groups(hits) {
+  for group in semantic_groups(hits, hit => hit.rule_id) {
     guard remaining > 0 else { break }
-    let rows : Array[@protocol.SemanticSearchHit] = []
-    for hit in group.hits {
-      guard rows.length() < remaining else { break }
-      rows.push(hit)
-    }
+    let rows = group.hits[:remaining.min(group.hits.length())].to_owned()
     visible.push({ ..group, hits: rows, })
     remaining -= rows.length()
   }
   visible
+}
+
+///|
+/// Every retained hit under one pattern, or under one file within it.
+fn Page::semantic_hits_in(
+  self : Page,
+  pattern~ : String,
+  path? : String,
+) -> Array[@protocol.SemanticSearchHit] {
+  self.semantic.hits.filter(hit => {
+    hit.rule_id == pattern && !(path is Some(path) && path != hit.path)
+  })
+}
+
+///|
+/// A group's checkbox reflects the full result set, not the filtered view:
+/// it is checked only when every hit it stands for is selected.
+fn Page::semantic_group_selected(
+  self : Page,
+  pattern~ : String,
+  path? : String,
+) -> Bool {
+  let hits = self.semantic_hits_in(pattern~, path?)
+  !hits.is_empty() &&
+  hits.all(hit => self.selected.contains(semantic_hit_key(hit)))
 }
 
 ///|
@@ -145,13 +116,12 @@ test "semantic presentation projects flat hits without changing their order" {
   let second = { ..first, rule_id: "match($x)", start_line: 2, end_line: 2, }
   let third = { ..first, path: "src/other.mbt", start_line: 3, end_line: 3, }
   let hits = [first, second, third]
-  let groups = semantic_pattern_groups(hits)
-  assert_eq(groups.map(group => group.pattern), [
-    "inspect($(x:arg))", "match($x)",
-  ])
-  assert_eq(semantic_file_groups(groups[0].hits).map(group => group.path), [
-    "src/main.mbt", "src/other.mbt",
-  ])
+  let groups = semantic_groups(hits, hit => hit.rule_id)
+  assert_eq(groups.map(group => group.key), ["inspect($(x:arg))", "match($x)"])
+  assert_eq(
+    semantic_groups(groups[0].hits, hit => hit.path).map(group => group.key),
+    ["src/main.mbt", "src/other.mbt"],
+  )
   assert_eq(visible_semantic_pattern_groups(hits, 2)[0].hits, [first, third])
   assert_eq(hits, [first, second, third])
   assert_true(semantic_hit_key(first) != semantic_hit_key(second))

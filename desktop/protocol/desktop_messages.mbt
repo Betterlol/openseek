@@ -552,8 +552,8 @@ pub(all) struct ReadFilePayload {
 /// One immutable structural-search match captured for an agent context file.
 /// Keeping the source in the artifact makes the selected snapshot useful even
 /// when the working tree changes before the agent reads it.
-pub(all) struct SemanticSelectionMatchPayload {
-  rule_id : String?
+pub(all) struct SemanticSelectionMatch {
+  rule_id : String
   description : String?
   file : String
   start_line : Int
@@ -572,7 +572,7 @@ pub(all) struct MaterializeSemanticSelectionPayload {
   patterns : Array[String]
   include_glob : String
   exclude_glob : String
-  matches : Array[SemanticSelectionMatchPayload]
+  matches : Array[SemanticSelectionMatch]
 } derive(Debug, Eq)
 
 ///|
@@ -1995,16 +1995,16 @@ pub extend ReadFilePayload with Eq::{equal, not_equal}
 pub extend ReadFilePayload with ToJson::{to_json}
 
 ///|
-pub extend SemanticSelectionMatchPayload with Debug::{to_repr}
+pub extend SemanticSelectionMatch with Debug::{to_repr}
 
 ///|
-pub extend SemanticSelectionMatchPayload with Eq::{equal, not_equal}
+pub extend SemanticSelectionMatch with Eq::{equal, not_equal}
 
 ///|
-pub extend SemanticSelectionMatchPayload with FromJson::{from_json}
+pub extend SemanticSelectionMatch with FromJson::{from_json}
 
 ///|
-pub extend SemanticSelectionMatchPayload with ToJson::{to_json}
+pub extend SemanticSelectionMatch with ToJson::{to_json}
 
 ///|
 pub extend MaterializeSemanticSelectionPayload with Debug::{to_repr}

@@ -1917,7 +1917,7 @@ pub(all) struct MaterializeSemanticSelectionPayload {
   patterns : Array[String]
   include_glob : String
   exclude_glob : String
-  matches : Array[SemanticSelectionMatchPayload]
+  matches : Array[SemanticSelectionMatch]
 } derive(Eq, @debug.Debug)
 pub fn MaterializeSemanticSelectionPayload::equal(Self, Self) -> Bool
 pub fn MaterializeSemanticSelectionPayload::from_json(Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
@@ -2638,8 +2638,8 @@ pub(all) struct SemanticSearchProgressPayload {
 pub impl ToJson for SemanticSearchProgressPayload
 pub impl @json.FromJson for SemanticSearchProgressPayload
 
-pub(all) struct SemanticSelectionMatchPayload {
-  rule_id : String?
+pub(all) struct SemanticSelectionMatch {
+  rule_id : String
   description : String?
   file : String
   start_line : Int
@@ -2648,13 +2648,13 @@ pub(all) struct SemanticSelectionMatchPayload {
   end_column : Int
   matched_source : String
 } derive(Eq, @debug.Debug)
-pub fn SemanticSelectionMatchPayload::equal(Self, Self) -> Bool
-pub fn SemanticSelectionMatchPayload::from_json(Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
-pub fn SemanticSelectionMatchPayload::not_equal(Self, Self) -> Bool
-pub fn SemanticSelectionMatchPayload::to_json(Self) -> Json
-pub fn SemanticSelectionMatchPayload::to_repr(Self) -> @debug.Repr
-pub impl ToJson for SemanticSelectionMatchPayload
-pub impl @json.FromJson for SemanticSelectionMatchPayload
+pub fn SemanticSelectionMatch::equal(Self, Self) -> Bool
+pub fn SemanticSelectionMatch::from_json(Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
+pub fn SemanticSelectionMatch::not_equal(Self, Self) -> Bool
+pub fn SemanticSelectionMatch::to_json(Self) -> Json
+pub fn SemanticSelectionMatch::to_repr(Self) -> @debug.Repr
+pub impl ToJson for SemanticSelectionMatch
+pub impl @json.FromJson for SemanticSelectionMatch
 
 pub(all) struct SessionAssistantMessage {
   content : String

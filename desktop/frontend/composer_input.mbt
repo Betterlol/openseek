@@ -20,10 +20,7 @@ fn Model::composer_input(self : Model) -> @composer.Input {
     archive_generation: self.composer_entry_retirements.length(),
   }
   let checkout_ready = checkout is Some(value) && value.is_ready()
-  let semantic_selection_pending = conv.pending_semantic_submission is Some(_) ||
-    conv.mentions.any(mention => {
-      mention.ref_ is @mention_context.SemanticSearchPending(_)
-    })
+  let semantic_selection_pending = conv.pending_semantic_submission is Some(_)
   // Sending needs a live engine and a workspace to run in — nothing about the
   // transcript. The record is what the turn writes, not a precondition for
   // starting one, so a reload in flight or a failed one never gates Send.

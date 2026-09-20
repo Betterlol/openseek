@@ -1,6 +1,7 @@
 import {
   "moonbitlang/core/string",
   "moonbitlang/editor/base/common",
+  "openseek_desktop/protocol",
 }
 
 supported_targets = "js"

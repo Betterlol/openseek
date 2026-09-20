@@ -15,23 +15,7 @@ fn PendingSemanticSubmission::materialize(
   let reference = self.reference
   let submission_id = self.submission_id
   let pattern_count = reference.patterns.length()
-  let payload : @protocol.MaterializeSemanticSelectionPayload = {
-    root: reference.root,
-    artifact_id: reference.id,
-    patterns: reference.patterns,
-    include_glob: reference.include_glob,
-    exclude_glob: reference.exclude_glob,
-    matches: reference.matches.map(match_ => {
-      rule_id: match_.rule_id,
-      description: match_.description,
-      file: match_.file,
-      start_line: match_.start_line,
-      start_column: match_.start_column,
-      end_line: match_.end_line,
-      end_column: match_.end_column,
-      matched_source: match_.matched_source,
-    }),
-  }
+  let payload = reference.materialize_payload(root=reference.root)
   @cmd.custom_cmd(scheduler => {
     @js.async_run(() => {
       let reply : @protocol.MaterializeSemanticSelectionReply = @interop.bridge_request(
@@ -63,6 +47,32 @@ fn PendingSemanticSubmission::materialize(
       )
     })
   })
+}
+
+///|
+/// Show the Search explorer filtered to the selection a semantic composer chip
+/// stands for. The chip is the live selection itself, so nothing is restored.
+fn open_semantic_selection(
+  dispatch : @cmd.Emit[Msg],
+  model : Model,
+) -> (@cmd.Cmd, Model) {
+  let (open_cmd, opened) = open_explorer(
+    dispatch,
+    model,
+    @fileeditor.ExplorerSearch,
+  )
+  let (filter_cmd, filtered) = update_msg(
+    dispatch,
+    FileEditor(
+      @fileeditor.Search(
+        @grep_search.SetSemanticResultFilter(
+          @grep_search.SelectedSemanticResults,
+        ),
+      ),
+    ),
+    opened,
+  )
+  (@cmd.batch([open_cmd, filter_cmd]), filtered)
 }
 
 ///|
@@ -2340,23 +2350,7 @@ fn update_msg(
             return (@cmd.none, model)
           }
           if mention.ref_ is @mention_context.SemanticSearch(_) {
-            let (open_cmd, opened) = open_explorer(
-              dispatch,
-              model,
-              @fileeditor.ExplorerSearch,
-            )
-            let (filter_cmd, filtered) = update_msg(
-              dispatch,
-              FileEditor(
-                @fileeditor.Search(
-                  @grep_search.SetSemanticResultFilter(
-                    @grep_search.SelectedSemanticResults,
-                  ),
-                ),
-              ),
-              opened,
-            )
-            return (@cmd.batch([open_cmd, filter_cmd]), filtered)
+            return open_semantic_selection(dispatch, model)
           }
           guard @mention_context.target(mention.ref_) is Some(target) else {
             return (@cmd.none, model)
@@ -2447,8 +2441,12 @@ fn update_msg(
             @composer.ApiSetupRequested(..) =>
               update_msg(dispatch, OpenApiSetup, model)
             @composer.QueuedInputEditRequested(id~, ..) => {
+              // The composer is frozen while a large semantic selection is
+              // written for a submitted draft; loading a queued message over
+              // that draft would lose it and retarget the send.
               guard conv.run is Open(stage~, ..) &&
                 !(stage is Cancelling) &&
+                conv.pending_semantic_submission is None &&
                 conv.queued_inputs.search_by(item => item.id == id)
                 is Some(index) else {
                 return (@cmd.none, model)
@@ -2501,6 +2499,10 @@ fn update_msg(
               }
               let editing = conv.queue_edit_id is Some(queued_id) &&
                 queued_id == id
+              // The edit being prepared for sending still targets this row.
+              if editing && conv.pending_semantic_submission is Some(_) {
+                return (@cmd.none, model)
+              }
               (
                 queue_openseek(
                   locale=model.locale,
@@ -2549,9 +2551,7 @@ fn update_msg(
           // The root model may already be preparing a large semantic snapshot
           // while the component still holds its previous local draft. Ignore
           // duplicate submit events until that preparation settles.
-          if conv.mentions.any(mention => {
-              mention.ref_ is @mention_context.SemanticSearchPending(_)
-            }) {
+          if conv.pending_semantic_submission is Some(_) {
             return (@cmd.none, model)
           }
           let original_focus = model.focused
@@ -2670,51 +2670,31 @@ fn update_msg(
           guard model.conversation_for_composer_action(identity) is Some(conv) else {
             return (@cmd.none, model)
           }
-          if mention.ref_ is @mention_context.SemanticSearch(_) {
-            let (mode_cmd, mode_model) = open_explorer(
-              dispatch,
-              {
-                ..model,
-                focused: conv.device,
-                active_session: conv.session_id,
-              },
-              @fileeditor.ExplorerSearch,
-            )
-            let (filter_cmd, filtered) = update_msg(
-              dispatch,
-              FileEditor(
-                @fileeditor.Search(
-                  @grep_search.SetSemanticResultFilter(
-                    @grep_search.SemanticResultFilter::SelectedSemanticResults,
-                  ),
-                ),
-              ),
-              mode_model,
-            )
-            return (
-              @cmd.batch([mode_cmd, filter_cmd]),
-              {
-                ..filtered,
-                focused: model.focused,
-                active_session: model.active_session,
-              },
-            )
+          let selected = {
+            ..model,
+            focused: conv.device,
+            active_session: conv.session_id,
           }
-          guard @mention_context.target(mention.ref_) is Some(target) else {
-            return (@cmd.none, model)
-          }
-          let range = if mention.range is Some(_) {
-            mention.range
+          let (command, opened) = if mention.ref_
+            is @mention_context.SemanticSearch(_) {
+            open_semantic_selection(dispatch, selected)
           } else {
-            target.range
+            guard @mention_context.target(mention.ref_) is Some(target) else {
+              return (@cmd.none, model)
+            }
+            let range = if mention.range is Some(_) {
+              mention.range
+            } else {
+              target.range
+            }
+            open_editor_at(
+              dispatch,
+              selected,
+              target.file,
+              range,
+              annotation?=target.annotation,
+            )
           }
-          let (command, opened) = open_editor_at(
-            dispatch,
-            { ..model, focused: conv.device, active_session: conv.session_id, },
-            target.file,
-            range,
-            annotation?=target.annotation,
-          )
           (
             command,
             {
@@ -3072,12 +3052,12 @@ fn update_msg(
         pending.submission_id == submission_id else {
         return (@cmd.none, model)
       }
-      // Keep only mentions added after this send began as the next draft.
-      // The submitted snapshot comes from `pending.mentions` below;
-      // visible selection changes are independent and must survive beside the
-      // newly submitted turn.
+      // The composer was frozen while the file was written, so the only
+      // thing that can differ from the captured snapshot is the Search
+      // explorer selection. Whatever changed becomes the next draft, beside
+      // the newly submitted turn.
       let next_mentions = conv.mentions.filter(mention => {
-        !pending.visible_mentions.any(existing => existing.ref_ == mention.ref_)
+        !pending.mentions.any(existing => existing.ref_ == mention.ref_)
       })
       // The captured draft is the value the user submitted. Replace only the
       // matching semantic mention in that snapshot; other mentions are kept
@@ -3111,18 +3091,14 @@ fn update_msg(
         .map(choice => SendFollowup(choice))
         .unwrap_or(Send)
       let (command, submitted) = update_msg(dispatch, submit, target)
-      let next_task = if conv.task == pending.task { "" } else { conv.task }
-      let submitted = if !next_task.is_blank() || !next_mentions.is_empty() {
-        match submitted.find_conversation(owner.channel, owner.session) {
-          Some(sent_conv) =>
-            submitted.replace_conversation({
-              ..sent_conv,
-              task: next_task,
-              mentions: next_mentions,
-              composer_draft_present: true,
-            })
-          None => submitted
-        }
+      let submitted = if !next_mentions.is_empty() &&
+        submitted.find_conversation(owner.channel, owner.session)
+        is Some(sent_conv) {
+        submitted.replace_conversation({
+          ..sent_conv,
+          mentions: next_mentions,
+          composer_draft_present: true,
+        })
       } else {
         submitted
       }
@@ -3141,14 +3117,8 @@ fn update_msg(
         pending.submission_id == submission_id else {
         return (@cmd.none, model)
       }
-      let draft : @composer.Draft = {
-        task: conv.task,
-        mentions: conv.mentions,
-        images: [],
-      }
-      // Failure ends this send attempt. Restore the user's latest selection
-      // instead of reviving the submitted snapshot beside the next draft.
-      let mentions = draft.with_semantic_selection(pending.latest_selection).mentions
+      // Failure ends this send attempt. The composer already shows the
+      // user's latest selection; only the frozen snapshot is dropped.
       let (toast, model) = model.notify_error(
         dispatch,
         "Could not prepare semantic-search selection: \{message}",
@@ -3157,7 +3127,6 @@ fn update_msg(
         toast,
         model.replace_conversation({
           ..conv,
-          mentions,
           pending_semantic_submission: None,
         }),
       )
@@ -3189,22 +3158,11 @@ fn update_msg(
         mentions: conv.mentions,
         images: [],
       }
-      // Keep the in-flight snapshot while replacing only the next selection.
-      let next = draft.with_semantic_selection(
-        reference,
-        preparing=conv.pending_semantic_submission.map(pending => {
-          pending.reference
-        }),
-      )
       (
         @cmd.none,
         model.replace_conversation({
           ..conv,
-          mentions: next.mentions,
-          pending_semantic_submission: conv.pending_semantic_submission.map(pending => {
-            ..pending,
-            latest_selection: reference,
-          }),
+          mentions: draft.with_semantic_selection(reference).mentions,
         }),
       )
     }
@@ -4177,10 +4135,7 @@ fn update_msg(
       }
       // A large selection is not allowed to degrade to a prompt marker while
       // its immutable JSONL snapshot is still being written.
-      if conv.mentions.any(mention => {
-          mention.ref_ is @mention_context.SemanticSearchPending(_)
-        }) ||
-        conv.pending_semantic_submission is Some(_) {
+      if conv.pending_semantic_submission is Some(_) {
         return (@cmd.none, model)
       }
       let checkout = model.conversation_placement(conv)
@@ -4195,64 +4150,45 @@ fn update_msg(
         .prompt()
         .trim()
         .to_owned()
-      let mut large_reference : @mention_context.SemanticSearchReference? = None
-      for mention in conv.mentions {
-        if mention.ref_ is @mention_context.SemanticSearch(reference) &&
-          !reference.is_inlineable() {
-          large_reference = Some(reference)
-          break
-        }
-      }
-      if conv.draft_sendable() &&
+      let sendable = conv.draft_sendable() &&
         model.bridge_state() is Connected &&
         model.api_ready() &&
-        checkout is Some(checkout) &&
-        !(checkout is @interop.MissingWorktree(..)) {
-        match large_reference {
-          Some(reference) => {
-            let (model, submission_id) = model.allocate_submission_id()
-            // Keep a transient chip in the root model so repeated clicks are
-            // ignored while the Host writes the immutable send snapshot.
-            let pending_mentions = conv.mentions.map(mention => {
-              if mention.ref_ is @mention_context.SemanticSearch(current) &&
-                current == reference {
-                {
-                  ..mention,
-                  ref_: @mention_context.SemanticSearchPending(reference),
-                }
-              } else {
-                mention
-              }
-            })
-            let pending_semantic_submission : PendingSemanticSubmission = {
-              submission_id,
-              reference,
-              latest_selection: Some(reference),
-              task: conv.task,
-              mentions: conv.mentions.copy(),
-              visible_mentions: pending_mentions.copy(),
-              followup,
-            }
-            return (
-              pending_semantic_submission.materialize(dispatch, {
-                channel: conv.device,
-                session: conv.session_id,
-              }),
-              model.replace_conversation({
-                ..conv,
-                mentions: pending_mentions,
-                pending_semantic_submission: Some(pending_semantic_submission),
-              }),
-            )
+        checkout is Some(placement) &&
+        !(placement is @interop.MissingWorktree(..))
+      let large_reference = conv.mentions
+        .iter()
+        .filter_map(mention => {
+          if mention.ref_ is @mention_context.SemanticSearch(reference) &&
+            !reference.is_inlineable() {
+            Some(reference)
+          } else {
+            None
           }
-          None => ()
+        })
+        .nth(0)
+      if sendable && large_reference is Some(reference) {
+        let (model, submission_id) = model.allocate_submission_id()
+        // The composer freezes on `pending_semantic_submission` so repeated
+        // clicks are ignored while the Host writes the immutable snapshot.
+        let pending_semantic_submission : PendingSemanticSubmission = {
+          submission_id,
+          reference,
+          task: conv.task,
+          mentions: conv.mentions.copy(),
+          followup,
         }
+        return (
+          pending_semantic_submission.materialize(dispatch, {
+            channel: conv.device,
+            session: conv.session_id,
+          }),
+          model.replace_conversation({
+            ..conv,
+            pending_semantic_submission: Some(pending_semantic_submission),
+          }),
+        )
       }
-      if !conv.draft_sendable() ||
-        !(model.bridge_state() is Connected) ||
-        !model.api_ready() ||
-        checkout is None ||
-        checkout is Some(@interop.MissingWorktree(..)) {
+      if !sendable {
         (@cmd.none, model)
       } else if conv.is_running() {
         // Submitting while this conversation's turn runs steers it: the text
@@ -9071,10 +9007,10 @@ fn running_conversation() -> Conversation {
 
 ///|
 fn large_semantic_reference_for_test() -> @mention_context.SemanticSearchReference {
-  let matches : Array[@mention_context.SemanticSearchReferenceMatch] = []
+  let matches : Array[@protocol.SemanticSelectionMatch] = []
   for index in 0..<101 {
     matches.push({
-      rule_id: Some("rule"),
+      rule_id: "rule",
       description: Some("test rule"),
       file: "src/file-" + index.to_string() + ".mbt",
       start_line: 1,

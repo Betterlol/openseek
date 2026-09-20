@@ -3,13 +3,10 @@
 // null and is omitted when absent, and unknown fields are ignored.
 
 ///|
-pub impl FromJson for SemanticSelectionMatchPayload with fn from_json(
-  json,
-  path,
-) {
+pub impl FromJson for SemanticSelectionMatch with fn from_json(json, path) {
   let object = JsonObject::decode(json, path, "semantic selection match")
   {
-    rule_id: object.optional_string("rule_id"),
+    rule_id: object.required_string("rule_id"),
     description: object.optional_string("description"),
     file: object.required_string("file"),
     start_line: object.required_int("start_line"),
@@ -21,17 +18,15 @@ pub impl FromJson for SemanticSelectionMatchPayload with fn from_json(
 }
 
 ///|
-pub impl ToJson for SemanticSelectionMatchPayload with fn to_json(self) {
+pub impl ToJson for SemanticSelectionMatch with fn to_json(self) {
   let fields : Map[String, Json] = {
+    "rule_id": Json(self.rule_id),
     "file": Json(self.file),
     "start_line": Json(self.start_line),
     "start_column": Json(self.start_column),
     "end_line": Json(self.end_line),
     "end_column": Json(self.end_column),
     "matched_source": Json(self.matched_source),
-  }
-  if self.rule_id is Some(value) {
-    fields["rule_id"] = Json(value)
   }
   if self.description is Some(value) {
     fields["description"] = Json(value)

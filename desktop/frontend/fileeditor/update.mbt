@@ -2891,21 +2891,14 @@ fn update_inner(
       let highlights = ctx.active_file.bind(path => {
         next.editor_search_highlights(ctx, path)
       })
-      let selection_changed = next.search.selected_semantic_hits() !=
-        state.search.selected_semantic_hits()
-      let selection_command = if selection_changed {
+      let selection = (search : @grep_search.State) => {
+        ctx.root().bind(root => search.selected_semantic_reference(root.path))
+      }
+      let reference = selection(search)
+      let selection_command = if reference != selection(state.search) {
         @cmd.custom_cmd(scheduler => {
           scheduler.add(
-            dispatch(
-              SemanticSelectionChanged(
-                owner=ctx.owner,
-                reference=ctx
-                  .root()
-                  .bind(root => {
-                    next.search.selected_semantic_reference(root.path)
-                  }),
-              ),
-            ),
+            dispatch(SemanticSelectionChanged(owner=ctx.owner, reference~)),
           )
         })
       } else {

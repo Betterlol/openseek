@@ -358,10 +358,10 @@ pub fn State::handle(self : State, msg : Msg, input : Input) -> State {
     CollapseAll => {
       let collapsed : Map[String, Bool] = Map([])
       if page.mode is Semantic {
-        for pattern in semantic_pattern_groups(page.semantic.hits) {
-          collapsed[semantic_pattern_key(pattern.pattern)] = true
-          for file in semantic_file_groups(pattern.hits) {
-            collapsed[semantic_file_key(pattern.pattern, file.path)] = true
+        for pattern in semantic_groups(page.semantic.hits, hit => hit.rule_id) {
+          collapsed[semantic_pattern_key(pattern.key)] = true
+          for file in semantic_groups(pattern.hits, hit => hit.path) {
+            collapsed[semantic_file_key(pattern.key, file.key)] = true
           }
         }
       } else {
@@ -415,24 +415,22 @@ pub fn State::handle(self : State, msg : Msg, input : Input) -> State {
       }
       { ..self, page: { ..page, collapsed, }, }
     }
-    ToggleSemanticPattern(pattern) => {
-      let hits = page.semantic.hits.filter(hit => hit.rule_id == pattern)
+    ToggleSemanticPattern(pattern) =>
       {
         ..self,
-        page: page.toggle_semantic_selection(hits.map(semantic_hit_key)),
+        page: page.toggle_semantic_selection(
+          page.semantic_hits_in(pattern~).map(semantic_hit_key),
+        ),
       }
-    }
     ToggleSemanticHit(key) =>
       { ..self, page: page.toggle_semantic_selection([key]), }
-    ToggleSemanticFile(pattern, path) => {
-      let hits = page.semantic.hits.filter(hit => {
-        hit.rule_id == pattern && hit.path == path
-      })
+    ToggleSemanticFile(pattern, path) =>
       {
         ..self,
-        page: page.toggle_semantic_selection(hits.map(semantic_hit_key)),
+        page: page.toggle_semantic_selection(
+          page.semantic_hits_in(pattern~, path~).map(semantic_hit_key),
+        ),
       }
-    }
     SetSemanticResultFilter(filter) =>
       { ..self, page: { ..page, semantic_filter: filter, }, }
     RequestStarted(owner~, root~, generation~) =>

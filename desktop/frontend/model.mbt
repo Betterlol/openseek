@@ -1060,20 +1060,17 @@ priv struct PendingPrompt {
 } derive(Eq)
 
 ///|
-/// Captured data for one large semantic selection waiting for its immutable
-/// file. `visible_mentions` is the draft projection shown while preparation is
-/// pending; it lets the completion callback preserve later selection changes
-/// as the next draft instead of treating them as a cancellation.
-/// This record owns the submitted draft and action. Replies carry only its
-/// submission id and result; retries get a new id even for the same selection.
+/// The draft and action captured when a large semantic selection was
+/// submitted, waiting for its immutable file. The live composer keeps
+/// tracking the Search explorer meanwhile, so the completion callback sends
+/// this snapshot and leaves whatever the user selected since as the next
+/// draft. Replies carry only the submission id and result; a retry gets a
+/// new id even for the same selection.
 priv struct PendingSemanticSubmission {
   submission_id : String
   reference : @mention_context.SemanticSearchReference
-  // Restore the current selection if preparation fails, including a clear.
-  latest_selection : @mention_context.SemanticSearchReference?
   task : String
   mentions : Array[Mention]
-  visible_mentions : Array[Mention]
   followup : @composer.FollowupChoice?
 } derive(Eq)
 

@@ -26,10 +26,10 @@ async fn materialize_semantic_selection_op(
     raise HostError("invalid semantic selection artifact id")
   }
   let mut source_units = 0
-  let files : Map[String, Bool] = Map([])
+  let files : Set[String] = Set([])
   for match_ in payload.matches {
     source_units += match_.matched_source.length() + match_.file.length()
-    files[match_.file] = true
+    files.add(match_.file)
   }
   guard source_units <= MaxSemanticSelectionArtifactUnits else {
     raise HostError("semantic selection is too large to materialize")
@@ -39,22 +39,10 @@ async fn materialize_semantic_selection_op(
   let dir = root.join(relative_dir)
   @fs.mkdir(dir.to_string(), recursive=true) catch {
     error if @async.is_being_cancelled() => raise error
-    @os_error.OSError(_) as error if error.is_EEXIST() => {
-      // `async/fs.mkdir` only handles missing parents when recursive=true;
-      // Windows reports an existing leaf as ERROR_ALREADY_EXISTS. Treat that
-      // normal steady state as success, but never mistake a file at this path
-      // for the artifact directory.
-      let kind = @fs.kind(dir.to_string()) catch {
-        error if @async.is_being_cancelled() => raise error
-        error =>
-          raise HostError(
-            "could not inspect semantic selection directory: \{error}",
-          )
-      }
-      guard kind is Directory else {
-        raise HostError("semantic selection path is not a directory")
-      }
-    }
+    // `recursive=true` only creates missing parents; an existing artifact
+    // directory is the normal steady state. A file squatting on this path
+    // surfaces as the write below failing.
+    @os_error.OSError(_) as error if error.is_EEXIST() => ()
     error =>
       raise HostError("could not create semantic selection directory: \{error}")
   }
@@ -96,9 +84,6 @@ async fn materialize_semantic_selection_op(
     let suffix = if index == 0 { "" } else { "-\{index}" }
     let relative_path = "\{relative_dir}/\{payload.artifact_id}\{suffix}.jsonl"
     let target = root.join(relative_path)
-    if @fs.exists(target.to_string()) {
-      continue
-    }
     @fs.write_file(target.to_string(), content, create_mode=CreateNew) catch {
       error if @async.is_being_cancelled() => raise error
       @os_error.OSError(_) as error if error.is_EEXIST() => continue
@@ -134,7 +119,7 @@ async test "semantic selections materialize as bounded JSONL below the checkout"
     exclude_glob: "generated/**",
     matches: [
       {
-        rule_id: Some("inspect"),
+        rule_id: "inspect",
         description: Some("inspection"),
         file: "src/main.mbt",
         start_line: 4,
@@ -233,7 +218,7 @@ async test "semantic selection materialization never replaces an old snapshot" {
     exclude_glob: "",
     matches: [
       {
-        rule_id: Some("inspect"),
+        rule_id: "inspect",
         description: Some("first"),
         file: "src/first.mbt",
         start_line: 1,

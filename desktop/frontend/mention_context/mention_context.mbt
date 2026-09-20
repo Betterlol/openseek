@@ -58,7 +58,6 @@ pub(all) enum MentionRef {
   Symbol(name~ : String, file~ : String, line~ : Int)
   SemanticSearch(SemanticSearchReference)
   SemanticSearchArtifact(SemanticSearchArtifact)
-  SemanticSearchPending(SemanticSearchReference)
   Annotation(
     file~ : String,
     start_line~ : Int,
@@ -79,7 +78,7 @@ pub(all) struct SemanticSearchReference {
   patterns : Array[String]
   include_glob : String
   exclude_glob : String
-  matches : Array[SemanticSearchReferenceMatch]
+  matches : Array[@protocol.SemanticSelectionMatch]
 } derive(Eq, Debug)
 
 ///|
@@ -96,23 +95,29 @@ pub fn SemanticSearchReference::is_inlineable(
   self : SemanticSearchReference,
 ) -> Bool {
   self.matches.length() <= MaxInlineSemanticReferenceMatches &&
-  self.matches
-  .map(match_ => match_.matched_source.length())
-  .fold(init=0, (total, size) => total + size) <=
+  self.matches.fold(init=0, (total, match_) => {
+    total + match_.matched_source.length()
+  }) <=
   MaxInlineSemanticReferenceSourceUnits
 }
 
 ///|
-pub(all) struct SemanticSearchReferenceMatch {
-  rule_id : String?
-  description : String?
-  file : String
-  start_line : Int
-  start_column : Int
-  end_line : Int
-  end_column : Int
-  matched_source : String
-} derive(Eq, Debug)
+/// The Host request that writes this selection as a JSONL file below `root`.
+/// The checkout receiving the turn may differ from the root the search ran
+/// in, so the caller names it.
+pub fn SemanticSearchReference::materialize_payload(
+  self : SemanticSearchReference,
+  root~ : String,
+) -> @protocol.MaterializeSemanticSelectionPayload {
+  {
+    root,
+    artifact_id: self.id,
+    patterns: self.patterns,
+    include_glob: self.include_glob,
+    exclude_glob: self.exclude_glob,
+    matches: self.matches,
+  }
+}
 
 ///|
 /// A generated JSONL snapshot used when a semantic selection is too large to
@@ -199,9 +204,7 @@ pub fn glyph(mention : MentionRef) -> String {
     Skill(_) => "$"
     File(_) => "@"
     Symbol(_) => "#"
-    SemanticSearch(_) => "⌕"
-    SemanticSearchArtifact(_) => "⌕"
-    SemanticSearchPending(_) => "⌕"
+    SemanticSearch(_) | SemanticSearchArtifact(_) => "⌕"
     Annotation(_) => "✎"
   }
 }
@@ -221,8 +224,6 @@ pub fn label(mention : MentionRef) -> String {
     }
     SemanticSearchArtifact(artifact) =>
       "Semantic search · \{artifact.pattern_count} patterns · \{artifact.match_count} matches (file)"
-    SemanticSearchPending(reference) =>
-      "Semantic search · \{reference.patterns.length()} patterns · \{reference.matches.length()} matches (preparing file…)"
     Annotation(file~, start_line~, end_line~, side~, ..) => {
       let suffix = if side is OriginalRevision { " (original)" } else { "" }
       "\{file}:\{start_line}-\{end_line}\{suffix}"
@@ -252,7 +253,6 @@ pub fn target(mention : MentionRef) -> Target? {
       }
     SemanticSearch(_)
     | SemanticSearchArtifact(_)
-    | SemanticSearchPending(_)
     | Annotation(side=OriginalRevision, ..) => None
     Annotation(
       file~,
@@ -354,10 +354,6 @@ fn write_mention(parts : StringBuilder, mention : MentionRef) -> Unit {
         "This file is an immutable JSONL semantic-search selection snapshot. Inspect it selectively before reading broad source ranges.\n"
       parts <+ "</semantic_search_file>\n"
     }
-    SemanticSearchPending(reference) => {
-      let id = MentionAttribute::encode(reference.id).wire
-      parts <+ "<semantic_search_pending id=\"\{id}\"/>\n"
-    }
     Annotation(file~, start_line~, end_line~, quote~, comment~, side~) => {
       let file = MentionAttribute::encode(file).wire
       let side_attribute = match side {
@@ -395,14 +391,12 @@ fn write_semantic_search(
   }
   for hit in reference.matches {
     let file = MentionAttribute::encode(hit.file).wire
-    let rule = hit.rule_id
-      .map(id => " rule=\"\{MentionAttribute::encode(id).wire}\"")
-      .unwrap_or("")
+    let rule = MentionAttribute::encode(hit.rule_id).wire
     let description = hit.description
       .map(text => " description=\"\{MentionAttribute::encode(text).wire}\"")
       .unwrap_or("")
     parts <+
-      "<match file=\"\{file}\" lines=\"\{hit.start_line}-\{hit.end_line}\" columns=\"\{hit.start_column}-\{hit.end_column}\"\{rule}\{description}>\n"
+      "<match file=\"\{file}\" lines=\"\{hit.start_line}-\{hit.end_line}\" columns=\"\{hit.start_column}-\{hit.end_column}\" rule=\"\{rule}\"\{description}>\n"
     write_body(parts, hit.matched_source)
     parts <+ "</match>\n"
   }
@@ -477,12 +471,7 @@ let semantic_search_pattern : Regex = re"^<semantic_search id=\"(?<id>[^\"]*)\" 
 let semantic_search_file_pattern : Regex = re"^<semantic_search_file path=\"(?<path>[^\"]+)\" patterns=\"(?<patterns>[0-9]+)\" matches=\"(?<matches>[0-9]+)\">$"
 
 ///|
-let semantic_match_pattern : Regex = re"^<match file=\"(?<file>[^\"]+)\" lines=\"(?<start>[0-9]+)-(?<end>[0-9]+)\" columns=\"(?<start_column>[0-9]+)-(?<end_column>[0-9]+)\"( rule=\"(?<rule>[^\"]*)\")?( description=\"(?<description>[^\"]*)\")?>$"
-
-///|
-/// The pre-review form is still accepted so saved transcripts can render
-/// their semantic-search mention chips after the wire format changes.
-let legacy_semantic_match_pattern : Regex = re"^<match pattern=\"[^\"]+\" file=\"(?<file>[^\"]+)\" lines=\"(?<start>[0-9]+)-(?<end>[0-9]+)\" columns=\"(?<start_column>[0-9]+)-(?<end_column>[0-9]+)\">$"
+let semantic_match_pattern : Regex = re"^<match file=\"(?<file>[^\"]+)\" lines=\"(?<start>[0-9]+)-(?<end>[0-9]+)\" columns=\"(?<start_column>[0-9]+)-(?<end_column>[0-9]+)\" rule=\"(?<rule>[^\"]*)\"( description=\"(?<description>[^\"]*)\")?>$"
 
 ///|
 /// The lines between `<user_mentions>` and `</user_mentions>` as chips, or
@@ -609,66 +598,47 @@ fn parse_mention_block(lines : ArrayView[String]) -> Array[MentionRef]? {
         return None
       }
       let patterns : Array[String] = []
-      let matches : Array[SemanticSearchReferenceMatch] = []
+      let matches : Array[@protocol.SemanticSelectionMatch] = []
       let mut cursor = index + 1
       while cursor < lines.length() && lines[cursor] != "</semantic_search>" {
         let pattern_line = lines[cursor]
         guard pattern_line == "<pattern>" else {
-          let match_header = match
-            semantic_match_pattern.execute(pattern_line) {
-            Some(matched) => Some(matched)
-            None => legacy_semantic_match_pattern.execute(pattern_line)
+          guard semantic_match_pattern.execute(pattern_line)
+            is Some(match_header) &&
+            match_header.named_group("file") is Some(file) &&
+            match_header.named_group("start") is Some(start) &&
+            match_header.named_group("end") is Some(end) &&
+            match_header.named_group("start_column") is Some(start_column) &&
+            match_header.named_group("end_column") is Some(end_column) &&
+            match_header.named_group("rule") is Some(rule) else {
+            return None
           }
-          if match_header is Some(match_header) {
-            guard match_header.named_group("file") is Some(file) &&
-              match_header.named_group("start") is Some(start) &&
-              match_header.named_group("end") is Some(end) &&
-              match_header.named_group("start_column") is Some(start_column) &&
-              match_header.named_group("end_column") is Some(end_column) else {
-              return None
-            }
-            let match_body = lines[cursor + 1:]
-            let (source, consumed) = if match_body
-              is ["<matched_source>", .. source_lines] {
-              guard source_lines.search("</matched_source>") is Some(source_end) else {
-                return None
-              }
-              guard source_lines[source_end + 1:] is ["</match>", ..] else {
-                return None
-              }
-              (source_lines[:source_end].join("\n"), source_end + 4)
-            } else {
-              guard match_body.search("</match>") is Some(match_end) else {
-                return None
-              }
-              (match_body[:match_end].join("\n"), match_end + 2)
-            }
-            matches.push({
-              rule_id: match_header
-              .named_group("rule")
-              .map(rule => MentionAttribute::decode(rule.to_owned())),
-              description: match_header
-              .named_group("description")
-              .map(text => MentionAttribute::decode(text.to_owned())),
-              file: MentionAttribute::decode(file.to_owned()),
-              start_line: @string.parse_int(start) catch {
-                _ => return None
-              },
-              start_column: @string.parse_int(start_column) catch {
-                _ => return None
-              },
-              end_line: @string.parse_int(end) catch {
-                _ => return None
-              },
-              end_column: @string.parse_int(end_column) catch {
-                _ => return None
-              },
-              matched_source: source,
-            })
-            cursor += consumed
-            continue
+          let match_body = lines[cursor + 1:]
+          guard match_body.search("</match>") is Some(match_end) else {
+            return None
           }
-          return None
+          matches.push({
+            rule_id: MentionAttribute::decode(rule.to_owned()),
+            description: match_header
+            .named_group("description")
+            .map(text => MentionAttribute::decode(text.to_owned())),
+            file: MentionAttribute::decode(file.to_owned()),
+            start_line: @string.parse_int(start) catch {
+              _ => return None
+            },
+            start_column: @string.parse_int(start_column) catch {
+              _ => return None
+            },
+            end_line: @string.parse_int(end) catch {
+              _ => return None
+            },
+            end_column: @string.parse_int(end_column) catch {
+              _ => return None
+            },
+            matched_source: match_body[:match_end].join("\n"),
+          })
+          cursor += match_end + 2
+          continue
         }
         let pattern_lines = lines[cursor + 1:]
         guard pattern_lines.search("</pattern>") is Some(pattern_end) else {
@@ -726,12 +696,6 @@ pub extend SemanticSearchReference with Eq::{equal, not_equal}
 
 ///|
 pub extend SemanticSearchReference with Debug::{to_repr}
-
-///|
-pub extend SemanticSearchReferenceMatch with Eq::{equal, not_equal}
-
-///|
-pub extend SemanticSearchReferenceMatch with Debug::{to_repr}
 
 ///|
 pub extend SemanticSearchArtifact with Eq::{equal, not_equal}
