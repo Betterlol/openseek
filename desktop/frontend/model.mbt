@@ -1069,6 +1069,8 @@ priv struct PendingPrompt {
 priv struct PendingSemanticSubmission {
   submission_id : String
   reference : @mention_context.SemanticSearchReference
+  // Restore the current selection if preparation fails, including a clear.
+  latest_selection : @mention_context.SemanticSearchReference?
   task : String
   mentions : Array[Mention]
   visible_mentions : Array[Mention]

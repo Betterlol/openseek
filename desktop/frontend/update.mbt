@@ -3143,17 +3143,14 @@ fn update_msg(
         pending.submission_id == submission_id else {
         return (@cmd.none, model)
       }
-      let mentions = conv.mentions.map(mention => {
-        if mention.ref_ is @mention_context.SemanticSearchPending(current) &&
-          current == pending.reference {
-          {
-            ..mention,
-            ref_: @mention_context.SemanticSearch(pending.reference),
-          }
-        } else {
-          mention
-        }
-      })
+      let draft : @composer.Draft = {
+        task: conv.task,
+        mentions: conv.mentions,
+        images: [],
+      }
+      // Failure ends this send attempt. Restore the user's latest selection
+      // instead of reviving the submitted snapshot beside the next draft.
+      let mentions = draft.with_semantic_selection(pending.latest_selection).mentions
       let (toast, model) = model.notify_error(
         dispatch,
         "Could not prepare semantic-search selection: \{message}",
@@ -3203,7 +3200,14 @@ fn update_msg(
       )
       (
         @cmd.none,
-        model.replace_conversation({ ..conv, mentions: next.mentions, }),
+        model.replace_conversation({
+          ..conv,
+          mentions: next.mentions,
+          pending_semantic_submission: conv.pending_semantic_submission.map(pending => {
+            ..pending,
+            latest_selection: reference,
+          }),
+        }),
       )
     }
     // Intercepted like the comment above: which dock tab a tree click opens
@@ -4225,6 +4229,7 @@ fn update_msg(
             let pending_semantic_submission : PendingSemanticSubmission = {
               submission_id,
               reference,
+              latest_selection: Some(reference),
               task: conv.task,
               mentions: conv.mentions.copy(),
               visible_mentions: pending_mentions.copy(),

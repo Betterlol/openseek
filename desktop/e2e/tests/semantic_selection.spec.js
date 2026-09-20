@@ -206,3 +206,44 @@ for (const worktree of [false, true]) {
     expect(app.pageErrors).toEqual([]);
   });
 }
+
+for (const clear of [false, true]) {
+  test(`failed preparation restores the ${clear ? 'cleared' : 'latest'} selection`, async ({ page }) => {
+    const app = new DesktopBrowserHarness(page);
+    app.semanticSearchMatches = Array.from({ length: 101 }, (_, index) => ({
+      path: 'src/main.mbt', rule_id: 'inspect($(x:arg))',
+      start_line: index + 1, start_column: 1, end_line: index + 1, end_column: 11,
+      matched_source: 'inspect(x)', source_context: [],
+    }));
+    const method = 'fs.materialize_semantic_selection';
+    app.rpcErrors.set(method, 'disk full');
+    app.rpcDelays.set(method, 1500);
+    await app.install();
+    await app.goto();
+    await app.openSession();
+    await page.keyboard.press(await page.evaluate(() =>
+      navigator.platform.includes('Mac') ? 'Meta+Shift+F' : 'Control+Shift+F'));
+    await page.getByRole('button', { name: 'Code search', exact: true }).click();
+    await page.getByRole('textbox', { name: 'pattern', exact: true }).fill('inspect($(x:arg))');
+    await page.getByLabel('Select pattern', { exact: true }).click();
+    const composer = page.locator('#task');
+    const chips = page.locator('.mention-chip');
+    await composer.fill('Inspect selected matches');
+    await page.getByTitle('Send', { exact: true }).click();
+    await expect(chips).toContainText('preparing file');
+    if (clear) await page.getByRole('button', { name: 'Clear selection', exact: true }).click();
+    else await page.getByRole('button', { name: 'Deselect match', exact: true }).first().click();
+    await expect(page.getByText('Could not prepare semantic-search selection: disk full', { exact: true })).toBeVisible();
+    await expect(composer).toHaveValue('Inspect selected matches');
+    await expect(chips).toHaveCount(clear ? 0 : 1);
+    if (!clear) await expect(chips).toContainText('100 matches');
+    await page.getByTitle('Send', { exact: true }).click();
+    await expect.poll(() => app.requests.find(request => request.method === 'agent.start')).toBeTruthy();
+    const sent = app.requests.find(request => request.method === 'agent.start').params.task;
+    expect(sent.match(/<match file=/g) || []).toHaveLength(clear ? 0 : 100);
+    expect(sent).not.toContain('semantic_search_file');
+    expect(sent).not.toContain('semantic_search_pending');
+    expect(app.requests.filter(request => request.method === method)).toHaveLength(1);
+    expect(app.pageErrors).toEqual([]);
+  });
+}
