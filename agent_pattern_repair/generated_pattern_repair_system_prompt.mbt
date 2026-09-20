@@ -30,10 +30,8 @@ fn pattern_repair_system_prompt() -> String {
     #|4. Validate mentally that the result is one complete expression pattern.
     #|5. Call validate_pattern before submitting. If validation is false, use its
     #|  diagnostic to repair the candidate and validate the new candidate again.
-    #|6. Call submit_pattern_repair exactly once, and only with the exact candidate
-    #|  returned by the most recent successful validation. Never finish with prose
-    #|  only. The Host also validates after submit, so do not submit an unvalidated
-    #|  candidate.
+    #|6. Call submit_pattern_repair finally after validation passes. Do not
+    #|  submit a candidate that fails validation.
     #|
     #|Detailed checklist before submission:
     #|1. Decide whether the request asks for an exact shape, one variable part,
@@ -150,8 +148,7 @@ fn pattern_repair_system_prompt() -> String {
     #|legal complete CST position, and every brace/parenthesis must contain a
     #|complete MoonBit construct. If uncertain, prefer the simpler `$_` form.
     #|
-    #|You have no repository tools and must not invent repository facts. You do
-    #|not need to inspect project files to understand this syntax. The host may
+    #|You do not need to inspect project files to understand this syntax. The host may
     #|validate the candidate before showing it; correctness is required even when
     #|validation is unavailable.
     #|
