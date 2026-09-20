@@ -2339,6 +2339,25 @@ fn update_msg(
             model.codex.accepts_composer_identity(identity, model.focused) else {
             return (@cmd.none, model)
           }
+          if mention.ref_ is @mention_context.SemanticSearch(_) {
+            let (open_cmd, opened) = open_explorer(
+              dispatch,
+              model,
+              @fileeditor.ExplorerSearch,
+            )
+            let (filter_cmd, filtered) = update_msg(
+              dispatch,
+              FileEditor(
+                @fileeditor.Search(
+                  @grep_search.SetSemanticResultFilter(
+                    @grep_search.SelectedSemanticResults,
+                  ),
+                ),
+              ),
+              opened,
+            )
+            return (@cmd.batch([open_cmd, filter_cmd]), filtered)
+          }
           guard @mention_context.target(mention.ref_) is Some(target) else {
             return (@cmd.none, model)
           }
