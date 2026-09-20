@@ -111,34 +111,46 @@ test('large semantic selection retries and sends its original draft while later 
 });
 
 
-test('Codex semantic chip opens the selected search results', async ({ page }) => {
-  const app = new DesktopBrowserHarness(page);
-  app.codexModels = [{ id: 'gpt-5.4-codex', displayName: 'GPT-5.4 Codex', isDefault: true,
-    defaultReasoningEffort: 'medium', supportedReasoningEfforts: [{ reasoningEffort: 'medium', description: 'Balanced' }] }];
-  app.semanticSearchMatches = [1, 2].map(line => ({
-    path: 'src/main.mbt', rule_id: 'inspect($(x:arg))',
-    start_line: line, start_column: 1, end_line: line, end_column: 11,
-    matched_source: 'inspect(x)', source_context: [],
-  }));
-  await app.install();
-  await app.goto();
-  await page.getByRole('button', { name: 'Model', exact: true }).click();
-  await page.getByRole('option', { name: 'GPT-5.4 Codex' }).click();
-  await page.keyboard.press(await page.evaluate(() =>
-    navigator.platform.includes('Mac') ? 'Meta+Shift+F' : 'Control+Shift+F'));
-  await page.getByRole('button', { name: 'Code search', exact: true }).click();
-  await page.getByRole('textbox', { name: 'pattern', exact: true }).fill('inspect($(x:arg))');
-  await page.getByRole('button', { name: 'Select match', exact: true }).first().click();
-  const chip = page.locator('.mention-chip .mention-jump');
-  await expect(chip).toContainText('1 matches');
-  await page.getByRole('button', { name: 'Hide panel', exact: true }).click();
-  await chip.click();
-  await expect(page.getByRole('button', { name: 'Show all', exact: true })).toBeVisible();
-  await expect(page.locator('.search-semantic-hit')).toHaveCount(1);
-  await page.getByRole('button', { name: 'Show all', exact: true }).click();
-  await expect(page.locator('.search-semantic-hit')).toHaveCount(2);
-  expect(app.pageErrors).toEqual([]);
-});
+for (const provider of ['OpenSeek new chat', 'OpenSeek session', 'Codex']) {
+  test(`${provider} semantic chip opens the selected search results`, async ({ page }) => {
+    const app = new DesktopBrowserHarness(page);
+    app.codexModels = [{ id: 'gpt-5.4-codex', displayName: 'GPT-5.4 Codex', isDefault: true,
+      defaultReasoningEffort: 'medium', supportedReasoningEfforts: [{ reasoningEffort: 'medium', description: 'Balanced' }] }];
+    app.semanticSearchMatches = [1, 2].map(line => ({
+      path: 'src/main.mbt', rule_id: 'inspect($(x:arg))',
+      start_line: line, start_column: 1, end_line: line, end_column: 11,
+      matched_source: 'inspect(x)', source_context: [],
+    }));
+    await app.install();
+    await app.goto();
+    if (provider === 'Codex') {
+      await page.getByRole('button', { name: 'Model', exact: true }).click();
+      await page.getByRole('option', { name: 'GPT-5.4 Codex' }).click();
+    } else if (provider === 'OpenSeek session') {
+      await app.openSession();
+    }
+    await page.keyboard.press(await page.evaluate(() =>
+      navigator.platform.includes('Mac') ? 'Meta+Shift+F' : 'Control+Shift+F'));
+    await page.getByRole('button', { name: 'Code search', exact: true }).click();
+    await page.getByRole('textbox', { name: 'pattern', exact: true }).fill('inspect($(x:arg))');
+    await page.getByRole('button', { name: 'Select match', exact: true }).first().click();
+    const chip = page.locator('.mention-chip .mention-jump');
+    await expect(chip).toContainText('1 matches');
+    await page.getByTitle('Open src/main.mbt:1', { exact: true }).click();
+    await page.getByRole('button', { name: 'Hide file tree', exact: true }).click();
+    await expect(page.locator('.search-results')).toBeHidden();
+    await chip.click();
+    await expect(page.getByRole('button', { name: 'Show all', exact: true })).toBeVisible();
+    await expect(page.locator('.search-semantic-hit')).toHaveCount(1);
+    await page.getByRole('button', { name: 'Show all', exact: true }).click();
+    await expect(page.locator('.search-semantic-hit')).toHaveCount(2);
+    await page.getByRole('button', { name: 'Hide panel', exact: true }).click();
+    await chip.click();
+    await expect(page.getByRole('button', { name: 'Show all', exact: true })).toBeVisible();
+    await expect(page.locator('.search-semantic-hit')).toHaveCount(1);
+    expect(app.pageErrors).toEqual([]);
+  });
+}
 
 for (const worktree of [false, true]) {
   test(`Codex materializes large selections before start and steer (${worktree ? 'worktree' : 'local'})`, async ({ page }) => {

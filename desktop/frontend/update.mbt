@@ -2671,16 +2671,14 @@ fn update_msg(
             return (@cmd.none, model)
           }
           if mention.ref_ is @mention_context.SemanticSearch(_) {
-            let (mode_cmd, mode_model) = update_msg(
+            let (mode_cmd, mode_model) = open_explorer(
               dispatch,
-              FileEditor(
-                @fileeditor.ExplorerModeSelected(@fileeditor.ExplorerSearch),
-              ),
               {
                 ..model,
                 focused: conv.device,
                 active_session: conv.session_id,
               },
+              @fileeditor.ExplorerSearch,
             )
             let (filter_cmd, filtered) = update_msg(
               dispatch,
