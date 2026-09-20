@@ -2899,9 +2899,11 @@ fn update_inner(
             dispatch(
               SemanticSelectionChanged(
                 owner=ctx.owner,
-                reference=next.search.selected_semantic_reference(
-                  ctx.root().map(root => root.path).unwrap_or(""),
-                ),
+                reference=ctx
+                  .root()
+                  .bind(root => {
+                    next.search.selected_semantic_reference(root.path)
+                  }),
               ),
             ),
           )
