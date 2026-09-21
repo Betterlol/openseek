@@ -17,7 +17,7 @@ fn PendingSemanticSubmission::materialize(
   let pattern_count = reference.patterns.length()
   let payload = reference.materialize_payload(root=reference.root)
   @cmd.custom_cmd(scheduler => {
-    @js.async_run(() => {
+    @js.Promise::from_async(() => {
       let reply : @protocol.MaterializeSemanticSelectionReply = @interop.bridge_request(
         owner.channel,
         @commands.fs_materialize_semantic_selection,
@@ -46,6 +46,7 @@ fn PendingSemanticSubmission::materialize(
         ),
       )
     })
+    |> ignore
   })
 }
 

@@ -449,7 +449,7 @@ fn State::send(
     None => CodexTurnStartReply(active.id)
   }
   @cmd.custom_cmd(scheduler => {
-    @js.async_run(() => {
+    @js.Promise::from_async(() => {
       let inputs = self.materialized_turn_inputs(channel, active.cwd) catch {
         error => {
           scheduler.add(
@@ -486,6 +486,7 @@ fn State::send(
       }
       scheduler.add(command)
     })
+    |> ignore
   })
 }
 
