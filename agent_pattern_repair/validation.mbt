@@ -17,32 +17,28 @@ struct PatternRepairValidator {
 pub extend PatternRepairValidator with FromJson::{from_json}
 
 ///|
-fn pattern_repair_validator_from_environment() -> Result[
-  PatternRepairValidator,
-  String,
-] {
-  guard @env.get_env_var(PatternRepairValidatorEnv) is Some(raw) else {
-    return Err("Pattern validation is unavailable.")
-  }
-  let json = @json.parse(raw) catch {
-    _ => return Err("Pattern validation is unavailable.")
-  }
-  let validator : PatternRepairValidator = @json.from_json(json) catch {
-    _ => return Err("Pattern validation is unavailable.")
-  }
-  if validator.command.trim().is_empty() {
-    Err("Pattern validation is unavailable.")
-  } else {
-    Ok(validator)
-  }
+/// Raised when the Host-provided validator cannot run or rejects the candidate
+/// pattern. `Unavailable` means the validator could not be resolved or spawned;
+/// `Invalid` carries the parser diagnostic the Agent can use to repair the
+/// pattern.
+priv suberror PatternValidationError {
+  Unavailable
+  Invalid(String)
 }
 
 ///|
-/// Raised when Host-side validation rejects the candidate pattern (or the
-/// validator is unavailable). The payload is the parser diagnostic the Agent
-/// can use to repair the pattern.
-priv suberror PatternValidationError {
-  PatternValidationError(String)
+fn pattern_repair_validator_from_environment() -> PatternRepairValidator raise PatternValidationError {
+  guard @env.get_env_var(PatternRepairValidatorEnv) is Some(raw) else {
+    raise Unavailable
+  }
+  let json = @json.parse(raw) catch { _ => raise Unavailable }
+  let validator : PatternRepairValidator = @json.from_json(json) catch {
+    _ => raise Unavailable
+  }
+  if validator.command.trim().is_empty() {
+    raise Unavailable
+  }
+  validator
 }
 
 ///|
@@ -92,7 +88,7 @@ async fn run_pattern_repair_validator(
   }) catch {
     error if @async.is_being_cancelled() || @async.is_cancellation_error(error) =>
       raise error
-    _ => raise PatternValidationError("Pattern validation is unavailable.")
+    _ => raise Unavailable
   }
   if code != 0 {
     let detail = if !stderr.trim().is_empty() { stderr } else { stdout }
@@ -104,7 +100,7 @@ async fn run_pattern_repair_validator(
     } else {
       detail
     }
-    raise PatternValidationError(diagnostic)
+    raise Invalid(diagnostic)
   }
 }
 
@@ -129,23 +125,19 @@ async fn validate_pattern_tool_action(
       is_error=true,
     )
   }
-  let validator = match pattern_repair_validator_from_environment() {
-    Ok(validator) => validator
-    Err(message) => return @agent_tool.respond(message, is_error=true)
-  }
   try {
+    let validator = pattern_repair_validator_from_environment()
     run_pattern_repair_validator(validator, pattern~, workspace_root~)
     validated_pattern.val = Some(pattern)
     @agent_tool.respond(({ "valid": true } : Json).stringify())
   } catch {
-    PatternValidationError(diagnostic) =>
+    Unavailable =>
+      @agent_tool.respond("Pattern validation is unavailable.", is_error=true)
+    Invalid(diagnostic) =>
       @agent_tool.respond(
         ({ "valid": false, "diagnostic": diagnostic } : Json).stringify(),
       )
-    error if @async.is_being_cancelled() || @async.is_cancellation_error(error) =>
-      raise error
-    _ =>
-      @agent_tool.respond("Pattern validation is unavailable.", is_error=true)
+    error => raise error
   }
 }
 
