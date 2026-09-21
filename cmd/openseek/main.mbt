@@ -1,13 +1,8 @@
 ///|
-/// Start the headless CLI and report process-level failures. Nothing linked
-/// into this binary logs (see `internal/openseek/README.md`).
+/// Keep the legacy package coordinate runnable while pointing users to the root.
 async fn main {
-  @app.dispatch() catch {
-    error => {
-      @stdio.stderr.write("error: \{@cli.failure_message("\{error}")}\n") catch {
-        _ => ()
-      }
-      @sys.exit(1)
-    }
-  }
+  @stdio.stderr.write(
+    "Warning: moonbitlang/openseek/cmd/openseek is deprecated; use moonx moonbitlang/openseek instead.\n",
+  )
+  @app.run_cli()
 }

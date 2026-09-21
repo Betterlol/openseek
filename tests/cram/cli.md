@@ -1,7 +1,7 @@
 # Verified OpenSeek CLI Documentation
 
 These examples are executed by `moon cram test tests/cram`. The Moon wrapper
-builds the native package at `cmd/openseek` first, then exposes the executable
+builds the native executable packages first, then exposes their executables
 on `PATH` as `openseek.exe`.
 
 `openseek` is the headless automation CLI: a subcommand tree under `run`,
