@@ -2057,7 +2057,7 @@ test "model-view user cards keep the caption of the event behind them" {
   for index, message in messages {
     guard message.role is User else { continue }
     let (_, label) = user_role_card_style(
-      message.content,
+      message.content.text(),
       origin=origins[index],
       delegated=false,
     )
@@ -2419,6 +2419,20 @@ fn model_failed_call_ids(
 }
 
 ///|
+/// Renders the provider's ordered content without treating a file ID as a URL.
+fn model_content_view(content : @deepseek.Content) -> Array[@html.Html] {
+  content
+  .iter()
+  .filter_map(part => {
+    match part {
+      Text(text) => if text.is_blank() { None } else { Some(text_block(text)) }
+      File(file_id~) => Some(text_block("Image file: \{file_id}"))
+    }
+  })
+  .collect()
+}
+
+///|
 fn message_card(
   message : @deepseek.ChatMessage,
   tool_results : Map[String, @agent_session.ToolResult],
@@ -2441,15 +2455,28 @@ fn message_card(
             "System prompt",
             time~,
           ),
-          text_block(message.content),
+          ..model_content_view(message.content),
         ],
       ]
     User => {
-      let (kind, label) = user_role_card_style(
-        message.content,
-        origin~,
-        delegated=subrun.delegated,
-      )
+      let (kind, label) = if message.content.is_text_only() {
+        user_role_card_style(
+          message.content.text(),
+          origin~,
+          delegated=subrun.delegated,
+        )
+      } else {
+        match origin {
+          FromRuntime => ("runtime", "Runtime notice")
+          FromSummary(from~, to~) => ("summary", summary_label(from~, to~))
+          FromUser | Other =>
+            if subrun.delegated {
+              UserInput::Delegated.card_style()
+            } else {
+              UserInput::Typed.card_style()
+            }
+        }
+      }
       model_card(
         kind,
         label,
@@ -2491,8 +2518,9 @@ fn message_card(
 
 ///|
 /// The durable `ToolResult` the model view is allowed to surface for a projected
-/// tool message: the one looked up by id whose content is exactly what the model
-/// was fed. The projection skips results covered by a later summary and heals a
+/// tool message: the one looked up by id whose text matches all projected text
+/// fragments, with no file parts to lose in the comparison. The projection
+/// skips results covered by a later summary and heals a
 /// dangling call with a synthetic message; in those cases the looked-up result
 /// is not what the model saw, so the content guard rejects it (returns `None`)
 /// rather than misrepresent the model view. Shared by `model_tool_card` and
@@ -2503,7 +2531,8 @@ fn model_shown_result(
 ) -> @agent_session.ToolResult? {
   guard message.role is Tool(id) else { return None }
   match tool_results.get(id) {
-    Some(result) if result.content() == message.content => Some(result)
+    Some(result) if message.content.is_text_only() &&
+      message.content.text() == result.content() => Some(result)
     _ => None
   }
 }
@@ -2681,7 +2710,11 @@ fn model_tool_card(
   @html.details(id?=anchor, class="card \{kind}") <| [
     @html.summary(class="card-label") <| summary,
     @html.div(class="card-body") <| [
-      tool_result_content(shown, message.content),
+      ..if message.content.is_text_only() {
+        [tool_result_content(shown, message.content.text())]
+      } else {
+        model_content_view(message.content)
+      },
     ],
   ]
 }
@@ -2708,9 +2741,7 @@ fn model_card(
         ],
       ]
     },
-    ..if !message.content.is_blank() {
-      [text_block(message.content)]
-    },
+    ..model_content_view(message.content),
     ..if !message.tool_calls.is_empty() {
       [
         @html.div(class="tool-calls") <| [
