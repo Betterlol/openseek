@@ -1,11 +1,11 @@
 // Generated using `moon info`, DON'T EDIT IT
-package "bobzhang/openseek/viz"
+package "moonbitlang/openseek/viz"
 
 import {
-  "bobzhang/openseek/agent_session",
-  "bobzhang/openseek/agent_session/log",
   "moonbit-community/rabbita/html",
   "moonbitlang/core/debug",
+  "moonbitlang/openseek/agent_session",
+  "moonbitlang/openseek/agent_session/log",
 }
 
 // Values
@@ -42,9 +42,6 @@ pub(all) enum ViewMode {
   RawLog
   ModelView
 } derive(Eq, @debug.Debug)
-pub fn ViewMode::equal(Self, Self) -> Bool
-pub fn ViewMode::not_equal(Self, Self) -> Bool
-pub fn ViewMode::to_repr(Self) -> @debug.Repr
 
 // Type aliases
 

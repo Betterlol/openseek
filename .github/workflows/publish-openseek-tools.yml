@@ -1,0 +1,43 @@
+name: publish-openseek-tools
+
+# Bump the tools SDK module version in tools_sdk/moon.mod, then dispatch this workflow.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: publish-openseek-tools
+  cancel-in-progress: false
+
+jobs:
+  publish-openseek-tools:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: install moon
+        run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+
+      - name: publish
+        env:
+          SECRET: ${{ secrets.MOONCAKES_MOONBITLANG_TOKEN }}
+        shell: bash
+        run: |
+          if [ -z "$SECRET" ]; then
+            echo "Error: MOONCAKES_MOONBITLANG_TOKEN secret is not set."
+            exit 1
+          fi
+          trap 'rm -f ~/.moon/credentials.json' EXIT
+          umask 077
+          printf '%s\n' "$SECRET" > ~/.moon/credentials.json
+          moon version --all
+          node scripts/publish.mjs tools_sdk

@@ -32,8 +32,9 @@ async fn main {
 The SDK is an ordinary version-pinned package import. The host passes only the
 run-scoped connection capability; it does not insert imports, globals, helper
 functions, or types into the source. Saved source and compiler line numbers are
-unchanged. `bobzhang/openseek_tools@0.1.0` is published on Mooncakes and the
-integration tests exercise this exact registry import.
+unchanged. The published SDK is `bobzhang/openseek_tools@0.1.0`; the renamed
+`moonbitlang/openseek_tools` publishes as 0.2.0, and the integration tests
+exercise this exact registry import.
 
 ## Results and search
 
