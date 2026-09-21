@@ -19,6 +19,7 @@ fn Model::right_panel_input(self : Model) -> @right_panel.Input {
             TraditionalChinese => "在訪達中開啟"
             Japanese => "Finder で開く"
             English => "Open in Finder"
+            Spanish => "Abrir en Finder"
           },
         )
       { reveal_files: true, platform: Windows, .. } =>
@@ -28,6 +29,7 @@ fn Model::right_panel_input(self : Model) -> @right_panel.Input {
             TraditionalChinese => "在檔案資源管理器中開啟"
             Japanese => "エクスプローラーで開く"
             English => "Open in File Explorer"
+            Spanish => "Abrir en el Explorador de archivos"
           },
         )
       { reveal_files: true, platform: Linux, .. } =>
@@ -37,6 +39,7 @@ fn Model::right_panel_input(self : Model) -> @right_panel.Input {
             TraditionalChinese => "在資料夾中開啟"
             Japanese => "フォルダーで開く"
             English => "Open in Folder"
+            Spanish => "Abrir en la carpeta"
           },
         )
       _ => None
