@@ -69,7 +69,17 @@ fn MinimalCall::from_tool(
   } else if call.name == "mbtx" && argument_description(call) is Some(text) {
     text
   } else if brief is Some(text) {
-    text
+    if call.name == "job_output" {
+      match locale {
+        English => "Read output of \{text}"
+        Spanish => "Leer la salida de \{text}"
+        SimplifiedChinese => "读取输出：\{text}"
+        TraditionalChinese => "讀取輸出：\{text}"
+        Japanese => "出力を確認：\{text}"
+      }
+    } else {
+      text
+    }
   } else if call.name != "mbtx" && argument_description(call) is Some(text) {
     text
   } else {
@@ -592,11 +602,23 @@ fn MinimalActivity::render(
     Notice(text~, error~) =>
       @html.div(
         class=if error {
-          "minimal-note transcript-error-message"
+          "minimal-note minimal-runtime-note transcript-error-message"
         } else {
-          "minimal-note"
+          "minimal-note minimal-runtime-note"
         },
-        text,
+        title=text,
+        [
+          @html.span(
+            class="minimal-tool-icon",
+            attrs=@html.Attrs::build().aria_hidden("true"),
+            if error {
+              @icons.icon_error()
+            } else {
+              @icons.icon_comment()
+            },
+          ),
+          @html.span(text),
+        ],
       )
     Call(call) =>
       @html.div(

@@ -1199,3 +1199,42 @@ for (const scenario of ['partial', 'search-bound', 'append', 'clean', 'recreated
   await expect(page.locator('.notification')).toHaveCount(0);
   expect(app.pageErrors).toEqual([]);
 });
+
+test('minimal job output and runtime notices preserve recorded text', async ({ page }) => {
+  const app = new MinimalTranscriptHarness(page);
+  app.sessionEvents = [{ sequence: 1, item: { kind: 'user', payload: { content: 'Show the browser fixture job text' } } }];
+  await app.install(); await app.goto(); await app.openSession();
+  const stream = page.locator('#stream');
+  const briefs = [
+    'job bg-1 (running): Build · run tests',
+    'job bg-1 (output capture failed: read ): broken): Build · run tests',
+    'Could not read job output',
+  ];
+  for (const [index, brief] of briefs.entries()) {
+    const id = `read-${index}`;
+    app.append('assistant', { content: '', tool_calls: [{ id, name: 'job_output', arguments: '{"job_id":"bg-1"}' }] });
+    app.append('tool_result', { tool_call_id: id, tool_name: 'job_output', content: 'OUTPUT_SENTINEL', brief, is_error: index > 0 });
+    await expect(stream.locator('.minimal-call-caption').last()).toHaveText(`Read output of ${brief}`);
+    await expect(stream.locator('.minimal-call').last().locator('.tool-status.failed')).toHaveCount(index > 0 ? 1 : 0);
+  }
+  const original = await stream.locator('.minimal-call').evaluateAll(rows => rows.map(row => row.outerHTML));
+  const notices = [
+    'background job bg-1 finished (exit=0): `Build · run tests · mbtx run` — read its output with job_output (job_id="bg-1").',
+    'background job bg-1 finished (cleanup failed: read ): broken): `Build · run tests` — read its output with job_output (job_id="other").',
+    'background job bg-1 finished (exit=0): `Truncated notice',
+    'An unrelated runtime notice',
+  ];
+  for (const notice of notices) {
+    app.append('runtime_notice', { content: notice });
+    await expect(stream.locator('.minimal-note').last()).toHaveText(notice);
+    await expect(stream.locator('.minimal-note').last().locator('.minimal-tool-icon > svg')).toBeVisible();
+  }
+  expect(await stream.locator('.minimal-call').evaluateAll(rows => rows.map(row => row.outerHTML))).toEqual(original);
+  await expect(stream).not.toContainText('OUTPUT_SENTINEL');
+  await page.reload(); await app.openSession();
+  await expect(stream.locator('.minimal-call-caption')).toHaveText(briefs.map(brief => `Read output of ${brief}`));
+  await expect(stream.locator('.minimal-note')).toHaveText(notices);
+  await app.detailedMode().click();
+  for (const notice of notices) await expect(stream).toContainText(notice);
+  expect(app.pageErrors).toEqual([]);
+});
