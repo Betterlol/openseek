@@ -143,6 +143,19 @@ fn whole_word_toggle_button(
 }
 
 ///|
+fn submit_search_on_enter(
+  event : @dom.KeyboardEvent,
+  emit : @cmd.Emit[Msg],
+) -> @cmd.Cmd {
+  if event.key() == "Enter" && !event.shift_key() {
+    event.prevent_default()
+    emit(Submit)
+  } else {
+    @cmd.none
+  }
+}
+
+///|
 fn query_key_attrs(
   locale? : @i18n.Locale = English,
   emit : @cmd.Emit[Msg],
@@ -152,14 +165,7 @@ fn query_key_attrs(
   .aria_label(ui(locale, SearchLabel))
   .aria_keyshortcuts("Meta+Shift+F Control+Shift+F")
   .data_set("focus-owner", "")
-  .on_keydown(event => {
-    if event.key() == "Enter" && !event.shift_key() {
-      event.prevent_default()
-      emit(Submit)
-    } else {
-      @cmd.none
-    }
-  })
+  .on_keydown(event => submit_search_on_enter(event, emit))
 }
 
 ///|
@@ -705,7 +711,8 @@ fn page_view(
           on_input=emit.map(value => PatternChanged(0, value)),
           attrs=@html.Attrs::build()
             .aria_label(ui(locale, PatternLabel))
-            .data_set("focus-owner", ""),
+            .data_set("focus-owner", "")
+            .on_keydown(event => submit_search_on_enter(event, emit)),
           "",
         )
       },
@@ -740,7 +747,8 @@ fn page_view(
                 on_input=emit.map(value => PatternChanged(index, value)),
                 attrs=@html.Attrs::build()
                   .aria_label(ui(locale, PatternLabel))
-                  .data_set("focus-owner", ""),
+                  .data_set("focus-owner", "")
+                  .on_keydown(event => submit_search_on_enter(event, emit)),
                 "",
               ),
               @html.button(on_click=emit(RemovePattern(index)), "−"),
