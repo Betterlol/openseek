@@ -610,6 +610,29 @@ fn search_body(
       },
     ),
   )
+  let selected_count = page.selected.length()
+  if page.mode is Semantic {
+    let filtered = page.semantic_filter is SelectedSemanticResults
+    if selected_count > 0 || filtered {
+      children.push(
+        @html.div(class="search-selection-toolbar", [
+          @html.span("\{selected_count} selected"),
+          if filtered {
+            @html.button(
+              on_click=emit(SetSemanticResultFilter(AllSemanticResults)),
+              "Show all",
+            )
+          } else {
+            @html.button(
+              on_click=emit(SetSemanticResultFilter(SelectedSemanticResults)),
+              "Show selected",
+            )
+          },
+          @html.button(on_click=emit(ClearSelection), "Clear selection"),
+        ]),
+      )
+    }
+  }
   if summary.limit_hit {
     children.push(
       @html.div(
@@ -633,12 +656,35 @@ fn search_body(
   }
   // A diagnostic and retained results are independent: both engines can
   // return useful matches before reporting a scan failure.
-  for group in visible_file_groups(items, page.visible_lines) {
-    children.push(file_group_view(locale~, page, group, emit, open_match))
+  let filtered_hits = match page.semantic_filter {
+    AllSemanticResults => page.semantic.hits
+    SelectedSemanticResults =>
+      selected_semantic_hits(page.semantic.hits, page.selected)
   }
-  let shown = page.visible_lines.min(items.length())
-  if shown < items.length() {
-    let next = VisibleSearchLineStep.min(items.length() - shown)
+  if page.mode is Semantic {
+    for
+      group in visible_semantic_pattern_groups(
+        filtered_hits,
+        page.visible_lines,
+      ) {
+      children.push(
+        semantic_pattern_group_view(locale~, page, group, emit, open_match),
+      )
+    }
+  } else {
+    for group in visible_file_groups(items, page.visible_lines) {
+      children.push(file_group_view(locale~, page, group, emit, open_match))
+    }
+  }
+  // Pagination follows the visible selection filter in semantic mode.
+  let result_count = if page.mode is Semantic {
+    filtered_hits.length()
+  } else {
+    items.length()
+  }
+  let shown = page.visible_lines.min(result_count)
+  if shown < result_count {
+    let next = VisibleSearchLineStep.min(result_count - shown)
     children.push(
       @html.div(class="search-show-more", [
         @html.button(
@@ -647,12 +693,187 @@ fn search_body(
         ),
         @html.div(
           class="search-show-more-detail",
-          "\{shown} of \{items.length()} results displayed",
+          "\{shown} of \{result_count} results displayed",
         ),
       ]),
     )
   }
   @html.div(class="search-results", children)
+}
+
+///|
+fn semantic_hit_view(
+  locale? : @i18n.Locale = English,
+  page : Page,
+  hit : @protocol.SemanticSearchHit,
+  emit : @cmd.Emit[Msg],
+  open_match : (String, @common.Range) -> @cmd.Cmd,
+) -> @html.Html {
+  let key = semantic_hit_key(hit)
+  let selected = page.selected.contains(key)
+  @html.div(
+    class=if selected {
+      "search-semantic-hit selected"
+    } else {
+      "search-semantic-hit"
+    },
+    attrs=@html.Attrs::build().data_set("semantic-hit-key", key),
+    [
+      @html.div(
+        class="search-semantic-context",
+        // Keep the shared UTF-16 highlights and matched-source fallback while
+        // selection identifies each structural hit independently.
+        [result_row(locale~, SearchResultItem::from_semantic(hit), open_match)],
+      ),
+      @html.button(
+        class="search-semantic-select",
+        attrs=@html.Attrs::build()
+          .aria_label(if selected { "Deselect match" } else { "Select match" })
+          .aria_pressed(selected.to_string())
+          .on_click(_ => emit(ToggleSemanticHit(key))),
+        if selected {
+          "☑"
+        } else {
+          "☐"
+        },
+      ),
+    ],
+  )
+}
+
+///|
+/// The checkbox on a pattern or file header. It stops the click so the
+/// header's collapse toggle does not fire as well.
+fn semantic_group_select_view(
+  selected : Bool,
+  subject : String,
+  msg : Msg,
+  emit : @cmd.Emit[Msg],
+) -> @html.Html {
+  @html.span(
+    class="search-semantic-group-select",
+    attrs=@html.Attrs::build()
+      .aria_label(
+        if selected {
+          "Deselect \{subject}"
+        } else {
+          "Select \{subject}"
+        },
+      )
+      .aria_pressed(selected.to_string())
+      .on_click(event => {
+        event.stop_propagation()
+        emit(msg)
+      }),
+    if selected {
+      "☑"
+    } else {
+      "☐"
+    },
+  )
+}
+
+///|
+fn semantic_file_group_view(
+  locale? : @i18n.Locale = English,
+  page : Page,
+  pattern : String,
+  group : SemanticGroup,
+  emit : @cmd.Emit[Msg],
+  open_match : (String, @common.Range) -> @cmd.Cmd,
+) -> @html.Html {
+  let path = group.key
+  let collapsed = page.collapsed
+    .get(semantic_file_key(pattern, path))
+    .unwrap_or(false)
+  let (name, parent) = file_label(path)
+  let rows = if collapsed {
+    ([] : Array[@html.Html])
+  } else {
+    group.hits.map(hit => {
+      semantic_hit_view(locale~, page, hit, emit, open_match)
+    })
+  }
+  @html.div(class="search-file-group", [
+    @html.button(
+      class="search-file-header",
+      title=path,
+      attrs=@html.Attrs::build()
+        .aria_expanded((!collapsed).to_string())
+        .on_click(_ => emit(ToggleFile(semantic_file_key(pattern, path)))),
+      [
+        @html.span(
+          class="search-file-chevron",
+          attrs=@html.Attrs::build().aria_hidden("true"),
+          if collapsed {
+            "›"
+          } else {
+            "⌄"
+          },
+        ),
+        @html.span(class="search-file-name", name),
+        @html.span(class="search-file-parent", parent),
+        @html.span(class="search-file-count", "\{group.count}"),
+        semantic_group_select_view(
+          page.semantic_group_selected(pattern~, path~),
+          "file",
+          ToggleSemanticGroup(pattern~, path=Some(path)),
+          emit,
+        ),
+      ],
+    ),
+    @html.div(class="search-file-results", rows),
+  ])
+}
+
+///|
+fn semantic_pattern_group_view(
+  locale? : @i18n.Locale = English,
+  page : Page,
+  group : SemanticGroup,
+  emit : @cmd.Emit[Msg],
+  open_match : (String, @common.Range) -> @cmd.Cmd,
+) -> @html.Html {
+  let pattern = group.key
+  let collapsed = page.collapsed
+    .get(semantic_pattern_key(pattern))
+    .unwrap_or(false)
+  let files = if collapsed {
+    []
+  } else {
+    semantic_groups(group.hits, hit => hit.path).map(file => {
+      semantic_file_group_view(locale~, page, pattern, file, emit, open_match)
+    })
+  }
+  @html.div(class="search-semantic-pattern-group", [
+    @html.button(
+      class="search-semantic-pattern-header",
+      title=pattern,
+      attrs=@html.Attrs::build()
+        .aria_expanded((!collapsed).to_string())
+        .on_click(_ => emit(ToggleFile(semantic_pattern_key(pattern)))),
+      [
+        @html.span(
+          class="search-file-chevron",
+          attrs=@html.Attrs::build().aria_hidden("true"),
+          if collapsed {
+            "›"
+          } else {
+            "⌄"
+          },
+        ),
+        @html.span(class="search-semantic-pattern", pattern),
+        @html.span(class="search-file-count", "\{group.count}"),
+        semantic_group_select_view(
+          page.semantic_group_selected(pattern~),
+          "pattern",
+          ToggleSemanticGroup(pattern~, path=None),
+          emit,
+        ),
+      ],
+    ),
+    @html.div(class="search-semantic-pattern-results", files),
+  ])
 }
 
 ///|

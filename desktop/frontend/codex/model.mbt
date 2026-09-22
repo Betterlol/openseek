@@ -1262,6 +1262,20 @@ pub fn State::with_editor_comment(
 }
 
 ///|
+/// Use the shared draft operation for Codex's independently owned composer.
+pub fn State::with_semantic_selection(
+  self : State,
+  reference : @mention_context.SemanticSearchReference?,
+) -> State {
+  let draft : @composer.Draft = {
+    task: self.draft,
+    mentions: self.mentions,
+    images: self.images,
+  }
+  { ..self, mentions: draft.with_semantic_selection(reference).mentions, }
+}
+
+///|
 fn CodexItem::decode(value : Json) -> CodexItem? {
   guard value is Object(fields) &&
     @jsonx.json_text(fields, "id") is Some(id) &&

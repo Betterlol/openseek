@@ -63,6 +63,12 @@ struct SearchResultSummary {
 } derive(Eq)
 
 ///|
+pub(all) enum SemanticResultFilter {
+  AllSemanticResults
+  SelectedSemanticResults
+} derive(Eq, Debug)
+
+///|
 struct Page {
   mode : Mode
   text : TextSearchState
@@ -74,6 +80,10 @@ struct Page {
   file_count : Int
   limit_hit : Bool
   collapsed : Map[String, Bool]
+  // Copy before changing membership so earlier state snapshots stay intact.
+  selected : Set[String]
+  semantic_selection_revision : Int
+  semantic_filter : SemanticResultFilter
   visible_lines : Int
   phase : Phase
   pattern_repair_phase : PatternRepairPhase
@@ -108,6 +118,40 @@ struct State {
 ///|
 pub fn State::empty() -> State {
   { page: fresh_page(), generation: 0, }
+}
+
+///|
+/// The semantic hits currently selected in the Search explorer as one
+/// composer mention, or `None` when nothing is selected.
+pub fn State::selected_semantic_reference(
+  self : State,
+  root : String,
+) -> @mention_context.SemanticSearchReference? {
+  let page = self.page
+  let matches = selected_semantic_hits(page.semantic.hits, page.selected)
+  guard !matches.is_empty() else { return None }
+  let patterns = page.semantic.patterns.filter(pattern => {
+    !pattern.trim().is_empty()
+  })
+  Some({
+    // The root is payload data; keeping it out of the snapshot id avoids
+    // serializing the same absolute path twice in the mention envelope.
+    id: "semantic-search-\{page.generation}-\{page.semantic_selection_revision}",
+    root,
+    patterns,
+    include_glob: page.include_glob,
+    exclude_glob: page.exclude_glob,
+    matches: matches.map(hit => {
+      rule_id: hit.rule_id,
+      description: hit.description,
+      file: hit.path,
+      start_line: hit.start_line,
+      start_column: hit.start_column,
+      end_line: hit.end_line,
+      end_column: hit.end_column,
+      matched_source: hit.matched_source,
+    }),
+  })
 }
 
 ///|
@@ -166,8 +210,13 @@ pub(all) enum Msg {
   Refresh
   ClearResults
   CollapseAll
+  ClearSelection
   ShowMore
   ToggleFile(String)
+  ToggleSemanticHit(String)
+  // A pattern group, or one file within it.
+  ToggleSemanticGroup(pattern~ : String, path~ : String?)
+  SetSemanticResultFilter(SemanticResultFilter)
   RequestStarted(
     owner~ : @interop.ConversationKey,
     root~ : String,
@@ -220,6 +269,12 @@ pub extend Mode with Debug::{to_repr}
 
 ///|
 pub extend Mode with Eq::{equal, not_equal}
+
+///|
+pub extend SemanticResultFilter with Eq::{equal, not_equal}
+
+///|
+pub extend SemanticResultFilter with Debug::{to_repr}
 
 ///|
 pub extend Page with Eq::{equal, not_equal}

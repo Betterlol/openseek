@@ -23,6 +23,9 @@ fn fresh_page() -> Page {
     file_count: 0,
     limit_hit: false,
     collapsed: Map([]),
+    selected: Set([]),
+    semantic_selection_revision: 0,
+    semantic_filter: AllSemanticResults,
     visible_lines: InitialVisibleSearchLines,
     phase: Idle,
     pattern_repair_phase: PatternRepairIdle,
@@ -85,6 +88,7 @@ fn State::schedule(
       ..page,
       text: { ..page.text, matches: [], },
       semantic: { ..page.semantic, hits: [], partial: false, },
+      selected: Set([]),
       match_count: 0,
       file_count: 0,
       limit_hit: false,
@@ -97,6 +101,7 @@ fn State::schedule(
       ..page,
       text: page.text,
       semantic: { ..page.semantic, hits: [], partial: false, },
+      selected: Set([]),
       match_count: if page.mode is Semantic {
         0
       } else {
@@ -158,6 +163,7 @@ pub fn State::handle(self : State, msg : Msg, input : Input) -> State {
           match_count: 0,
           file_count: 0,
           collapsed: Map([]),
+          selected: Set([]),
         },
         input,
         immediate=false,
@@ -351,11 +357,29 @@ pub fn State::handle(self : State, msg : Msg, input : Input) -> State {
     }
     CollapseAll => {
       let collapsed : Map[String, Bool] = Map([])
-      for path in page.active_paths() {
-        collapsed[path] = true
+      if page.mode is Semantic {
+        for pattern in semantic_groups(page.semantic.hits, hit => hit.rule_id) {
+          collapsed[semantic_pattern_key(pattern.key)] = true
+          for file in semantic_groups(pattern.hits, hit => hit.path) {
+            collapsed[semantic_file_key(pattern.key, file.key)] = true
+          }
+        }
+      } else {
+        for path in page.active_paths() {
+          collapsed[path] = true
+        }
       }
       { ..self, page: { ..page, collapsed, }, }
     }
+    ClearSelection =>
+      {
+        ..self,
+        page: {
+          ..page,
+          selected: Set([]),
+          semantic_selection_revision: page.semantic_selection_revision + 1,
+        },
+      }
     ShowMore =>
       {
         ..self,
@@ -375,6 +399,17 @@ pub fn State::handle(self : State, msg : Msg, input : Input) -> State {
       }
       { ..self, page: { ..page, collapsed, }, }
     }
+    ToggleSemanticHit(key) =>
+      { ..self, page: page.toggle_semantic_selection([key]), }
+    ToggleSemanticGroup(pattern~, path~) =>
+      {
+        ..self,
+        page: page.toggle_semantic_selection(
+          page.semantic_hits_in(pattern~, path?).map(semantic_hit_key),
+        ),
+      }
+    SetSemanticResultFilter(filter) =>
+      { ..self, page: { ..page, semantic_filter: filter, }, }
     RequestStarted(owner~, root~, generation~) =>
       if input.owner == owner &&
         input.root_text() == root &&
@@ -562,11 +597,32 @@ fn Page::active_highlights(self : Page, path : String) -> EditorHighlights? {
 }
 
 ///|
+/// Toggle one hit or a whole group. A partially selected group becomes fully
+/// selected; a fully selected group is cleared. Keep prior pages unchanged.
+fn Page::toggle_semantic_selection(self : Page, keys : Array[String]) -> Page {
+  let selected = self.selected.copy()
+  let all_selected = !keys.is_empty() && keys.all(key => selected.contains(key))
+  for key in keys {
+    if all_selected {
+      selected.remove(key)
+    } else {
+      selected.add(key)
+    }
+  }
+  {
+    ..self,
+    selected,
+    semantic_selection_revision: self.semantic_selection_revision + 1,
+  }
+}
+
+///|
 fn Page::clear_results(self : Page) -> Page {
   {
     ..self,
     text: { ..self.text, matches: [], },
     semantic: { ..self.semantic, hits: [], partial: false, },
+    selected: Set([]),
     match_count: 0,
     file_count: 0,
     limit_hit: false,
