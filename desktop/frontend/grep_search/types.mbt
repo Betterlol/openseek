@@ -184,31 +184,11 @@ pub(all) enum Msg {
   ToggleRegex
   ToggleDetails
   FixPattern
-  PatternRepaired(
+  PatternRepairFinished(
     root~ : String,
     generation~ : Int,
-    candidate_pattern~ : String
+    reply~ : @protocol.PatternRepairReply?
   )
-  PatternRepairUnavailable(
-    root~ : String,
-    generation~ : Int,
-    candidate_pattern~ : String?,
-    message~ : String,
-    trace~ : Array[String]
-  )
-  PatternRepairTimedOut(
-    root~ : String,
-    generation~ : Int,
-    trace~ : Array[String]
-  )
-  PatternRepairValidationFailed(
-    root~ : String,
-    generation~ : Int,
-    candidate_pattern~ : String?,
-    diagnostic~ : String,
-    trace~ : Array[String]
-  )
-  PatternRepairFailed(root~ : String, generation~ : Int)
   IncludeChanged(String)
   ExcludeChanged(String)
   // Semantic-mode settings, mirroring the text-mode toggles.

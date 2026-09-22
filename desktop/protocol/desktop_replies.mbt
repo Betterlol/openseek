@@ -1421,16 +1421,15 @@ pub extend PatternRepairStatus with Debug::{to_repr}
 pub extend PatternRepairStatus with Eq::{equal, not_equal}
 
 ///|
-/// Candidate produced by one Pattern Repair request. The Host sets `valid`
-/// after validation; the one-click code-search UI applies a valid, current
-/// reply immediately and starts a new semantic search.
+/// Candidate produced by one Pattern Repair request. The Host marks it `Passed`
+/// after validation; the one-click code-search UI applies a current, validated
+/// candidate immediately and starts a new semantic search.
 pub(all) struct PatternRepairReply {
   root : String
   generation : Int
   /// Present only when the Agent submitted a candidate. Failure replies do
   /// not use the original pattern as a sentinel value.
   candidate_pattern : String?
-  valid : Bool
   validation_status : PatternRepairStatus
   message : String
   /// Bounded, content-filtered progress retained for failure diagnosis.

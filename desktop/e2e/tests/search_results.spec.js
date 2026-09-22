@@ -167,7 +167,6 @@ test('code search repairs a pattern in one click', async ({ page }) => {
         root: repairRequest.root,
         generation: repairRequest.generation,
         candidate_pattern: 'inspect($_)',
-        valid: true,
         validation_status: 'passed',
         message: 'Repaired.',
         trace: [],

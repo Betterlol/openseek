@@ -222,118 +222,71 @@ pub fn State::handle(self : State, msg : Msg, input : Input) -> State {
       } else {
         self
       }
-    PatternRepaired(root~, generation~, candidate_pattern~) =>
-      if page.mode is Semantic &&
+    PatternRepairFinished(root~, generation~, reply~) => {
+      guard page.mode is Semantic &&
         input.root_text() == root &&
         page.generation == generation &&
-        page.pattern_repair_phase is PatternRepairRequested &&
-        page.semantic.patterns.length() > 0 &&
-        !candidate_pattern.trim().is_empty() {
-        let patterns = page.semantic.patterns.copy()
-        patterns[0] = candidate_pattern
-        self.schedule(
-          {
-            ..page,
-            semantic: { ..page.semantic, patterns, },
-            pattern_repair_phase: PatternRepairIdle,
-            pattern_repair_message: None,
-            pattern_repair_candidate: None,
-            pattern_repair_trace: [],
-          },
-          input,
-          immediate=true,
-        )
-      } else {
-        self
+        page.pattern_repair_phase is PatternRepairRequested else {
+        return self
       }
-    PatternRepairUnavailable(
-      root~,
-      generation~,
-      candidate_pattern~,
-      message~,
-      trace~
-    ) =>
-      if page.mode is Semantic &&
-        input.root_text() == root &&
-        page.generation == generation &&
-        page.pattern_repair_phase is PatternRepairRequested {
-        {
-          ..self,
-          page: {
-            ..page,
-            pattern_repair_phase: PatternRepairUnavailable,
-            pattern_repair_message: Some(message),
-            pattern_repair_candidate: candidate_pattern,
-            pattern_repair_trace: trace,
-          },
-        }
-      } else {
-        self
+      let (phase, message, candidate, trace) = match reply {
+        Some(reply) =>
+          match reply.validation_status {
+            Passed if reply.candidate_pattern is Some(candidate) => {
+              guard page.semantic.patterns.length() > 0 &&
+                !candidate.trim().is_empty() else {
+                return self
+              }
+              let patterns = page.semantic.patterns.copy()
+              patterns[0] = candidate
+              return self.schedule(
+                {
+                  ..page,
+                  semantic: { ..page.semantic, patterns, },
+                  pattern_repair_phase: PatternRepairIdle,
+                  pattern_repair_message: None,
+                  pattern_repair_candidate: None,
+                  pattern_repair_trace: [],
+                },
+                input,
+                immediate=true,
+              )
+            }
+            Unavailable =>
+              (
+                PatternRepairUnavailable,
+                Some(reply.message),
+                reply.candidate_pattern,
+                reply.trace,
+              )
+            TimedOut => (PatternRepairTimedOut, None, None, reply.trace)
+            Passed | Failed => {
+              let candidate = match reply.candidate_pattern {
+                Some(candidate) if !candidate.trim().is_empty() =>
+                  Some(candidate)
+                _ => None
+              }
+              (
+                PatternRepairValidationFailed,
+                Some(reply.message),
+                candidate,
+                reply.trace,
+              )
+            }
+          }
+        None => (PatternRepairFailed, None, None, [])
       }
-    PatternRepairTimedOut(root~, generation~, trace~) =>
-      if page.mode is Semantic &&
-        input.root_text() == root &&
-        page.generation == generation &&
-        page.pattern_repair_phase is PatternRepairRequested {
-        {
-          ..self,
-          page: {
-            ..page,
-            pattern_repair_phase: PatternRepairTimedOut,
-            pattern_repair_message: None,
-            pattern_repair_candidate: None,
-            pattern_repair_trace: trace,
-          },
-        }
-      } else {
-        self
+      {
+        ..self,
+        page: {
+          ..page,
+          pattern_repair_phase: phase,
+          pattern_repair_message: message,
+          pattern_repair_candidate: candidate,
+          pattern_repair_trace: trace,
+        },
       }
-    PatternRepairValidationFailed(
-      root~,
-      generation~,
-      candidate_pattern~,
-      diagnostic~,
-      trace~
-    ) =>
-      if page.mode is Semantic &&
-        input.root_text() == root &&
-        page.generation == generation &&
-        page.pattern_repair_phase is PatternRepairRequested {
-        let rejected_candidate = match candidate_pattern {
-          Some(candidate) if !candidate.trim().is_empty() => Some(candidate)
-          _ => None
-        }
-        {
-          ..self,
-          page: {
-            ..page,
-            pattern_repair_phase: PatternRepairValidationFailed,
-            pattern_repair_message: Some(diagnostic),
-            pattern_repair_candidate: rejected_candidate,
-            pattern_repair_trace: trace,
-          },
-        }
-      } else {
-        self
-      }
-    PatternRepairFailed(root~, generation~) =>
-      if page.mode is Semantic &&
-        input.root_text() == root &&
-        page.generation == generation &&
-        page.pattern_repair_phase is PatternRepairRequested {
-        {
-          ..self,
-          page: {
-            ..page,
-            pattern_repair_phase: PatternRepairFailed,
-            pattern_repair_message: None,
-            pattern_repair_candidate: None,
-            pattern_repair_trace: [],
-          },
-        }
-      } else {
-        self
-      }
+    }
     IncludeChanged(include_glob) =>
       self.schedule({ ..page, include_glob, }, input, immediate=false)
     ExcludeChanged(exclude_glob) =>

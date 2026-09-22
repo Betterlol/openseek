@@ -35,77 +35,26 @@ fn pattern_repair_request_loader(
     () => {
       guard active else { return }
       @js.Promise::from_async(() => {
-        let reply = @interop.bridge_request(
-          owner.channel,
-          @commands.pattern_repair,
-          request,
+        let reply = Some(
+          @interop.bridge_request(
+            owner.channel,
+            @commands.pattern_repair,
+            request,
+          ),
         ) catch {
-          _ => {
-            settled = true
-            guard active else { return }
-            scheduler.add(
-              emit(
-                PatternRepairFailed(
-                  root=request.root,
-                  generation=request.generation,
-                ),
-              ),
-            )
-            return
-          }
+          _ => None
         }
         settled = true
         guard active else { return }
-        match reply {
-          reply if reply.valid &&
-            reply.validation_status is @protocol.PatternRepairStatus::Passed &&
-            reply.candidate_pattern is Some(candidate) =>
-            scheduler.add(
-              emit(
-                PatternRepaired(
-                  root=request.root,
-                  generation=request.generation,
-                  candidate_pattern=candidate,
-                ),
-              ),
-            )
-          reply if reply.validation_status
-            is @protocol.PatternRepairStatus::Unavailable =>
-            scheduler.add(
-              emit(
-                PatternRepairUnavailable(
-                  root=request.root,
-                  generation=request.generation,
-                  candidate_pattern=reply.candidate_pattern,
-                  message=reply.message,
-                  trace=reply.trace,
-                ),
-              ),
-            )
-          reply if reply.validation_status
-            is @protocol.PatternRepairStatus::TimedOut =>
-            scheduler.add(
-              emit(
-                PatternRepairTimedOut(
-                  root=request.root,
-                  generation=request.generation,
-                  trace=reply.trace,
-                ),
-              ),
-            )
-          reply =>
-            scheduler.add(
-              emit(
-                PatternRepairValidationFailed(
-                  root=request.root,
-                  generation=request.generation,
-                  candidate_pattern=reply.candidate_pattern,
-                  diagnostic=reply.message,
-                  trace=reply.trace,
-                ),
-              ),
-            )
-        }
+        scheduler.add(
+          emit(
+            PatternRepairFinished(
+              root=request.root,
+              generation=request.generation,
+              reply~,
+            ),
+          ),
+        )
       })
       |> ignore
     },

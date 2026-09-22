@@ -81,7 +81,6 @@ pub impl FromJson for PatternRepairReply with fn from_json(json, path) {
     root: object.required_string("root"),
     generation,
     candidate_pattern: object.optional_string("candidate_pattern"),
-    valid: object.required_bool("valid"),
     validation_status: pattern_repair_status_from_wire(
       object.required_string("validation_status"),
       path.add_key("validation_status"),
@@ -99,7 +98,6 @@ pub impl ToJson for PatternRepairReply with fn to_json(self) {
   let fields : Map[String, Json] = {
     "root": self.root,
     "generation": self.generation,
-    "valid": self.valid,
     "validation_status": self.validation_status.wire(),
     "message": self.message,
     "trace": self.trace.to_json(),

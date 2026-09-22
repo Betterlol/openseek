@@ -49,49 +49,29 @@ async fn run_pattern_repair_validator(
 ) -> Unit {
   let args = validator.prefix_args.copy()
   args.append(["dump", "--expr", pattern, "--strict-check", "--exit-code"])
-  let (code, stdout, stderr) = @async.with_task_group(group => {
+  let (code, stdout, stderr) = try {
     let (stdin_reader, stdin_writer) = @process.write_to_process()
-    let (stdout_reader, child_stdout) = @process.read_from_process()
-    let (stderr_reader, child_stderr) = @process.read_from_process()
-    let process = @process.spawn(
-      group,
+    stdin_writer.close()
+    @process.collect_output(
       validator.command,
       args,
       inherit_env=false,
       extra_env=@env.get_env_vars(),
       stdin=stdin_reader,
-      stdout=child_stdout,
-      stderr=child_stderr,
       cwd=workspace_root,
       no_console_window=true,
-      no_wait=true,
     )
-    errdefer {
-      stdin_writer.close()
-      process.cancel()
-    }
-    stdin_writer.close()
-    let stdout_task = group.spawn(() => {
-      defer stdout_reader.close()
-      stdout_reader.read_all().text() catch {
-        _ => ""
-      }
-    })
-    let stderr_task = group.spawn(() => {
-      defer stderr_reader.close()
-      stderr_reader.read_all().text() catch {
-        _ => ""
-      }
-    })
-    let code = process.wait()
-    (code, stdout_task.wait(), stderr_task.wait())
-  }) catch {
+  } catch {
     error if @async.is_being_cancelled() || @async.is_cancellation_error(error) =>
       raise error
     _ => raise Unavailable
   }
   if code != 0 {
-    let detail = if !stderr.trim().is_empty() { stderr } else { stdout }
+    let detail = if !stderr.text().trim().is_empty() {
+      stderr.text()
+    } else {
+      stdout.text()
+    }
     let detail = detail.trim().to_owned()
     let diagnostic = if detail.is_empty() {
       "Pattern validation failed without a diagnostic."

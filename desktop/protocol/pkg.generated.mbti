@@ -2212,7 +2212,6 @@ pub(all) struct PatternRepairReply {
   root : String
   generation : Int
   candidate_pattern : String?
-  valid : Bool
   validation_status : PatternRepairStatus
   message : String
   trace : Array[String]
